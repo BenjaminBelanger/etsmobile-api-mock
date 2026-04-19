@@ -1,0 +1,35 @@
+{
+  "none": {},
+  "friday-off": {
+    "description": "Prochain vendredi sans cours",
+    "skipDates": [
+      { "rule": "next_weekday", "weekday": 5 }
+    ]
+  },
+  "semaine-relache": {
+    "description": "Semaine de relâche (semaine prochaine)",
+    "skipDates": [
+      { "rule": "week_of", "weekday": 1 }
+    ]
+  },
+  "monday-holiday": {
+    "description": "Lundi férié (prochain lundi)",
+    "skipDates": [
+      { "rule": "next_weekday", "weekday": 1 }
+    ],
+    "replacedDays": [
+      {
+        "origin": { "rule": "next_weekday", "weekday": 1 },
+        "replacement": { "rule": "next_weekday", "weekday": 2 },
+        "description": "Jour férié"
+      }
+    ]
+  },
+  "long-weekend": {
+    "description": "Fin de semaine longue (vendredi + lundi off)",
+    "skipDates": [
+      { "rule": "next_weekday", "weekday": 5 },
+      { "rule": "next_weekday", "weekday": 1 }
+    ]
+  }
+}

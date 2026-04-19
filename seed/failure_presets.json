@@ -1,0 +1,61 @@
+{
+  "flaky": {
+    "description": "Intermittent failures: 100-800ms latency, 30% random 500s",
+    "config": {
+      "latencyMs": "100-800",
+      "errorRate": 0.3
+    }
+  },
+  "slow": {
+    "description": "Sluggish network: 2-5s latency on every API call",
+    "config": {
+      "latencyMs": "2000-5000"
+    }
+  },
+  "outage": {
+    "description": "Server down: every API endpoint returns 503",
+    "config": {
+      "failEndpoints": ["*"]
+    }
+  },
+  "partial-outage": {
+    "description": "Grades and teammates endpoints down (other endpoints still work)",
+    "config": {
+      "failEndpoints": [
+        "lireEvaluationCours",
+        "listeElementsEvaluation",
+        "listeCoequipiers"
+      ]
+    }
+  },
+  "auth": {
+    "description": "Require an Authorization header on every API call",
+    "config": {
+      "authRequired": true
+    }
+  },
+  "corrupt": {
+    "description": "Truncate every successful response body in half",
+    "config": {
+      "malformed": true
+    }
+  },
+  "timeout-grades": {
+    "description": "Grade endpoints hang for 30s before returning 504",
+    "config": {
+      "timeoutEndpoints": [
+        "lireEvaluationCours",
+        "listeElementsEvaluation"
+      ],
+      "timeoutDurationS": 30
+    }
+  },
+  "chaos": {
+    "description": "Everything is broken: latency, errors, and corrupted bodies",
+    "config": {
+      "latencyMs": "500-2000",
+      "errorRate": 0.4,
+      "malformed": true
+    }
+  }
+}

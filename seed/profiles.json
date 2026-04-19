@@ -1,0 +1,161 @@
+{
+  "normal": {
+    "generateCourses": {
+      "count": 4,
+      "allowedDays": ["1", "2", "3", "4", "5"],
+      "timePreference": "morning,afternoon"
+    }
+  },
+  "semester-off": {
+    "activeSession": {
+      "stripCourses": true,
+      "stripSessionKeyedData": true
+    }
+  },
+  "internship-only": {
+    "activeSession": {
+      "stripCourses": true,
+      "stripSessionKeyedData": true,
+      "addCourses": [
+        {
+          "sigle": "STA206",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Stage industriel II",
+          "nbCredits": 3,
+          "programmeEtudes": "0725",
+          "cote": "",
+          "professorId": "last4-first4",
+          "room": "",
+          "examRoom": "",
+          "schedule": null,
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Rapport de stage",
+              "ponderation": 100,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 0.0,
+          "gradeSeed": 510
+        }
+      ],
+      "addPrograms": [
+        {
+          "code": "0725",
+          "libelle": "Microprogramme de 1er cycle en enseignement coopératif II",
+          "profil": "",
+          "statut": "actif",
+          "sessionDebut": "$ACTIVE_SESSION",
+          "sessionFin": "",
+          "moyenne": "",
+          "nbEquivalences": "0",
+          "nbCrsReussis": "0",
+          "nbCrsEchoues": "0",
+          "nbCreditsInscrits": "9",
+          "nbCreditsCompletes": "0",
+          "nbCreditsPotentiels": "9",
+          "nbCreditsRecherche": "0"
+        }
+      ]
+    }
+  },
+  "internship-courses": {
+    "activeSession": {
+      "keepCourses": ["LOG410"],
+      "addCourses": [
+        {
+          "sigle": "STA206",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Stage industriel II",
+          "nbCredits": 3,
+          "programmeEtudes": "0725",
+          "cote": "",
+          "professorId": "last4-first4",
+          "room": "",
+          "examRoom": "",
+          "schedule": null,
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Rapport de stage",
+              "ponderation": 100,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 0.0,
+          "gradeSeed": 510
+        }
+      ],
+      "addPrograms": [
+        {
+          "code": "0725",
+          "libelle": "Microprogramme de 1er cycle en enseignement coopératif II",
+          "profil": "",
+          "statut": "actif",
+          "sessionDebut": "$ACTIVE_SESSION",
+          "sessionFin": "",
+          "moyenne": "",
+          "nbEquivalences": "0",
+          "nbCrsReussis": "0",
+          "nbCrsEchoues": "0",
+          "nbCreditsInscrits": "9",
+          "nbCreditsCompletes": "0",
+          "nbCreditsPotentiels": "9",
+          "nbCreditsRecherche": "0"
+        }
+      ]
+    }
+  },
+  "generated-light": {
+    "generateCourses": {
+      "count": 2,
+      "allowedDays": ["1", "2", "3", "4", "5"],
+      "timePreference": "morning"
+    }
+  },
+  "generated-busy": {
+    "generateCourses": {
+      "count": 5,
+      "allowedDays": ["1", "2", "3", "4", "5"],
+      "timePreference": null
+    }
+  },
+  "generated-evening": {
+    "generateCourses": {
+      "count": 3,
+      "allowedDays": ["1", "2", "3", "4", "5"],
+      "timePreference": "evening"
+    }
+  },
+  "new-student": {
+    "global": {
+      "stripCourses": true,
+      "stripSessionKeyedData": true,
+      "replacePrograms": [
+        {
+          "code": "7084",
+          "libelle": "Baccalauréat en génie logiciel",
+          "profil": "",
+          "statut": "actif",
+          "sessionDebut": "$ACTIVE_SESSION",
+          "sessionFin": "",
+          "moyenne": "",
+          "nbEquivalences": "0",
+          "nbCrsReussis": "0",
+          "nbCrsEchoues": "0",
+          "nbCreditsInscrits": "0",
+          "nbCreditsCompletes": "0",
+          "nbCreditsPotentiels": "0",
+          "nbCreditsRecherche": "0"
+        }
+      ]
+    }
+  }
+}

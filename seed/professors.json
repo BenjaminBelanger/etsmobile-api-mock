@@ -1,0 +1,65 @@
+{
+  "last1-first1": {
+    "nom": "Last1",
+    "prenom": "First1",
+    "courriel": "first1.last1@etsmtl.ca",
+    "localBureau": "A-4525",
+    "telephone": ""
+  },
+  "last2-first2": {
+    "nom": "Last2",
+    "prenom": "First2",
+    "courriel": "first2.last2@etsmtl.ca",
+    "localBureau": "B-2325",
+    "telephone": "555-555-5555 #0001"
+  },
+  "last3-first3": {
+    "nom": "Last3",
+    "prenom": "First3",
+    "courriel": "first3.last3@etsmtl.ca",
+    "localBureau": "A-4530",
+    "telephone": ""
+  },
+  "last4-first4": {
+    "nom": "Last4",
+    "prenom": "First4",
+    "courriel": "first4.last4@etsmtl.ca",
+    "localBureau": "A-4620",
+    "telephone": ""
+  },
+  "last5-first5": {
+    "nom": "Last5",
+    "prenom": "First5",
+    "courriel": "first5.last5@etsmtl.ca",
+    "localBureau": "B-2330",
+    "telephone": "555-555-5555 #0002"
+  },
+  "last6-first6": {
+    "nom": "Last6",
+    "prenom": "First6",
+    "courriel": "first6.last6@etsmtl.ca",
+    "localBureau": "A-4525",
+    "telephone": ""
+  },
+  "last7-first7": {
+    "nom": "Last7",
+    "prenom": "First7",
+    "courriel": "first7.last7@etsmtl.ca",
+    "localBureau": "A-4620",
+    "telephone": ""
+  },
+  "last8-first8": {
+    "nom": "Last8",
+    "prenom": "First8",
+    "courriel": "first8.last8@etsmtl.ca",
+    "localBureau": "B-2415",
+    "telephone": ""
+  },
+  "last9-first9": {
+    "nom": "Last9",
+    "prenom": "First9",
+    "courriel": "first9.last9@etsmtl.ca",
+    "localBureau": "A-4530",
+    "telephone": "555-555-5555 #0003"
+  }
+}

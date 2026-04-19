@@ -1,0 +1,34 @@
+[
+  {
+    "code": "7084",
+    "libelle": "Baccalauréat en génie logiciel",
+    "profil": "",
+    "statut": "actif",
+    "sessionDebut": "H2024",
+    "sessionFin": "",
+    "moyenne": "3,42",
+    "nbEquivalences": "0",
+    "nbCrsReussis": "11",
+    "nbCrsEchoues": "0",
+    "nbCreditsInscrits": "9",
+    "nbCreditsCompletes": "36",
+    "nbCreditsPotentiels": "45",
+    "nbCreditsRecherche": "0"
+  },
+  {
+    "code": "0725",
+    "libelle": "Microprogramme de 1er cycle en enseignement coopératif I",
+    "profil": "",
+    "statut": "diplômé",
+    "sessionDebut": "É2024",
+    "sessionFin": "É2024",
+    "moyenne": "",
+    "nbEquivalences": "0",
+    "nbCrsReussis": "1",
+    "nbCrsEchoues": "0",
+    "nbCreditsInscrits": "0",
+    "nbCreditsCompletes": "9",
+    "nbCreditsPotentiels": "9",
+    "nbCreditsRecherche": "0"
+  }
+]

@@ -1,0 +1,30 @@
+{
+  "H2026": [
+    {
+      "dateOrigine": "2026-02-23",
+      "dateRemplacement": "2026-02-24",
+      "description": "Journée pédagogique"
+    }
+  ],
+  "A2025": [
+    {
+      "dateOrigine": "2025-10-13",
+      "dateRemplacement": "2025-10-14",
+      "description": "Action de grâces"
+    }
+  ],
+  "H2025": [
+    {
+      "dateOrigine": "2025-02-24",
+      "dateRemplacement": "2025-02-25",
+      "description": "Journée pédagogique"
+    }
+  ],
+  "A2024": [
+    {
+      "dateOrigine": "2024-10-14",
+      "dateRemplacement": "2024-10-15",
+      "description": "Action de grâces"
+    }
+  ]
+}

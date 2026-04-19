@@ -1,0 +1,781 @@
+[
+  {
+    "sigle": "LOG121",
+    "groupe": "01",
+    "session": "H2024",
+    "titreCours": "Conception orientée objet",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A",
+    "professorId": "last1-first1",
+    "room": "A-1302",
+    "examRoom": "A-1518",
+    "schedule": {
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 25,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "TP3 - Projet final",
+        "ponderation": 15,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 101
+  },
+  {
+    "sigle": "MAT265",
+    "groupe": "02",
+    "session": "H2024",
+    "titreCours": "Équations différentielles",
+    "nbCredits": 4,
+    "programmeEtudes": "7084",
+    "cote": "A+",
+    "professorId": "last3-first3",
+    "room": "B-1404",
+    "examRoom": "B-1518",
+    "schedule": {
+      "jour": "4",
+      "journee": "Jeudi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 102
+  },
+  {
+    "sigle": "CHM131",
+    "groupe": "06",
+    "session": "H2024",
+    "titreCours": "Chimie et matériaux",
+    "nbCredits": 4,
+    "programmeEtudes": "7084",
+    "cote": "B+",
+    "professorId": "last4-first4",
+    "room": "A-2345",
+    "examRoom": "A-1302",
+    "schedule": {
+      "jour": "5",
+      "journee": "Vendredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 103
+  },
+  {
+    "sigle": "LOG210",
+    "groupe": "01",
+    "session": "É2024",
+    "titreCours": "Analyse et conception de logiciels",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A+",
+    "professorId": "last2-first2",
+    "room": "A-1502",
+    "examRoom": "A-1518",
+    "schedule": {
+      "jour": "3",
+      "journee": "Mercredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 25,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "TP3 - Projet final",
+        "ponderation": 15,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 201
+  },
+  {
+    "sigle": "PHY335",
+    "groupe": "01",
+    "session": "É2024",
+    "titreCours": "Physique des ondes",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "B",
+    "professorId": "last8-first8",
+    "room": "B-2120",
+    "examRoom": "B-1518",
+    "schedule": {
+      "jour": "1",
+      "journee": "Lundi",
+      "heureDebut": "13:30",
+      "heureFin": "17:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 202
+  },
+  {
+    "sigle": "GTI310",
+    "groupe": "01",
+    "session": "A2024",
+    "titreCours": "Gestion de projet et assurance de la qualité",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A",
+    "professorId": "last4-first4",
+    "room": "A-1302",
+    "examRoom": "A-1518",
+    "schedule": {
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 25,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "TP3 - Projet final",
+        "ponderation": 15,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 301
+  },
+  {
+    "sigle": "LOG240",
+    "groupe": "02",
+    "session": "A2024",
+    "titreCours": "Tests et maintenance",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A+",
+    "professorId": "last9-first9",
+    "room": "B-1404",
+    "examRoom": "B-1518",
+    "schedule": {
+      "jour": "4",
+      "journee": "Jeudi",
+      "heureDebut": "13:30",
+      "heureFin": "17:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 302
+  },
+  {
+    "sigle": "MAT472",
+    "groupe": "01",
+    "session": "A2024",
+    "titreCours": "Algèbre linéaire et géométrie de l'espace",
+    "nbCredits": 4,
+    "programmeEtudes": "7084",
+    "cote": "B+",
+    "professorId": "last3-first3",
+    "room": "A-1502",
+    "examRoom": "A-1302",
+    "schedule": {
+      "jour": "3",
+      "journee": "Mercredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 303
+  },
+  {
+    "sigle": "LOG320",
+    "groupe": "01",
+    "session": "H2025",
+    "titreCours": "Structures de données et algorithmes",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A",
+    "professorId": "last1-first1",
+    "room": "A-1302",
+    "examRoom": "A-1518",
+    "schedule": {
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 25,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "TP3 - Projet final",
+        "ponderation": 15,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 401
+  },
+  {
+    "sigle": "GTI350",
+    "groupe": "02",
+    "session": "H2025",
+    "titreCours": "Conception et évaluation des interfaces utilisateurs",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "A+",
+    "professorId": "last2-first2",
+    "room": "B-1404",
+    "examRoom": "B-1518",
+    "schedule": {
+      "jour": "4",
+      "journee": "Jeudi",
+      "heureDebut": "13:30",
+      "heureFin": "17:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 402
+  },
+  {
+    "sigle": "LOG330",
+    "groupe": "01",
+    "session": "H2025",
+    "titreCours": "Assurance de la qualité du logiciel",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "B+",
+    "professorId": "last6-first6",
+    "room": "A-2345",
+    "examRoom": "A-1302",
+    "schedule": {
+      "jour": "5",
+      "journee": "Vendredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [],
+    "evaluations": [
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP1",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "TP2",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 1.0,
+    "gradeSeed": 403
+  },
+  {
+    "sigle": "LOG410",
+    "groupe": "01",
+    "session": "H2026",
+    "titreCours": "Analyse et conception de logiciels",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "",
+    "professorId": "last1-first1",
+    "room": "A-1302",
+    "examRoom": "A-1518",
+    "schedule": {
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [
+      {
+        "jour": "3",
+        "journee": "Mercredi",
+        "heureDebut": "13:30",
+        "heureFin": "16:30",
+        "codeActivite": "L",
+        "nomActivite": "Activité de laboratoire",
+        "room": "A-4209"
+      }
+    ],
+    "evaluations": [
+      {
+        "nom": "TP1 - Diagrammes UML",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 25,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2 - Patrons de conception",
+        "ponderation": 15,
+        "corrigeSur": 20,
+        "isTeam": true
+      },
+      {
+        "nom": "TP3 - Projet final",
+        "ponderation": 15,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {
+      "TP1 - Diagrammes UML": [
+        "last10-first10",
+        "last11-first11"
+      ],
+      "TP2 - Patrons de conception": [
+        "last10-first10",
+        "last11-first11"
+      ],
+      "TP3 - Projet final": [
+        "last10-first10",
+        "last11-first11"
+      ]
+    },
+    "gradePublishRatio": 0.6,
+    "gradeSeed": 501
+  },
+  {
+    "sigle": "GTI510",
+    "groupe": "01",
+    "session": "H2026",
+    "titreCours": "Gestion de la sécurité des TI",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "",
+    "professorId": "last2-first2",
+    "room": "B-1404",
+    "examRoom": "B-1518",
+    "schedule": {
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "13:30",
+      "heureFin": "17:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [
+      {
+        "jour": "4",
+        "journee": "Jeudi",
+        "heureDebut": "13:30",
+        "heureFin": "16:30",
+        "codeActivite": "L",
+        "nomActivite": "Activité de laboratoire",
+        "room": "A-4209"
+      }
+    ],
+    "evaluations": [
+      {
+        "nom": "TP1 - Audit de sécurité",
+        "ponderation": 20,
+        "corrigeSur": 50,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP2 - Plan de réponse aux incidents",
+        "ponderation": 20,
+        "corrigeSur": 50,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {
+      "TP1 - Audit de sécurité": [
+        "last12-first12",
+        "last13-first13",
+        "last14-first14"
+      ]
+    },
+    "gradePublishRatio": 0.5,
+    "gradeSeed": 502
+  },
+  {
+    "sigle": "LOG430",
+    "groupe": "02",
+    "session": "H2026",
+    "titreCours": "Architecture logicielle",
+    "nbCredits": 3,
+    "programmeEtudes": "7084",
+    "cote": "",
+    "professorId": "last3-first3",
+    "room": "A-1502",
+    "examRoom": "A-1302",
+    "schedule": {
+      "jour": "3",
+      "journee": "Mercredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "codeActivite": "C",
+      "nomActivite": "Activité de cours"
+    },
+    "extraActivities": [
+      {
+        "jour": "5",
+        "journee": "Vendredi",
+        "heureDebut": "09:00",
+        "heureFin": "12:00",
+        "codeActivite": "L",
+        "nomActivite": "Activité de laboratoire",
+        "room": "A-4209"
+      }
+    ],
+    "evaluations": [
+      {
+        "nom": "Examen intra",
+        "ponderation": 30,
+        "corrigeSur": 50,
+        "isTeam": false
+      },
+      {
+        "nom": "TP1 - Architecture microservices",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "TP2 - Projet final",
+        "ponderation": 20,
+        "corrigeSur": 25,
+        "isTeam": true
+      },
+      {
+        "nom": "Examen final",
+        "ponderation": 30,
+        "corrigeSur": 100,
+        "isTeam": false
+      }
+    ],
+    "teammates": {},
+    "gradePublishRatio": 0.25,
+    "gradeSeed": 503
+  }
+]
