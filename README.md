@@ -112,7 +112,7 @@ You can also set these values directly with environment variables, from any prof
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `COURSE_COUNT` | Number of courses (1-5) | `COURSE_COUNT=2` |
-| `SCHEDULE_DAYS` | Comma-separated day codes, or a single integer N for first N weekdays | `SCHEDULE_DAYS=1,3,5` or `SCHEDULE_DAYS=3` |
+| `SCHEDULE_DAYS` | Comma-separated day codes (1=Mon, 6=Sat) | `SCHEDULE_DAYS=1,3,5` |
 | `TIME_PREFERENCE` | `morning`, `afternoon`, `evening` (comma-separated for multiple) | `TIME_PREFERENCE=morning,evening` |
 
 ```bash
