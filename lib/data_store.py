@@ -138,6 +138,9 @@ def load(name: str):
         data = profiles.apply_profile(PROFILE_NAME, ACTIVE_SESSION, name, data)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         data = scenarios.apply_scenario(SCENARIO_NAME, ACTIVE_SESSION, name, data)
+    if name == SESSIONS.filename:
+        registered = {c.get("session") for c in load(COURSES.filename)}
+        data = [s for s in data if s.get("abrege") in registered]
     _cache[name] = data
     return data
 
