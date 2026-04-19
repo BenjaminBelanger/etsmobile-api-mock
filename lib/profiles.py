@@ -193,13 +193,8 @@ def apply_profile(profile_name: str, active_session: str, filename: str, data):
 
 
 def _parse_schedule_days(value: str) -> list[str]:
-    """'1,3,5' -> explicit days, or '3' -> first N weekdays."""
-    parts = [p.strip() for p in value.split(",")]
-    if len(parts) == 1 and parts[0].isdigit():
-        n = int(parts[0])
-        if 1 <= n <= 6:
-            return [str(d) for d in range(1, n + 1)]
-    return parts
+    """'1,3,5' -> ['1', '3', '5']."""
+    return [p.strip() for p in value.split(",") if p.strip()]
 
 
 def get_generation_config(profile_name: str) -> dict | None:
