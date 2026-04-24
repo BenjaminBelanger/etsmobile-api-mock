@@ -197,9 +197,11 @@ def _build_evaluations(
             "publie": "Oui" if published else "Non",
             "messageDuProf": "",
             "ignoreDuCalcul": "Non",
+            "ordre": "",
         }
         if published:
             _fill_grades(item, ev["corrigeSur"], rng)
+            item["ordre"] = str(idx + 1)
         items.append(item)
 
     return {**_build_grade_summary(items, rng), "liste": items}
