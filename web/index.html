@@ -19,7 +19,7 @@
           <span class="brand__mark">É</span>
           <div class="brand__text">
             <h1>Horaire</h1>
-            <p>Éditeur de grille — serveur mock ÉTSMobile</p>
+            <p>Éditeur — mock ÉTSMobile</p>
           </div>
         </div>
 
@@ -28,9 +28,21 @@
             <span>Session</span>
             <select id="sessionSelect"></select>
           </label>
+          <div class="week-picker" id="weekPicker" hidden>
+            <button class="btn btn--ghost btn--icon" id="weekPrev" title="Semaine précédente" aria-label="Semaine précédente">‹</button>
+            <label class="week-picker__field">
+              <span>Semaine</span>
+              <select id="weekSelect"></select>
+            </label>
+            <button class="btn btn--ghost btn--icon" id="weekNext" title="Semaine suivante" aria-label="Semaine suivante">›</button>
+          </div>
         </div>
 
         <div class="toolbar">
+          <div class="scope" id="scopeToggle" role="group" aria-label="Portée des modifications">
+            <button type="button" class="scope__btn is-active" data-scope="series" title="Modifier le cours toutes les semaines">Toutes les semaines</button>
+            <button type="button" class="scope__btn" data-scope="occurrence" title="Modifier seulement la séance de la semaine sélectionnée">Cette séance</button>
+          </div>
           <button class="btn btn--ghost" id="undoBtn" title="Annuler (Ctrl+Z)">
             <span class="btn__icon">↶</span> Annuler
           </button>
@@ -62,24 +74,14 @@
               <h2>Corbeille</h2>
               <span class="panel__count" id="trashCount">0</span>
             </div>
-            <p class="panel__hint">
-              Les cours supprimés vivent ici. Remettez-les d'un clic.
-            </p>
             <ul class="trash" id="trashList"></ul>
           </div>
 
           <div class="panel panel--legend">
-            <div class="panel__head"><h2>Repères</h2></div>
             <ul class="legend">
               <li><span class="legend__swatch swatch--cours"></span>Cours</li>
               <li><span class="legend__swatch swatch--labo"></span>Laboratoire</li>
             </ul>
-            <dl class="tips">
-              <dt>Déplacer</dt><dd>glissez un bloc</dd>
-              <dt>Redimensionner</dt><dd>tirez les poignées</dd>
-              <dt>Supprimer</dt><dd>× sur le bloc, ou touche Suppr</dd>
-              <dt>Annuler / Rétablir</dt><dd>Ctrl+Z · Ctrl+Y</dd>
-            </dl>
           </div>
         </aside>
       </main>

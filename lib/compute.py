@@ -246,6 +246,15 @@ def _build_final_exam(
     return exam_record, exam_date_str
 
 
+def _override_target_date(week_date: date, override: dict) -> date:
+    """Resolve the concrete date of a moved occurrence within its own week."""
+    jour = override.get("jour")
+    if not jour:
+        return week_date
+    monday = week_date - timedelta(days=week_date.isoweekday() - 1)
+    return monday + timedelta(days=int(jour) - 1)
+
+
 def _build_activities(
     course: dict,
     course_group: str,
@@ -256,8 +265,9 @@ def _build_activities(
     semester_courses_end: date,
 ) -> list[dict]:
     activities = []
+    overrides = course.get("occurrenceOverrides", [])
     all_schedules = [sched] + course.get("extraActivities", [])
-    for activity_schedule in all_schedules:
+    for block_index, activity_schedule in enumerate(all_schedules):
         iso_weekday = int(activity_schedule["jour"])
         activity_room = activity_schedule.get("room", room)
         is_lab = activity_schedule.get("codeActivite", "C") == "L"
@@ -266,10 +276,29 @@ def _build_activities(
         for week_date in _weekly_dates(
             semester_start, semester_courses_end, iso_weekday
         ):
+            override = next(
+                (
+                    ov
+                    for ov in overrides
+                    if ov.get("block") == block_index
+                    and ov.get("date") == week_date.isoformat()
+                ),
+                None,
+            )
+            if override and override.get("canceled"):
+                continue
+            if override:
+                occ_date = _override_target_date(week_date, override)
+                start_hhmm = override.get("heureDebut", activity_schedule["heureDebut"])
+                end_hhmm = override.get("heureFin", activity_schedule["heureFin"])
+            else:
+                occ_date = week_date
+                start_hhmm = activity_schedule["heureDebut"]
+                end_hhmm = activity_schedule["heureFin"]
             activities.append(
                 {
-                    "dateDebut": f"{week_date.isoformat()}T{activity_schedule['heureDebut']}:00",
-                    "dateFin": f"{week_date.isoformat()}T{activity_schedule['heureFin']}:00",
+                    "dateDebut": f"{occ_date.isoformat()}T{start_hhmm}:00",
+                    "dateFin": f"{occ_date.isoformat()}T{end_hhmm}:00",
                     "coursGroupe": course_group,
                     "nomActivite": activity_name,
                     "local": activity_room,

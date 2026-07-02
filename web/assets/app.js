@@ -18,10 +18,18 @@
     pxPerMin: 1.08,
     busy: false,
     selectedCourseId: null,
+    semester: null,
+    weekIndex: null,
+    editScope: "series",
   };
 
   const el = {
     sessionSelect: document.getElementById("sessionSelect"),
+    scopeToggle: document.getElementById("scopeToggle"),
+    weekPicker: document.getElementById("weekPicker"),
+    weekSelect: document.getElementById("weekSelect"),
+    weekPrev: document.getElementById("weekPrev"),
+    weekNext: document.getElementById("weekNext"),
     dayHeads: document.getElementById("dayHeads"),
     gutter: document.getElementById("gutter"),
     grid: document.getElementById("grid"),
@@ -64,6 +72,85 @@
     for (let i = 0; i < sigle.length; i++) h = (h * 31 + sigle.charCodeAt(i)) >>> 0;
     return h % TINTS;
   };
+
+  const MONTHS_FR = [
+    "janv.", "févr.", "mars", "avr.", "mai", "juin",
+    "juil.", "août", "sept.", "oct.", "nov.", "déc.",
+  ];
+  const todayISO = () => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${d.getFullYear()}-${m}-${day}`;
+  };
+  const fmtDayDate = (iso) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return `${d} ${MONTHS_FR[m - 1]}`;
+  };
+
+  function currentWeek() {
+    if (!state.semester) return null;
+    return (
+      state.semester.weeks.find((w) => w.index === state.weekIndex) || null
+    );
+  }
+  function weekExists(index) {
+    return !!state.semester && state.semester.weeks.some((w) => w.index === index);
+  }
+  function defaultWeekIndex(semester) {
+    if (!semester || !semester.weeks.length) return null;
+    const today = todayISO();
+    for (const w of semester.weeks) {
+      // Week spans its Monday (w.start) through the following Sunday.
+      const monday = new Date(w.start + "T00:00:00");
+      const sunday = new Date(monday.getTime() + 6 * 864e5)
+        .toISOString()
+        .slice(0, 10);
+      if (today >= w.start && today <= sunday) return w.index;
+    }
+    return semester.weeks[0].index;
+  }
+
+  const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
+
+  // The date the recurring pattern would produce for a block in the current week.
+  function anchorFor(blk) {
+    const week = currentWeek();
+    return week && week.dates ? week.dates[blk.jour] : null;
+  }
+
+  // Where a block actually sits in the selected week (applying any override).
+  function effectiveForWeek(blk) {
+    const anchor = anchorFor(blk);
+    const ov =
+      anchor && blk.occurrences
+        ? blk.occurrences.find((o) => o.date === anchor)
+        : null;
+    if (ov && ov.canceled) {
+      return {
+        anchor,
+        canceled: true,
+        jour: blk.jour,
+        heureDebut: blk.heureDebut,
+        heureFin: blk.heureFin,
+      };
+    }
+    if (ov) {
+      return {
+        anchor,
+        overridden: true,
+        jour: ov.jour,
+        heureDebut: ov.heureDebut,
+        heureFin: ov.heureFin,
+      };
+    }
+    return {
+      anchor,
+      jour: blk.jour,
+      heureDebut: blk.heureDebut,
+      heureFin: blk.heureFin,
+    };
+  }
 
   function setStatus(text, busy) {
     el.statusText.textContent = text;
@@ -108,6 +195,7 @@
 
   /* --------------------------- rendering -------------------------- */
   function applyState(data, opts) {
+    const prevSession = state.session;
     state.session = data.session;
     state.data = data;
     const meta = data.meta;
@@ -116,13 +204,55 @@
     state.snap = meta.snapMin;
     state.minDuration = meta.minDuration;
     state.days = meta.days;
+    state.semester = meta.semester || null;
+    if (
+      prevSession !== data.session ||
+      state.weekIndex == null ||
+      !weekExists(state.weekIndex)
+    ) {
+      state.weekIndex = defaultWeekIndex(state.semester);
+    }
     renderSessions(data);
+    renderWeekPicker();
     renderScaffold();
     renderBlocks(opts && opts.animate);
     renderTrash(data.trash);
     renderCatalog(meta.catalog);
     el.undoBtn.disabled = !data.canUndo;
     el.redoBtn.disabled = !data.canRedo;
+  }
+
+  function renderWeekPicker() {
+    const semester = state.semester;
+    const occBtn = el.scopeToggle.querySelector('[data-scope="occurrence"]');
+    if (!semester || !semester.weeks.length) {
+      el.weekPicker.hidden = true;
+      if (occBtn) occBtn.disabled = true;
+      if (state.editScope === "occurrence") setScope("series");
+      return;
+    }
+    if (occBtn) occBtn.disabled = false;
+    el.weekPicker.hidden = false;
+    el.weekSelect.innerHTML = "";
+    semester.weeks.forEach((w) => {
+      const opt = document.createElement("option");
+      opt.value = String(w.index);
+      opt.textContent = `S${w.index} · ${w.range}`;
+      if (w.index === state.weekIndex) opt.selected = true;
+      el.weekSelect.appendChild(opt);
+    });
+    const first = semester.weeks[0].index;
+    const last = semester.weeks[semester.weeks.length - 1].index;
+    el.weekPrev.disabled = state.weekIndex <= first;
+    el.weekNext.disabled = state.weekIndex >= last;
+  }
+
+  function selectWeek(index) {
+    if (!weekExists(index)) return;
+    state.weekIndex = index;
+    renderWeekPicker();
+    renderScaffold();
+    renderBlocks(false);
   }
 
   function renderSessions(data) {
@@ -140,12 +270,20 @@
   }
 
   function renderScaffold() {
+    fitPxPerMin();
+    const week = currentWeek();
+    const today = todayISO();
     // Day headers
     el.dayHeads.innerHTML = "";
     state.days.forEach((d) => {
       const h = document.createElement("div");
       h.className = "dayhead";
-      h.innerHTML = `<span class="dayhead__short">${d.short}</span><span class="dayhead__name">${d.name}</span>`;
+      const iso = week && week.dates ? week.dates[d.jour] : null;
+      if (iso === today) h.classList.add("dayhead--today");
+      const dateHtml = iso
+        ? `<span class="dayhead__date">${fmtDayDate(iso)}</span>`
+        : "";
+      h.innerHTML = `<span class="dayhead__name">${d.name}</span>${dateHtml}`;
       el.dayHeads.appendChild(h);
     });
 
@@ -170,6 +308,8 @@
       const col = document.createElement("div");
       col.className = "daycol";
       col.dataset.jour = d.jour;
+      const iso = week && week.dates ? week.dates[d.jour] : null;
+      if (iso === today) col.classList.add("daycol--today");
       const lines = document.createElement("div");
       lines.className = "daycol__lines";
       for (let m = state.dayStartMin; m <= state.dayEndMin; m += 30) {
@@ -188,14 +328,31 @@
     return el.grid.querySelector(`.daycol[data-jour="${jour}"]`);
   }
 
+  // Scale the grid so the whole day fits the board without vertical scroll.
+  function fitPxPerMin() {
+    const boardH = el.board.clientHeight;
+    const total = totalMin();
+    if (boardH <= 0 || total <= 0) return;
+    const headH =
+      parseInt(
+        getComputedStyle(document.documentElement).getPropertyValue("--day-head-h"),
+        10
+      ) || 60;
+    const avail = boardH - headH - 2;
+    if (avail > 0) state.pxPerMin = Math.max(0.5, avail / total);
+  }
+
   function renderBlocks(animate) {
     document.querySelectorAll(".block").forEach((b) => b.remove());
     let count = 0;
     let selectionAlive = false;
+    const occMode = occurrenceMode();
+    el.board.classList.toggle("is-occurrence", occMode);
     (state.data.blocks || []).forEach((blk) => {
-      const col = columnFor(blk.jour);
+      const eff = effectiveForWeek(blk);
+      const col = columnFor(eff.jour);
       if (!col) return;
-      const node = buildBlock(blk, animate);
+      const node = buildBlock(blk, eff, animate, occMode);
       if (blk.courseId === state.selectedCourseId) {
         node.classList.add("is-selected");
         selectionAlive = true;
@@ -224,14 +381,16 @@
     el.board.appendChild(div);
   }
 
-  function buildBlock(blk, animate) {
-    const start = toMin(blk.heureDebut);
-    const end = toMin(blk.heureFin);
+  function buildBlock(blk, eff, animate, occMode) {
+    const start = toMin(eff.heureDebut);
+    const end = toMin(eff.heureFin);
     const dur = end - start;
     const node = document.createElement("div");
     node.className = "block" + (blk.kind === "labo" ? " is-labo" : "");
     if (animate) node.classList.add("is-entering");
     if (dur <= 60) node.classList.add("is-compact");
+    if (eff.canceled) node.classList.add("is-canceled");
+    if (eff.overridden) node.classList.add("is-overridden");
     const t = tintFor(blk.sigle);
     node.style.setProperty("--bg", `var(--c${t}-bg)`);
     node.style.setProperty("--bd", `var(--c${t}-bd)`);
@@ -240,27 +399,57 @@
     node.style.height = `${durToPx(dur) - 3}px`;
     node.dataset.blockId = blk.id;
     node.dataset.courseId = blk.courseId;
-    node.dataset.jour = blk.jour;
+    node.dataset.jour = eff.jour;
     node.dataset.start = start;
     node.dataset.dur = dur;
+    if (eff.anchor) node.dataset.anchor = eff.anchor;
 
     const kindLabel = blk.kind === "labo" ? "Labo" : "";
+    const badge = eff.overridden
+      ? `<span class="block__badge" title="Séance modifiée cette semaine">séance</span>`
+      : eff.canceled
+      ? `<span class="block__badge block__badge--off" title="Séance annulée cette semaine">annulée</span>`
+      : "";
+    const resetBtn =
+      occMode && (eff.overridden || eff.canceled)
+        ? `<button class="block__reset" title="Rétablir cette séance au modèle">↺</button>`
+        : "";
+    const delTitle = eff.canceled
+      ? "Restaurer cette séance"
+      : occMode
+      ? "Annuler cette séance"
+      : "Supprimer le cours";
+
     node.innerHTML = `
       <div class="block__handle block__handle--top"></div>
       <div class="block__inner">
-        <div class="block__sigle">${blk.sigle}<span class="block__grp">gr ${blk.groupe}${kindLabel ? " · " + kindLabel : ""}</span></div>
+        <div class="block__sigle">${blk.sigle}<span class="block__grp">gr ${blk.groupe}${kindLabel ? " · " + kindLabel : ""}</span>${badge}</div>
         <div class="block__title">${escapeHtml(blk.titre)}</div>
-        <div class="block__meta"><span>${blk.heureDebut}–${blk.heureFin}</span><span>${blk.room || ""}</span></div>
+        <div class="block__meta"><span>${eff.heureDebut}–${eff.heureFin}</span><span>${blk.room || ""}</span></div>
       </div>
-      <button class="block__del" title="Supprimer le cours">×</button>
-      <div class="block__tag">${blk.heureDebut}</div>
+      ${resetBtn}
+      <button class="block__del" title="${delTitle}">×</button>
+      <div class="block__tag">${eff.heureDebut}</div>
       <div class="block__handle block__handle--bottom"></div>`;
 
+    const resetEl = node.querySelector(".block__reset");
+    if (resetEl) {
+      resetEl.addEventListener("click", (e) => {
+        e.stopPropagation();
+        resetOccurrence(blk, node.dataset.anchor);
+      });
+    }
     node.querySelector(".block__del").addEventListener("click", (e) => {
       e.stopPropagation();
-      deleteCourse(blk.courseId);
+      if (eff.canceled) {
+        resetOccurrence(blk, node.dataset.anchor);
+      } else if (occMode) {
+        cancelOccurrence(blk, node.dataset.anchor);
+      } else {
+        deleteCourse(blk.courseId);
+      }
     });
-    attachDrag(node, blk);
+    if (!eff.canceled) attachDrag(node, blk);
     return node;
   }
 
@@ -325,6 +514,7 @@
     const botH = node.querySelector(".block__handle--bottom");
     node.addEventListener("pointerdown", (e) => {
       if (e.target.classList.contains("block__del")) return;
+      if (e.target.classList.contains("block__reset")) return;
       if (e.target === topH) return startGesture(e, node, blk, "resize-top");
       if (e.target === botH) return startGesture(e, node, blk, "resize-bottom");
       startGesture(e, node, blk, "move");
@@ -340,10 +530,12 @@
     const colWidth = gridRect.width / state.days.length;
     const startMin0 = Number(node.dataset.start);
     const dur0 = Number(node.dataset.dur);
+    const jour0 = node.dataset.jour;
+    const anchor0 = node.dataset.anchor || null;
     const startY = e.clientY;
     const startX = e.clientX;
     let moved = false;
-    let cur = { jour: blk.jour, start: startMin0, dur: dur0 };
+    let cur = { jour: jour0, start: startMin0, dur: dur0 };
     const tag = node.querySelector(".block__tag");
 
     node.classList.add("is-dragging");
@@ -390,7 +582,7 @@
       clearHighlight();
 
       const changed =
-        cur.jour !== blk.jour ||
+        cur.jour !== jour0 ||
         cur.start !== startMin0 ||
         cur.dur !== dur0;
       if (!moved || !changed) {
@@ -398,7 +590,7 @@
         if (!moved) selectCourse(blk.courseId);
         return;
       }
-      commitGesture(mode, blk, cur);
+      commitGesture(mode, blk, cur, anchor0);
     };
 
     node.addEventListener("pointermove", onMove);
@@ -423,7 +615,24 @@
     document.querySelectorAll(".daycol--drop").forEach((c) => c.classList.remove("daycol--drop"));
   }
 
-  function commitGesture(mode, blk, cur) {
+  function commitGesture(mode, blk, cur, anchor) {
+    if (occurrenceMode() && anchor) {
+      // Edit only the selected week's occurrence.
+      const heureDebut = toHHMM(cur.start);
+      const heureFin =
+        mode === "move"
+          ? toHHMM(cur.start + cur.dur)
+          : toHHMM(cur.start + cur.dur);
+      apiPost("/occurrence/set", {
+        session: state.session,
+        blockId: blk.id,
+        date: anchor,
+        jour: cur.jour,
+        heureDebut,
+        heureFin,
+      }).then(() => toast("Séance modifiée cette semaine"));
+      return;
+    }
     if (mode === "move") {
       apiPost("/block/move", {
         session: state.session,
@@ -446,6 +655,33 @@
     apiPost("/course/delete", { session: state.session, courseId }).then(() =>
       toast("Cours déplacé vers la corbeille")
     );
+  }
+
+  function cancelOccurrence(blk, anchor) {
+    if (!anchor) return;
+    apiPost("/occurrence/cancel", {
+      session: state.session,
+      blockId: blk.id,
+      date: anchor,
+    }).then(() => toast("Séance annulée cette semaine"));
+  }
+
+  function resetOccurrence(blk, anchor) {
+    if (!anchor) return;
+    apiPost("/occurrence/reset", {
+      session: state.session,
+      blockId: blk.id,
+      date: anchor,
+    }).then(() => toast("Séance rétablie au modèle"));
+  }
+
+  function setScope(scope) {
+    if (scope !== "series" && scope !== "occurrence") return;
+    state.editScope = scope;
+    el.scopeToggle.querySelectorAll(".scope__btn").forEach((b) =>
+      b.classList.toggle("is-active", b.dataset.scope === scope)
+    );
+    renderBlocks(false);
   }
 
   async function loadSession(session, animate) {
@@ -502,6 +738,12 @@
 
   /* --------------------------- wiring ----------------------------- */
   el.sessionSelect.addEventListener("change", (e) => loadSession(e.target.value, true));
+  el.scopeToggle.querySelectorAll(".scope__btn").forEach((b) =>
+    b.addEventListener("click", () => setScope(b.dataset.scope))
+  );
+  el.weekSelect.addEventListener("change", (e) => selectWeek(Number(e.target.value)));
+  el.weekPrev.addEventListener("click", () => selectWeek(state.weekIndex - 1));
+  el.weekNext.addEventListener("click", () => selectWeek(state.weekIndex + 1));
   el.addBtn.addEventListener("click", openModal);
   el.undoBtn.addEventListener("click", () =>
     apiPost("/undo", { session: state.session })
@@ -535,6 +777,16 @@
       }
     } else if (e.key === "Escape") {
       selectCourse(null);
+    } else if (e.key === "ArrowLeft" && !typing && !mod) {
+      if (!el.weekPrev.disabled) {
+        e.preventDefault();
+        selectWeek(state.weekIndex - 1);
+      }
+    } else if (e.key === "ArrowRight" && !typing && !mod) {
+      if (!el.weekNext.disabled) {
+        e.preventDefault();
+        selectWeek(state.weekIndex + 1);
+      }
     }
   });
 
@@ -543,7 +795,10 @@
   });
 
   window.addEventListener("resize", () => {
-    if (state.data) renderBlocks(false);
+    if (state.data) {
+      renderScaffold();
+      renderBlocks(false);
+    }
   });
 
   /* ----------------------------- boot ----------------------------- */

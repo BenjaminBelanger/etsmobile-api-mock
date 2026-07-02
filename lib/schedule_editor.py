@@ -14,8 +14,9 @@ import copy
 import json
 import random
 import threading
+from datetime import date, timedelta
 
-from . import data_store
+from . import data_store, sessions
 from ._paths import SEED
 from .data_store import OVERRIDES_FILENAME
 
@@ -45,6 +46,68 @@ DAY_SHORT = {
     "7": "DIM",
 }
 EDITABLE_DAYS = ["1", "2", "3", "4", "5", "6"]
+
+MONTHS_FR = [
+    "janvier", "février", "mars", "avril", "mai", "juin",
+    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+]
+
+
+def _session_dates(session_code: str) -> tuple[str | None, str | None]:
+    """Return (dateDebut, dateFin) ISO strings for a session, if known."""
+    for entry in sessions.get_raw_sessions():
+        if entry.get("abrege") == session_code:
+            return entry.get("dateDebut"), entry.get("dateFin")
+    return None, None
+
+
+def _fr_date_label(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{d.day} {MONTHS_FR[d.month - 1]}"
+
+
+def _build_semester(session_code: str) -> dict | None:
+    """Expand a session into the concrete calendar weeks/days it spans.
+
+    Each editable weekday (Lundi..Samedi) is mapped to its real ISO date for
+    every week from the Monday of the week containing ``dateDebut`` through
+    ``dateFin``. Lets the editor navigate specific weeks and days rather than a
+    single generic week.
+    """
+    start_str, end_str = _session_dates(session_code)
+    if not start_str or not end_str:
+        return None
+    try:
+        start = date.fromisoformat(start_str)
+        end = date.fromisoformat(end_str)
+    except ValueError:
+        return None
+
+    monday = start - timedelta(days=start.weekday())
+    weeks = []
+    cursor = monday
+    index = 1
+    while cursor <= end:
+        dates = {
+            jour: (cursor + timedelta(days=int(jour) - 1)).isoformat()
+            for jour in EDITABLE_DAYS
+        }
+        week_end = cursor + timedelta(days=5)  # Samedi
+        weeks.append(
+            {
+                "index": index,
+                "start": cursor.isoformat(),
+                "end": week_end.isoformat(),
+                "label": f"Semaine {index}",
+                "range": f"{_fr_date_label(cursor.isoformat())} – "
+                f"{_fr_date_label(week_end.isoformat())}",
+                "dates": dates,
+            }
+        )
+        cursor += timedelta(days=7)
+        index += 1
+
+    return {"dateDebut": start_str, "dateFin": end_str, "weeks": weeks}
 
 _lock = threading.RLock()
 # session -> {"courses": [...], "trash": [...]} (source of truth in memory)
@@ -156,8 +219,8 @@ def _blocks_of(course: dict) -> list[dict]:
     return blocks
 
 
-def _resolve_block(doc: dict, block_id: str) -> tuple[dict, dict]:
-    """Return (course, schedule-dict) for a block id ``courseId:index``."""
+def _resolve_block(doc: dict, block_id: str) -> tuple[dict, int, dict]:
+    """Return (course, index, schedule-dict) for a block id ``courseId:index``."""
     course_id, _, raw_index = block_id.rpartition(":")
     course = _find_course(doc, course_id)
     try:
@@ -169,12 +232,43 @@ def _resolve_block(doc: dict, block_id: str) -> tuple[dict, dict]:
         schedule = course.get("schedule")
         if schedule is None:
             raise EditorError(f"Block '{block_id}' has no schedule")
-        return course, schedule
+        return course, index, schedule
 
     extras = course.get("extraActivities", [])
     if index - 1 >= len(extras):
         raise EditorError(f"Block '{block_id}' not found")
-    return course, extras[index - 1]
+    return course, index, extras[index - 1]
+
+
+# --------------------------------------------------------------------------- #
+# Per-occurrence overrides
+# --------------------------------------------------------------------------- #
+def _validate_date(value: str) -> str:
+    try:
+        return date.fromisoformat(value).isoformat()
+    except (ValueError, TypeError) as exc:
+        raise EditorError(f"Invalid date '{value}'") from exc
+
+
+def _occurrence_list(course: dict) -> list[dict]:
+    return course.setdefault("occurrenceOverrides", [])
+
+
+def _find_occurrence(course: dict, index: int, day: str) -> dict | None:
+    for override in course.get("occurrenceOverrides", []):
+        if override.get("block") == index and override.get("date") == day:
+            return override
+    return None
+
+
+def _upsert_occurrence(course: dict, index: int, day: str, **fields) -> dict:
+    existing = _find_occurrence(course, index, day)
+    if existing is not None:
+        existing.update(fields)
+        return existing
+    override = {"block": index, "date": day, **fields}
+    _occurrence_list(course).append(override)
+    return override
 
 
 # --------------------------------------------------------------------------- #
@@ -183,6 +277,18 @@ def _resolve_block(doc: dict, block_id: str) -> tuple[dict, dict]:
 def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
     code = schedule.get("codeActivite", "C")
     kind = {"C": "cours", "L": "labo", "TP": "tp"}.get(code, "cours")
+    base_jour = str(schedule.get("jour", "1"))
+    occurrences = [
+        {
+            "date": ov["date"],
+            "jour": str(ov.get("jour", base_jour)),
+            "heureDebut": ov.get("heureDebut", schedule.get("heureDebut", "09:00")),
+            "heureFin": ov.get("heureFin", schedule.get("heureFin", "12:00")),
+            "canceled": bool(ov.get("canceled")),
+        }
+        for ov in course.get("occurrenceOverrides", [])
+        if ov.get("block") == index
+    ]
     return {
         "id": f"{_course_key(course)}:{index}",
         "courseId": _course_key(course),
@@ -194,10 +300,11 @@ def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
         "kind": kind,
         "nomActivite": schedule.get("nomActivite", "Activité de cours"),
         "isPrimary": index == 0,
-        "jour": str(schedule.get("jour", "1")),
+        "jour": base_jour,
         "journee": schedule.get("journee", DAY_NAMES.get(str(schedule.get("jour")), "")),
         "heureDebut": schedule.get("heureDebut", "09:00"),
         "heureFin": schedule.get("heureFin", "12:00"),
+        "occurrences": occurrences,
     }
 
 
@@ -252,6 +359,7 @@ def get_state(session: str) -> dict:
                     {"jour": d, "name": DAY_NAMES[d], "short": DAY_SHORT[d]}
                     for d in EDITABLE_DAYS
                 ],
+                "semester": _build_semester(session),
                 "catalog": [
                     {"sigle": c["sigle"], "titre": c["titre"]}
                     for c in pools.get("courseCatalog", [])
@@ -274,7 +382,7 @@ def _apply_time(schedule: dict, jour: str, start_min: int, end_min: int) -> None
 def move_block(session: str, block_id: str, jour: str, heure_debut: str) -> dict:
     with _lock:
         doc = _load_doc(session)
-        _, schedule = _resolve_block(doc, block_id)
+        _, _, schedule = _resolve_block(doc, block_id)
         if str(jour) not in DAY_NAMES:
             raise EditorError(f"Invalid day '{jour}'")
         duration = _to_min(schedule["heureFin"]) - _to_min(schedule["heureDebut"])
@@ -288,13 +396,81 @@ def move_block(session: str, block_id: str, jour: str, heure_debut: str) -> dict
 def resize_block(session: str, block_id: str, heure_debut: str, heure_fin: str) -> dict:
     with _lock:
         doc = _load_doc(session)
-        course, schedule = _resolve_block(doc, block_id)
+        course, _, schedule = _resolve_block(doc, block_id)
         start = _snap(_to_min(heure_debut))
         end = _snap(_to_min(heure_fin))
         if end - start < MIN_DURATION_MIN:
             raise EditorError("Block is too short")
         _snapshot(session)
         _apply_time(schedule, schedule.get("jour", "1"), start, end)
+        _persist()
+    return get_state(session)
+
+
+def set_occurrence(
+    session: str,
+    block_id: str,
+    day: str,
+    jour: str,
+    heure_debut: str,
+    heure_fin: str,
+) -> dict:
+    """Override a single dated occurrence (move/resize just that week)."""
+    with _lock:
+        doc = _load_doc(session)
+        course, index, _ = _resolve_block(doc, block_id)
+        day = _validate_date(day)
+        if str(jour) not in DAY_NAMES:
+            raise EditorError(f"Invalid day '{jour}'")
+        start, end = _clamp_range(_snap(_to_min(heure_debut)), _snap(_to_min(heure_fin)))
+        if end - start < MIN_DURATION_MIN:
+            raise EditorError("Occurrence is too short")
+        _snapshot(session)
+        _upsert_occurrence(
+            course,
+            index,
+            day,
+            jour=str(jour),
+            journee=DAY_NAMES[str(jour)],
+            heureDebut=_to_hhmm(start),
+            heureFin=_to_hhmm(end),
+            canceled=False,
+        )
+        _persist()
+    return get_state(session)
+
+
+def cancel_occurrence(session: str, block_id: str, day: str) -> dict:
+    """Cancel a single dated occurrence without touching the weekly pattern."""
+    with _lock:
+        doc = _load_doc(session)
+        course, index, _ = _resolve_block(doc, block_id)
+        day = _validate_date(day)
+        _snapshot(session)
+        _upsert_occurrence(course, index, day, canceled=True)
+        _persist()
+    return get_state(session)
+
+
+def reset_occurrence(session: str, block_id: str, day: str) -> dict:
+    """Drop a single occurrence override, restoring the weekly pattern."""
+    with _lock:
+        doc = _load_doc(session)
+        course, index, _ = _resolve_block(doc, block_id)
+        day = _validate_date(day)
+        overrides = course.get("occurrenceOverrides", [])
+        remaining = [
+            ov
+            for ov in overrides
+            if not (ov.get("block") == index and ov.get("date") == day)
+        ]
+        if len(remaining) == len(overrides):
+            raise EditorError("No override for this occurrence")
+        _snapshot(session)
+        if remaining:
+            course["occurrenceOverrides"] = remaining
+        else:
+            course.pop("occurrenceOverrides", None)
         _persist()
     return get_state(session)
 

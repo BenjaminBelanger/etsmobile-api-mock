@@ -45,6 +45,21 @@ class SessionBody(BaseModel):
     session: str
 
 
+class OccurrenceSetBody(BaseModel):
+    session: str
+    blockId: str
+    date: str
+    jour: str
+    heureDebut: str
+    heureFin: str
+
+
+class OccurrenceBody(BaseModel):
+    session: str
+    blockId: str
+    date: str
+
+
 def _guard(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -105,6 +120,33 @@ def add(body: AddBody):
         body.heureDebut,
         body.heureFin,
         body.kind,
+    )
+
+
+@router.post("/api/occurrence/set")
+def occurrence_set(body: OccurrenceSetBody):
+    return _guard(
+        schedule_editor.set_occurrence,
+        body.session,
+        body.blockId,
+        body.date,
+        body.jour,
+        body.heureDebut,
+        body.heureFin,
+    )
+
+
+@router.post("/api/occurrence/cancel")
+def occurrence_cancel(body: OccurrenceBody):
+    return _guard(
+        schedule_editor.cancel_occurrence, body.session, body.blockId, body.date
+    )
+
+
+@router.post("/api/occurrence/reset")
+def occurrence_reset(body: OccurrenceBody):
+    return _guard(
+        schedule_editor.reset_occurrence, body.session, body.blockId, body.date
     )
 
 

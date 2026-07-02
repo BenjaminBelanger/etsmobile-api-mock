@@ -73,6 +73,38 @@ def test_state_shape(client):
         assert key in block
 
 
+def test_semester_weeks_exposed(client):
+    st = _session_with_blocks(client)
+    semester = st["meta"]["semester"]
+    assert semester, "session should expose its semester calendar"
+    assert semester["dateDebut"] <= semester["dateFin"]
+    weeks = semester["weeks"]
+    assert weeks, "semester should span at least one week"
+
+    first = weeks[0]
+    for key in ("index", "start", "end", "label", "range", "dates"):
+        assert key in first
+    assert first["index"] == 1
+    # Every editable weekday (Lundi..Samedi) maps to a real ISO date.
+    for jour in ("1", "2", "3", "4", "5", "6"):
+        assert jour in first["dates"]
+        assert len(first["dates"][jour]) == 10  # YYYY-MM-DD
+    # The first week starts on a Monday (weekday 0) and days are consecutive.
+    from datetime import date
+
+    assert date.fromisoformat(first["start"]).weekday() == 0
+    assert date.fromisoformat(first["dates"]["2"]) - date.fromisoformat(
+        first["dates"]["1"]
+    ) == (date.fromisoformat(first["dates"]["3"]) - date.fromisoformat(first["dates"]["2"]))
+    # Weeks are indexed sequentially and a week apart.
+    if len(weeks) > 1:
+        assert weeks[1]["index"] == 2
+        assert (
+            date.fromisoformat(weeks[1]["start"])
+            - date.fromisoformat(weeks[0]["start"])
+        ).days == 7
+
+
 def test_move_block_changes_day_and_time(client):
     st = _session_with_blocks(client)
     session = st["session"]
@@ -277,3 +309,112 @@ def test_index_served(client):
     res = client.get("/editor")
     assert res.status_code == 200
     assert "Horaire" in res.text
+
+
+def _anchor_for(st, block, week_index=1):
+    """The ISO date of a block's occurrence in a given semester week."""
+    week = st["meta"]["semester"]["weeks"][week_index]
+    return week["dates"][block["jour"]]
+
+
+def _seances(client, session, course_group):
+    res = client.get(
+        "/api/Etudiant/lireHoraireDesSeances", params={"session": session}
+    )
+    assert res.status_code == 200, res.text
+    return [
+        a
+        for a in res.json()["ListeDesSeances"]
+        if a["coursGroupe"] == course_group
+    ]
+
+
+def test_set_occurrence_moves_only_that_week(client):
+    st = _session_with_blocks(client)
+    session = st["session"]
+    block = st["blocks"][0]
+    anchor = _anchor_for(st, block)
+
+    res = client.post(
+        "/editor/api/occurrence/set",
+        json={
+            "session": session,
+            "blockId": block["id"],
+            "date": anchor,
+            "jour": block["jour"],
+            "heureDebut": "18:00",
+            "heureFin": "20:00",
+        },
+    )
+    assert res.status_code == 200, res.text
+    moved = next(b for b in res.json()["blocks"] if b["id"] == block["id"])
+    # The weekly pattern is untouched...
+    assert moved["heureDebut"] == block["heureDebut"]
+    # ...but a single dated override now exists for that occurrence.
+    occ = [o for o in moved["occurrences"] if o["date"] == anchor]
+    assert occ and occ[0]["heureDebut"] == "18:00" and occ[0]["heureFin"] == "20:00"
+
+    # The dated séances feed reflects the moved time on that date only.
+    seances = _seances(client, session, block["courseId"])
+    on_anchor = [s for s in seances if s["dateDebut"].startswith(anchor)]
+    assert on_anchor and on_anchor[0]["dateDebut"] == f"{anchor}T18:00:00"
+    others = [s for s in seances if not s["dateDebut"].startswith(anchor)]
+    assert others, "other weeks should still exist"
+
+
+def test_cancel_occurrence_removes_only_that_seance(client):
+    st = _session_with_blocks(client)
+    session = st["session"]
+    block = st["blocks"][0]
+    anchor = _anchor_for(st, block)
+
+    before = _seances(client, session, block["courseId"])
+    assert any(s["dateDebut"].startswith(anchor) for s in before)
+
+    res = client.post(
+        "/editor/api/occurrence/cancel",
+        json={"session": session, "blockId": block["id"], "date": anchor},
+    )
+    assert res.status_code == 200, res.text
+    canceled = next(b for b in res.json()["blocks"] if b["id"] == block["id"])
+    occ = [o for o in canceled["occurrences"] if o["date"] == anchor]
+    assert occ and occ[0]["canceled"] is True
+
+    after = _seances(client, session, block["courseId"])
+    assert not any(s["dateDebut"].startswith(anchor) for s in after)
+    # Only that one séance disappeared.
+    assert len(after) == len(before) - 1
+
+
+def test_reset_occurrence_restores_pattern(client):
+    st = _session_with_blocks(client)
+    session = st["session"]
+    block = st["blocks"][0]
+    anchor = _anchor_for(st, block)
+
+    client.post(
+        "/editor/api/occurrence/cancel",
+        json={"session": session, "blockId": block["id"], "date": anchor},
+    )
+    res = client.post(
+        "/editor/api/occurrence/reset",
+        json={"session": session, "blockId": block["id"], "date": anchor},
+    )
+    assert res.status_code == 200, res.text
+    restored = next(b for b in res.json()["blocks"] if b["id"] == block["id"])
+    assert not restored["occurrences"]
+
+    seances = _seances(client, session, block["courseId"])
+    assert any(s["dateDebut"].startswith(anchor) for s in seances)
+
+
+def test_reset_occurrence_without_override_errors(client):
+    st = _session_with_blocks(client)
+    session = st["session"]
+    block = st["blocks"][0]
+    anchor = _anchor_for(st, block)
+    res = client.post(
+        "/editor/api/occurrence/reset",
+        json={"session": session, "blockId": block["id"], "date": anchor},
+    )
+    assert res.status_code == 400
