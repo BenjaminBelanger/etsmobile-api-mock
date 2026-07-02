@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Horaire — ÉTS Mock</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/editor/assets/styles.css" />
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand__mark">É</span>
+          <div class="brand__text">
+            <h1>Horaire</h1>
+            <p>Éditeur de grille — serveur mock ÉTSMobile</p>
+          </div>
+        </div>
+
+        <div class="topbar__center">
+          <label class="session-picker">
+            <span>Session</span>
+            <select id="sessionSelect"></select>
+          </label>
+        </div>
+
+        <div class="toolbar">
+          <button class="btn btn--ghost" id="undoBtn" title="Annuler (Ctrl+Z)">
+            <span class="btn__icon">↶</span> Annuler
+          </button>
+          <button class="btn btn--ghost" id="redoBtn" title="Rétablir (Ctrl+Y)">
+            <span class="btn__icon">↷</span> Rétablir
+          </button>
+          <button class="btn btn--ghost" id="resetBtn" title="Réinitialiser la session">
+            Réinitialiser
+          </button>
+          <button class="btn btn--solid" id="addBtn">
+            <span class="btn__icon">＋</span> Ajouter un cours
+          </button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="board" id="board">
+          <div class="week" id="week">
+            <div class="week__gutterhead"></div>
+            <div class="week__dayheads" id="dayHeads"></div>
+            <div class="week__gutter" id="gutter"></div>
+            <div class="week__grid" id="grid"></div>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <div class="panel">
+            <div class="panel__head">
+              <h2>Corbeille</h2>
+              <span class="panel__count" id="trashCount">0</span>
+            </div>
+            <p class="panel__hint">
+              Les cours supprimés vivent ici. Remettez-les d'un clic.
+            </p>
+            <ul class="trash" id="trashList"></ul>
+          </div>
+
+          <div class="panel panel--legend">
+            <div class="panel__head"><h2>Repères</h2></div>
+            <ul class="legend">
+              <li><span class="legend__swatch swatch--cours"></span>Cours</li>
+              <li><span class="legend__swatch swatch--labo"></span>Laboratoire</li>
+            </ul>
+            <dl class="tips">
+              <dt>Déplacer</dt><dd>glissez un bloc</dd>
+              <dt>Redimensionner</dt><dd>tirez les poignées</dd>
+              <dt>Supprimer</dt><dd>× sur le bloc, ou touche Suppr</dd>
+              <dt>Annuler / Rétablir</dt><dd>Ctrl+Z · Ctrl+Y</dd>
+            </dl>
+          </div>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <span id="statusText">Prêt.</span>
+        <span class="statusbar__dot" id="statusDot"></span>
+      </footer>
+    </div>
+
+    <!-- Add course dialog -->
+    <div class="modal" id="addModal" hidden>
+      <div class="modal__scrim" data-close></div>
+      <form class="modal__card" id="addForm">
+        <header class="modal__head">
+          <h2>Ajouter un cours</h2>
+          <button type="button" class="modal__x" data-close aria-label="Fermer">×</button>
+        </header>
+
+        <div class="field">
+          <label for="fSigle">Sigle</label>
+          <input id="fSigle" name="sigle" list="catalogList" placeholder="LOG430" autocomplete="off" required />
+          <datalist id="catalogList"></datalist>
+        </div>
+
+        <div class="field">
+          <label for="fTitre">Titre</label>
+          <input id="fTitre" name="titre" placeholder="Rempli automatiquement si connu" />
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="fJour">Jour</label>
+            <select id="fJour" name="jour"></select>
+          </div>
+          <div class="field">
+            <label for="fKind">Type</label>
+            <select id="fKind" name="kind">
+              <option value="cours">Cours</option>
+              <option value="labo">Laboratoire</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="fStart">Début</label>
+            <input id="fStart" name="heureDebut" type="time" value="09:00" step="900" />
+          </div>
+          <div class="field">
+            <label for="fEnd">Fin</label>
+            <input id="fEnd" name="heureFin" type="time" value="12:30" step="900" />
+          </div>
+        </div>
+
+        <footer class="modal__foot">
+          <button type="button" class="btn btn--ghost" data-close>Annuler</button>
+          <button type="submit" class="btn btn--solid">Ajouter</button>
+        </footer>
+      </form>
+    </div>
+
+    <div class="toast" id="toast" hidden></div>
+
+    <script src="/editor/assets/app.js"></script>
+  </body>
+</html>

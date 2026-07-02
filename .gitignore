@@ -8,3 +8,6 @@ build/
 venv/
 env/
 .venv/
+
+# Schedule editor runtime state (edits made through the /editor UI)
+seed/schedule_overrides.json

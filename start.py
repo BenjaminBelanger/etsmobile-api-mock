@@ -268,6 +268,8 @@ def main():
         f"\nDémarrage du serveur avec le profil « {profile_display} »"
         f"{scenario_display}{week_display}...\n"
     )
+    print("  API   : http://localhost:8080/docs")
+    print("  Horaire (éditeur visuel) : http://localhost:8080/editor\n")
 
     subprocess.run(
         [

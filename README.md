@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
 - [Managing Courses](#managing-courses)
@@ -25,7 +26,40 @@ python start.py
 
 This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
 
-## Supported Format
+## Schedule Editor UI
+
+A visual weekly-schedule editor is served at **`http://localhost:8080/editor`**
+(the root `/` redirects there). It renders the active session's courses in a
+Monday–Saturday week grid and lets you reshape the schedule directly — every
+change is written back to the mock and immediately reflected by the API
+endpoints (`listeCours`, `listeHoraireEtProf`, `lireHoraireDesSeances`, …), so
+the Flutter app sees the edited schedule.
+
+What you can do:
+
+| Action | How |
+|--------|-----|
+| **Move** a course/lab | Drag the block to another day or time (duration is preserved) |
+| **Resize** | Drag the top or bottom handle to change start/end (snaps to 15 min) |
+| **Delete** | Click the `×` on a block, or select and press `Delete` — it goes to the trash |
+| **Restore** | Click *Restaurer* next to a course in the trash panel |
+| **Add** | *Ajouter un cours* — pick a sigle (autocompletes from the catalog), day, time, and type |
+| **Undo / Redo** | Toolbar buttons or `Ctrl+Z` / `Ctrl+Y` |
+| **Reset** | *Réinitialiser* reverts a session to its original generated schedule |
+| **Switch session** | Session dropdown in the header |
+
+### How edits are stored
+
+Edits are persisted per session to `seed/schedule_overrides.json`
+(git-ignored). When an override exists for a session, its courses replace the
+generated/seed courses for that session everywhere in the API. Undo/redo
+history lives in memory and resets when the server restarts; *Réinitialiser*
+(or deleting `seed/schedule_overrides.json`) clears an override entirely.
+
+The editor is also a plain JSON API under `/editor/api/*` — see
+`http://localhost:8080/docs` for the request schemas.
+
+
 
 The server supports both JSON (default) and XML responses:
 

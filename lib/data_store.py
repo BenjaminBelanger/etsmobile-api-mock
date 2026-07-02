@@ -1,5 +1,6 @@
 """Loads seed files, applies profiles/scenarios, caches results."""
 
+import copy
 import json
 import os
 
@@ -7,6 +8,8 @@ from . import profiles, scenarios, sessions
 from ._paths import SEED
 from .compute import build_all_course_data
 from .resource_specs import COURSES, GENERATED_FILENAMES, SESSIONS
+
+OVERRIDES_FILENAME = "schedule_overrides.json"
 
 DEFAULT_PROFILE = "normal"
 DEFAULT_SCENARIO = "none"
@@ -81,14 +84,43 @@ def _build_courses(seed_courses, pools, professors):
 
 
 _seed_courses = None
+_base_courses = None
 _professors = None
 _pools = None
 _generated = None
 _cache: dict[str, object] = {}
 
 
+def _load_overrides() -> dict:
+    """Read the schedule-editor override file (session -> {courses, trash})."""
+    path = SEED / OVERRIDES_FILENAME
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _apply_overrides(built_courses: list[dict]) -> list[dict]:
+    """Replace a session's courses with editor overrides when present.
+
+    Only the ``courses`` list of each override entry feeds the API; trashed
+    courses are intentionally dropped so deletions take effect.
+    """
+    overrides = _load_overrides()
+    if not overrides:
+        return built_courses
+
+    overridden_sessions = set(overrides.keys())
+    result = [c for c in built_courses if c.get("session") not in overridden_sessions]
+    for session_code, entry in overrides.items():
+        result.extend(copy.deepcopy(entry.get("courses", [])))
+    return result
+
+
 def _initialize():
-    global _seed_courses, _professors, _pools, _generated
+    global _seed_courses, _base_courses, _professors, _pools, _generated
     _refresh_config()
     _seed_courses = json.loads((SEED / COURSES.filename).read_text(encoding="utf-8"))
     _professors = json.loads((SEED / "professors.json").read_text(encoding="utf-8"))
@@ -103,6 +135,8 @@ def _initialize():
     _seed_courses = _seed_courses + sessions.generate_random_courses(
         NEXT_SESSION, _seed_courses, _pools, _professors
     )
+    _base_courses = copy.deepcopy(_seed_courses)
+    _seed_courses = _apply_overrides(_seed_courses)
     _generated = build_all_course_data(
         sessions.get_raw_sessions(),
         _seed_courses,
@@ -151,3 +185,41 @@ def load_session(name: str, session: str, default=None):
 
 def empty_evaluation() -> dict:
     return {**_EMPTY_EVALUATION_SUMMARY, "liste": []}
+
+
+def get_session_courses(session: str, *, base: bool = False) -> list[dict]:
+    """Return deep copies of the seed-format course records for a session.
+
+    ``base=True`` returns the pristine generated/seed courses (before any
+    editor overrides), used to reset a session back to its original schedule.
+    """
+    source = _base_courses if base else _seed_courses
+    return [copy.deepcopy(c) for c in (source or []) if c.get("session") == session]
+
+
+def get_sessions_with_courses() -> list[str]:
+    """Session codes offered in the editor, newest first.
+
+    Uses the pristine (pre-override) courses plus any session that has an
+    override entry, so a session stays selectable even after all of its
+    courses have been deleted.
+    """
+    codes = {c.get("session") for c in (_base_courses or []) if c.get("session")}
+    codes.update(k for k in _load_overrides().keys() if k)
+    return sorted(codes, key=sessions.session_rank, reverse=True)
+
+
+def resolve_default_session() -> str:
+    """The session the editor should open by default (active if it has courses)."""
+    available = get_sessions_with_courses()
+    if ACTIVE_SESSION in available:
+        return ACTIVE_SESSION
+    return available[0] if available else ACTIVE_SESSION
+
+
+def get_pools() -> dict:
+    return copy.deepcopy(_pools or {})
+
+
+def get_professors() -> dict:
+    return copy.deepcopy(_professors or {})
