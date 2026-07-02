@@ -41,7 +41,6 @@
     resetBtn: document.getElementById("resetBtn"),
     addBtn: document.getElementById("addBtn"),
     statusText: document.getElementById("statusText"),
-    statusDot: document.getElementById("statusDot"),
     addModal: document.getElementById("addModal"),
     addForm: document.getElementById("addForm"),
     catalogList: document.getElementById("catalogList"),
@@ -155,7 +154,6 @@
   function setStatus(text, busy) {
     el.statusText.textContent = text;
     state.busy = !!busy;
-    el.statusDot.classList.toggle("is-busy", !!busy);
   }
 
   let toastTimer = null;
@@ -245,6 +243,24 @@
     const last = semester.weeks[semester.weeks.length - 1].index;
     el.weekPrev.disabled = state.weekIndex <= first;
     el.weekNext.disabled = state.weekIndex >= last;
+    sizeWeekSelect();
+  }
+
+  // A native <select> is as wide as its longest option, which leaves a large
+  // gap before the chevron on shorter weeks. Size it to the current selection.
+  function sizeWeekSelect() {
+    const sel = el.weekSelect;
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt) return;
+    const cs = getComputedStyle(sel);
+    const canvas = sizeWeekSelect._c || (sizeWeekSelect._c = document.createElement("canvas"));
+    const ctx = canvas.getContext("2d");
+    ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+    const textW = ctx.measureText(opt.textContent).width;
+    const padL = parseFloat(cs.paddingLeft) || 0;
+    const padR = parseFloat(cs.paddingRight) || 0;
+    const bord = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+    sel.style.width = `${Math.ceil(textW + padL + padR + bord + 2)}px`;
   }
 
   function selectWeek(index) {
@@ -338,7 +354,9 @@
         getComputedStyle(document.documentElement).getPropertyValue("--day-head-h"),
         10
       ) || 60;
-    const avail = boardH - headH - 2;
+    // Leave room for the last hour label, which is vertically centred on the
+    // bottom gridline and therefore overhangs the grid by half its height.
+    const avail = boardH - headH - 14;
     if (avail > 0) state.pxPerMin = Math.max(0.5, avail / total);
   }
 
@@ -811,11 +829,13 @@
   el.scopeToggle.querySelectorAll(".scope__btn").forEach((b) =>
     b.addEventListener("click", () => setScope(b.dataset.scope))
   );
-  el.weekSelect.addEventListener("change", (e) => selectWeek(Number(e.target.value)));
+  el.weekSelect.addEventListener("change", (e) => {
+    sizeWeekSelect();
+    selectWeek(Number(e.target.value));
+  });
   el.weekPrev.addEventListener("click", () => selectWeek(state.weekIndex - 1));
   el.weekNext.addEventListener("click", () => selectWeek(state.weekIndex + 1));
-  el.addBtn.addEventListener("click", openModal);
-  el.undoBtn.addEventListener("click", () =>
+  el.addBtn.addEventListener("click", openModal);  el.undoBtn.addEventListener("click", () =>
     apiPost("/undo", { session: state.session })
   );
   el.redoBtn.addEventListener("click", () =>
@@ -870,6 +890,14 @@
       renderBlocks(false);
     }
   });
+
+  // Re-measure the week select once webfonts finish loading, so its width
+  // matches the final rendered text rather than the fallback font.
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(() => {
+      if (!el.weekPicker.hidden) sizeWeekSelect();
+    });
+  }
 
   /* ----------------------------- boot ----------------------------- */
   (async () => {
