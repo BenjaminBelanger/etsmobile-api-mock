@@ -348,20 +348,89 @@
     let selectionAlive = false;
     const occMode = occurrenceMode();
     el.board.classList.toggle("is-occurrence", occMode);
+
+    // Group visible blocks by day so overlapping ones can be laid out
+    // side by side instead of stacking on top of each other.
+    const byDay = new Map();
     (state.data.blocks || []).forEach((blk) => {
       const eff = effectiveForWeek(blk);
       const col = columnFor(eff.jour);
       if (!col) return;
-      const node = buildBlock(blk, eff, animate, occMode);
-      if (blk.courseId === state.selectedCourseId) {
-        node.classList.add("is-selected");
-        selectionAlive = true;
-      }
-      col.appendChild(node);
-      count++;
+      const start = toMin(eff.heureDebut);
+      const end = toMin(eff.heureFin);
+      const item = { blk, eff, col, start, end, lane: 0, lanes: 1 };
+      if (!byDay.has(eff.jour)) byDay.set(eff.jour, []);
+      byDay.get(eff.jour).push(item);
     });
+
+    byDay.forEach((items) => {
+      assignLanes(items);
+      items.forEach((it) => {
+        const node = buildBlock(it.blk, it.eff, animate, occMode);
+        if (it.lanes > 1) applyLaneLayout(node, it.lane, it.lanes);
+        if (it.blk.courseId === state.selectedCourseId) {
+          node.classList.add("is-selected");
+          selectionAlive = true;
+        }
+        it.col.appendChild(node);
+        count++;
+      });
+    });
+
     if (!selectionAlive) state.selectedCourseId = null;
     renderEmpty(count === 0);
+  }
+
+  // Assign each block a horizontal lane within its day. Blocks whose times
+  // overlap form a cluster and are split across as many lanes as needed.
+  function assignLanes(items) {
+    items.sort((a, b) => a.start - b.start || a.end - b.end);
+    let cluster = [];
+    let clusterEnd = -Infinity;
+
+    const flush = () => {
+      if (!cluster.length) return;
+      const colEnds = [];
+      cluster.forEach((it) => {
+        let placed = false;
+        for (let c = 0; c < colEnds.length; c++) {
+          if (it.start >= colEnds[c]) {
+            it.lane = c;
+            colEnds[c] = it.end;
+            placed = true;
+            break;
+          }
+        }
+        if (!placed) {
+          it.lane = colEnds.length;
+          colEnds.push(it.end);
+        }
+      });
+      const total = colEnds.length;
+      cluster.forEach((it) => (it.lanes = total));
+      cluster = [];
+      clusterEnd = -Infinity;
+    };
+
+    items.forEach((it) => {
+      if (cluster.length && it.start >= clusterEnd) flush();
+      cluster.push(it);
+      clusterEnd = Math.max(clusterEnd, it.end);
+    });
+    flush();
+  }
+
+  function applyLaneLayout(node, lane, lanes) {
+    const gap = 3;
+    node.style.left = `calc(5px + (100% - 10px) * ${lane} / ${lanes})`;
+    node.style.width = `calc((100% - 10px) / ${lanes} - ${gap}px)`;
+    node.style.right = "auto";
+  }
+
+  function clearLaneLayout(node) {
+    node.style.left = "";
+    node.style.width = "";
+    node.style.right = "";
   }
 
   function selectCourse(courseId) {
@@ -531,6 +600,10 @@
     const startMin0 = Number(node.dataset.start);
     const dur0 = Number(node.dataset.dur);
     const jour0 = node.dataset.jour;
+    const origIdx = Math.max(
+      0,
+      state.days.findIndex((d) => String(d.jour) === String(jour0))
+    );
     const anchor0 = node.dataset.anchor || null;
     const startY = e.clientY;
     const startX = e.clientX;
@@ -539,6 +612,8 @@
     const tag = node.querySelector(".block__tag");
 
     node.classList.add("is-dragging");
+    // Span the full column while dragging so lane-splitting doesn't interfere.
+    clearLaneLayout(node);
 
     const onMove = (ev) => {
       const dy = ev.clientY - startY;
@@ -553,8 +628,11 @@
         idx = Math.max(0, Math.min(idx, state.days.length - 1));
         const jour = state.days[idx].jour;
         cur = { jour, start: ns, dur: dur0 };
-        placeInColumn(node, jour);
+        // Translate across columns instead of re-parenting: re-parenting a
+        // node with pointer capture releases the capture and aborts the drag,
+        // which used to make dragging stop at the next weekday.
         node.style.top = `${minToPx(ns)}px`;
+        node.style.transform = `translateX(${(idx - origIdx) * colWidth}px)`;
         highlightColumn(jour);
         tag.textContent = `${state.days[idx].short} ${toHHMM(ns)}`;
       } else if (mode === "resize-bottom") {
@@ -598,14 +676,6 @@
     node.addEventListener("pointercancel", onUp);
   }
 
-  function placeInColumn(node, jour) {
-    if (node.dataset.jour === String(jour)) return;
-    const col = columnFor(jour);
-    if (col) {
-      col.appendChild(node);
-      node.dataset.jour = jour;
-    }
-  }
   function highlightColumn(jour) {
     clearHighlight();
     const col = columnFor(jour);
