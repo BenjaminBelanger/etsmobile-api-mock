@@ -1,5 +1,3 @@
-"""Interactive launcher for the mock server (profile/scenario/schedule selection)."""
-
 import json
 import os
 import signal
@@ -8,8 +6,6 @@ import sys
 
 from lib._paths import SEED
 
-# Keep in sync with lib.data_store.OVERRIDES_FILENAME (imported lazily to avoid
-# triggering data_store's heavy module-level initialization in this launcher).
 OVERRIDES_FILENAME = "schedule_overrides.json"
 
 DAY_NAMES = {
@@ -236,9 +232,6 @@ def _configure_custom() -> dict | None:
 
 
 def _clear_overrides() -> None:
-    """Remove any persisted schedule-editor overrides so each launch starts from
-    the freshly generated schedule instead of restoring the previous session's
-    UI edits."""
     path = SEED / OVERRIDES_FILENAME
     try:
         if path.exists():
@@ -249,9 +242,6 @@ def _clear_overrides() -> None:
 
 
 def _stop_existing_servers() -> None:
-    """Kill any already-running instance of this mock server before starting a
-    new one, so a stale ``--reload`` process never keeps port 8080 (or its
-    reloader worker) alive. Best-effort: failures here never block startup."""
     self_pid = os.getpid()
 
     def _pids_matching() -> list[int]:
@@ -301,7 +291,6 @@ def _stop_existing_servers() -> None:
     for pid in pids:
         try:
             if os.name == "nt":
-                # /T also terminates the reloader's worker child process.
                 subprocess.run(
                     ["taskkill", "/F", "/T", "/PID", str(pid)],
                     capture_output=True,

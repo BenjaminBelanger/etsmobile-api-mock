@@ -92,7 +92,6 @@ _cache: dict[str, object] = {}
 
 
 def _load_overrides() -> dict:
-    """Read the schedule-editor override file (session -> {courses, trash})."""
     path = SEED / OVERRIDES_FILENAME
     if not path.exists():
         return {}
@@ -103,11 +102,6 @@ def _load_overrides() -> dict:
 
 
 def _apply_overrides(built_courses: list[dict]) -> list[dict]:
-    """Replace a session's courses with editor overrides when present.
-
-    Only the ``courses`` list of each override entry feeds the API; trashed
-    courses are intentionally dropped so deletions take effect.
-    """
     overrides = _load_overrides()
     if not overrides:
         return built_courses
@@ -188,29 +182,17 @@ def empty_evaluation() -> dict:
 
 
 def get_session_courses(session: str, *, base: bool = False) -> list[dict]:
-    """Return deep copies of the seed-format course records for a session.
-
-    ``base=True`` returns the pristine generated/seed courses (before any
-    editor overrides), used to reset a session back to its original schedule.
-    """
     source = _base_courses if base else _seed_courses
     return [copy.deepcopy(c) for c in (source or []) if c.get("session") == session]
 
 
 def get_sessions_with_courses() -> list[str]:
-    """Session codes offered in the editor, newest first.
-
-    Uses the pristine (pre-override) courses plus any session that has an
-    override entry, so a session stays selectable even after all of its
-    courses have been deleted.
-    """
     codes = {c.get("session") for c in (_base_courses or []) if c.get("session")}
     codes.update(k for k in _load_overrides().keys() if k)
     return sorted(codes, key=sessions.session_rank, reverse=True)
 
 
 def resolve_default_session() -> str:
-    """The session the editor should open by default (active if it has courses)."""
     available = get_sessions_with_courses()
     if ACTIVE_SESSION in available:
         return ACTIVE_SESSION

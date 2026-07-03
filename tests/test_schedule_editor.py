@@ -1,5 +1,3 @@
-"""Tests for the schedule editor: mutations persist and drive the mock API."""
-
 import pytest
 from fastapi.testclient import TestClient
 
@@ -18,7 +16,6 @@ def _clear_editor_state():
 
 @pytest.fixture()
 def client():
-    """Fresh editor state per test; remove the override file before and after."""
     OVERRIDES.unlink(missing_ok=True)
     _clear_editor_state()
     data_store.reload()
@@ -85,18 +82,15 @@ def test_semester_weeks_exposed(client):
     for key in ("index", "start", "end", "label", "range", "dates"):
         assert key in first
     assert first["index"] == 1
-    # Every editable weekday (Lundi..Samedi) maps to a real ISO date.
     for jour in ("1", "2", "3", "4", "5", "6"):
         assert jour in first["dates"]
-        assert len(first["dates"][jour]) == 10  # YYYY-MM-DD
-    # The first week starts on a Monday (weekday 0) and days are consecutive.
+        assert len(first["dates"][jour]) == 10
     from datetime import date
 
     assert date.fromisoformat(first["start"]).weekday() == 0
     assert date.fromisoformat(first["dates"]["2"]) - date.fromisoformat(
         first["dates"]["1"]
     ) == (date.fromisoformat(first["dates"]["3"]) - date.fromisoformat(first["dates"]["2"]))
-    # Weeks are indexed sequentially and a week apart.
     if len(weeks) > 1:
         assert weeks[1]["index"] == 2
         assert (
@@ -312,7 +306,6 @@ def test_index_served(client):
 
 
 def _anchor_for(st, block, week_index=1):
-    """The ISO date of a block's occurrence in a given semester week."""
     week = st["meta"]["semester"]["weeks"][week_index]
     return week["dates"][block["jour"]]
 
@@ -348,13 +341,10 @@ def test_set_occurrence_moves_only_that_week(client):
     )
     assert res.status_code == 200, res.text
     moved = next(b for b in res.json()["blocks"] if b["id"] == block["id"])
-    # The weekly pattern is untouched...
     assert moved["heureDebut"] == block["heureDebut"]
-    # ...but a single dated override now exists for that occurrence.
     occ = [o for o in moved["occurrences"] if o["date"] == anchor]
     assert occ and occ[0]["heureDebut"] == "18:00" and occ[0]["heureFin"] == "20:00"
 
-    # The dated séances feed reflects the moved time on that date only.
     seances = _seances(client, session, block["courseId"])
     on_anchor = [s for s in seances if s["dateDebut"].startswith(anchor)]
     assert on_anchor and on_anchor[0]["dateDebut"] == f"{anchor}T18:00:00"
@@ -382,7 +372,6 @@ def test_cancel_occurrence_removes_only_that_seance(client):
 
     after = _seances(client, session, block["courseId"])
     assert not any(s["dateDebut"].startswith(anchor) for s in after)
-    # Only that one séance disappeared.
     assert len(after) == len(before) - 1
 
 

@@ -1,5 +1,3 @@
-"""Routes for the schedule editor UI: JSON API under /editor/api and the SPA."""
-
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel

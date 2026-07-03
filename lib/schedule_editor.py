@@ -1,15 +1,3 @@
-"""In-memory + persisted editable weekly schedule for the /editor UI.
-
-The editor keeps, per session, an editable document::
-
-    {"courses": [<seed-format course record>, ...],
-     "trash":   [<seed-format course record>, ...]}
-
-The ``courses`` list overrides what the mock API serves for that session
-(written to ``seed/schedule_overrides.json`` and picked up by ``data_store``).
-Undo/redo history is kept in memory and resets when the server restarts.
-"""
-
 import copy
 import json
 import random
@@ -20,9 +8,8 @@ from . import data_store, sessions
 from ._paths import SEED
 from .data_store import OVERRIDES_FILENAME
 
-# Week grid bounds and granularity (minutes).
-DAY_START_MIN = 8 * 60  # 08:00
-DAY_END_MIN = 22 * 60  # 22:00
+DAY_START_MIN = 8 * 60
+DAY_END_MIN = 22 * 60
 SNAP_MIN = 15
 MIN_DURATION_MIN = 30
 MAX_HISTORY = 100
@@ -54,7 +41,6 @@ MONTHS_FR = [
 
 
 def _session_dates(session_code: str) -> tuple[str | None, str | None]:
-    """Return (dateDebut, dateFin) ISO strings for a session, if known."""
     for entry in sessions.get_raw_sessions():
         if entry.get("abrege") == session_code:
             return entry.get("dateDebut"), entry.get("dateFin")
@@ -67,13 +53,6 @@ def _fr_date_label(iso: str) -> str:
 
 
 def _build_semester(session_code: str) -> dict | None:
-    """Expand a session into the concrete calendar weeks/days it spans.
-
-    Each editable weekday (Lundi..Samedi) is mapped to its real ISO date for
-    every week from the Monday of the week containing ``dateDebut`` through
-    ``dateFin``. Lets the editor navigate specific weeks and days rather than a
-    single generic week.
-    """
     start_str, end_str = _session_dates(session_code)
     if not start_str or not end_str:
         return None
@@ -92,7 +71,7 @@ def _build_semester(session_code: str) -> dict | None:
             jour: (cursor + timedelta(days=int(jour) - 1)).isoformat()
             for jour in EDITABLE_DAYS
         }
-        week_end = cursor + timedelta(days=5)  # Samedi
+        week_end = cursor + timedelta(days=5)
         weeks.append(
             {
                 "index": index,
@@ -110,19 +89,15 @@ def _build_semester(session_code: str) -> dict | None:
     return {"dateDebut": start_str, "dateFin": end_str, "weeks": weeks}
 
 _lock = threading.RLock()
-# session -> {"courses": [...], "trash": [...]} (source of truth in memory)
 _docs: dict[str, dict] = {}
 _undo: dict[str, list] = {}
 _redo: dict[str, list] = {}
 
 
 class EditorError(ValueError):
-    """Raised for invalid editor operations (mapped to HTTP 400)."""
+    pass
 
 
-# --------------------------------------------------------------------------- #
-# Time helpers
-# --------------------------------------------------------------------------- #
 def _to_min(hhmm: str) -> int:
     hours, minutes = hhmm.split(":")
     return int(hours) * 60 + int(minutes)
@@ -137,7 +112,6 @@ def _snap(total: int) -> int:
 
 
 def _clamp_range(start: int, end: int) -> tuple[int, int]:
-    """Keep a start/end pair inside the grid with a minimum duration."""
     duration = max(MIN_DURATION_MIN, end - start)
     start = max(DAY_START_MIN, min(start, DAY_END_MIN - MIN_DURATION_MIN))
     end = min(DAY_END_MIN, start + duration)
@@ -145,11 +119,7 @@ def _clamp_range(start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-# --------------------------------------------------------------------------- #
-# Document lifecycle
-# --------------------------------------------------------------------------- #
 def _persist() -> None:
-    """Write all materialized docs to the overrides file and reload the API."""
     payload = {
         session: {"courses": doc["courses"], "trash": doc["trash"]}
         for session, doc in _docs.items()
@@ -162,14 +132,10 @@ def _persist() -> None:
 
 
 def _load_doc(session: str) -> dict:
-    """Return the editable doc for a session, materializing it on first use.
-
-    Materializing does not persist; the doc only hits disk once it is mutated.
-    """
     if session in _docs:
         return _docs[session]
 
-    overrides = data_store._load_overrides()  # noqa: SLF001 - internal helper
+    overrides = data_store._load_overrides()
     if session in overrides:
         entry = overrides[session]
         doc = {
@@ -185,7 +151,6 @@ def _load_doc(session: str) -> dict:
 
 
 def _snapshot(session: str) -> None:
-    """Push the current doc onto the undo stack and clear redo."""
     doc = _docs[session]
     stack = _undo.setdefault(session, [])
     stack.append(copy.deepcopy(doc))
@@ -194,9 +159,6 @@ def _snapshot(session: str) -> None:
     _redo[session] = []
 
 
-# --------------------------------------------------------------------------- #
-# Course / block lookup
-# --------------------------------------------------------------------------- #
 def _course_key(course: dict) -> str:
     return f"{course['sigle']}-{course['groupe']}"
 
@@ -209,7 +171,6 @@ def _find_course(doc: dict, course_id: str) -> dict:
 
 
 def _blocks_of(course: dict) -> list[dict]:
-    """A course's schedule dicts: index 0 = primary, 1.. = extraActivities."""
     blocks = []
     if course.get("schedule"):
         blocks.append(course["schedule"])
@@ -220,7 +181,6 @@ def _blocks_of(course: dict) -> list[dict]:
 
 
 def _resolve_block(doc: dict, block_id: str) -> tuple[dict, int, dict]:
-    """Return (course, index, schedule-dict) for a block id ``courseId:index``."""
     course_id, _, raw_index = block_id.rpartition(":")
     course = _find_course(doc, course_id)
     try:
@@ -240,9 +200,6 @@ def _resolve_block(doc: dict, block_id: str) -> tuple[dict, int, dict]:
     return course, index, extras[index - 1]
 
 
-# --------------------------------------------------------------------------- #
-# Per-occurrence overrides
-# --------------------------------------------------------------------------- #
 def _validate_date(value: str) -> str:
     try:
         return date.fromisoformat(value).isoformat()
@@ -271,9 +228,6 @@ def _upsert_occurrence(course: dict, index: int, day: str, **fields) -> dict:
     return override
 
 
-# --------------------------------------------------------------------------- #
-# Normalized view for the frontend
-# --------------------------------------------------------------------------- #
 def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
     code = schedule.get("codeActivite", "C")
     kind = {"C": "cours", "L": "labo", "TP": "tp"}.get(code, "cours")
@@ -368,9 +322,6 @@ def get_state(session: str) -> dict:
         }
 
 
-# --------------------------------------------------------------------------- #
-# Mutations
-# --------------------------------------------------------------------------- #
 def _apply_time(schedule: dict, jour: str, start_min: int, end_min: int) -> None:
     start_min, end_min = _clamp_range(_snap(start_min), _snap(end_min))
     schedule["jour"] = str(jour)
@@ -415,7 +366,6 @@ def set_occurrence(
     heure_debut: str,
     heure_fin: str,
 ) -> dict:
-    """Override a single dated occurrence (move/resize just that week)."""
     with _lock:
         doc = _load_doc(session)
         course, index, _ = _resolve_block(doc, block_id)
@@ -441,7 +391,6 @@ def set_occurrence(
 
 
 def cancel_occurrence(session: str, block_id: str, day: str) -> dict:
-    """Cancel a single dated occurrence without touching the weekly pattern."""
     with _lock:
         doc = _load_doc(session)
         course, index, _ = _resolve_block(doc, block_id)
@@ -453,7 +402,6 @@ def cancel_occurrence(session: str, block_id: str, day: str) -> dict:
 
 
 def reset_occurrence(session: str, block_id: str, day: str) -> dict:
-    """Drop a single occurrence override, restoring the weekly pattern."""
     with _lock:
         doc = _load_doc(session)
         course, index, _ = _resolve_block(doc, block_id)
@@ -602,7 +550,6 @@ def redo(session: str) -> dict:
 
 
 def reset_session(session: str) -> dict:
-    """Revert a session to its pristine generated/seed schedule."""
     with _lock:
         _load_doc(session)
         _snapshot(session)

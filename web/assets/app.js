@@ -1,6 +1,3 @@
-/* ------------------------------------------------------------------ *
- *  Horaire — schedule editor client
- * ------------------------------------------------------------------ */
 (() => {
   "use strict";
 
@@ -51,7 +48,6 @@
     toast: document.getElementById("toast"),
   };
 
-  /* ---------------------------- helpers --------------------------- */
   const toMin = (hhmm) => {
     const [h, m] = hhmm.split(":").map(Number);
     return h * 60 + m;
@@ -101,7 +97,7 @@
     if (!semester || !semester.weeks.length) return null;
     const today = todayISO();
     for (const w of semester.weeks) {
-      // Week spans its Monday (w.start) through the following Sunday.
+
       const monday = new Date(w.start + "T00:00:00");
       const sunday = new Date(monday.getTime() + 6 * 864e5)
         .toISOString()
@@ -118,13 +114,11 @@
 
   const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
 
-  // The date the recurring pattern would produce for a block in the current week.
   function anchorFor(blk) {
     const week = currentWeek();
     return week && week.dates ? week.dates[blk.jour] : null;
   }
 
-  // Where a block actually sits in the selected week (applying any override).
   function effectiveForWeek(blk) {
     const anchor = anchorFor(blk);
     const ov =
@@ -171,7 +165,6 @@
     toastTimer = setTimeout(() => (el.toast.hidden = true), 2600);
   }
 
-  /* ------------------------------ api ----------------------------- */
   async function apiGet(session) {
     const res = await fetch(`${API}/state?session=${encodeURIComponent(session)}`);
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
@@ -197,7 +190,6 @@
     }
   }
 
-  /* --------------------------- rendering -------------------------- */
   function applyState(data, opts) {
     const prevSession = state.session;
     state.session = data.session;
@@ -249,16 +241,12 @@
     const last = semester.weeks[semester.weeks.length - 1].index;
     el.weekPrev.disabled = state.weekIndex <= first;
     el.weekNext.disabled = state.weekIndex >= last;
-    // "Today" jumps back to the current week; only show it when today falls
-    // within the semester and we're not already viewing that week.
+
     const todayIdx = todayWeekIndex(semester);
     el.weekToday.hidden = todayIdx == null || todayIdx === state.weekIndex;
     sizeWeekSelect();
   }
 
-  // A native <select> is as wide as its longest option. Size it to the widest
-  // week label so the width stays constant as you navigate — otherwise the
-  // ‹ / › buttons shift and you have to re-aim the mouse.
   function sizeWeekSelect() {
     const sel = el.weekSelect;
     if (!sel.options.length) return;
@@ -302,7 +290,7 @@
     fitPxPerMin();
     const week = currentWeek();
     const today = todayISO();
-    // Day headers
+
     el.dayHeads.innerHTML = "";
     state.days.forEach((d) => {
       const h = document.createElement("div");
@@ -318,7 +306,6 @@
 
     const height = durToPx(totalMin());
 
-    // Hour gutter
     el.gutter.innerHTML = "";
     el.gutter.style.height = `${height}px`;
     for (let m = state.dayStartMin; m <= state.dayEndMin; m += 30) {
@@ -330,7 +317,6 @@
       el.gutter.appendChild(label);
     }
 
-    // Day columns with gridlines
     el.grid.innerHTML = "";
     el.grid.style.height = `${height}px`;
     state.days.forEach((d) => {
@@ -357,7 +343,6 @@
     return el.grid.querySelector(`.daycol[data-jour="${jour}"]`);
   }
 
-  // Scale the grid so the whole day fits the board without vertical scroll.
   function fitPxPerMin() {
     const boardH = el.board.clientHeight;
     const total = totalMin();
@@ -367,8 +352,7 @@
         getComputedStyle(document.documentElement).getPropertyValue("--day-head-h"),
         10
       ) || 60;
-    // Leave room for the last hour label, which is vertically centred on the
-    // bottom gridline and therefore overhangs the grid by half its height.
+
     const avail = boardH - headH - 14;
     if (avail > 0) state.pxPerMin = Math.max(0.5, avail / total);
   }
@@ -380,8 +364,6 @@
     const occMode = occurrenceMode();
     el.board.classList.toggle("is-occurrence", occMode);
 
-    // Group visible blocks by day so overlapping ones can be laid out
-    // side by side instead of stacking on top of each other.
     const byDay = new Map();
     (state.data.blocks || []).forEach((blk) => {
       const eff = effectiveForWeek(blk);
@@ -412,8 +394,6 @@
     renderEmpty(count === 0);
   }
 
-  // Assign each block a horizontal lane within its day. Blocks whose times
-  // overlap form a cluster and are split across as many lanes as needed.
   function assignLanes(items) {
     items.sort((a, b) => a.start - b.start || a.end - b.end);
     let cluster = [];
@@ -608,7 +588,6 @@
     state.catalog = catalog;
   }
 
-  /* --------------------- drag & resize engine --------------------- */
   function attachDrag(node, blk) {
     const topH = node.querySelector(".block__handle--top");
     const botH = node.querySelector(".block__handle--bottom");
@@ -622,10 +601,6 @@
     });
   }
 
-  // `resizeEdge` (from the top/bottom handle) is only a *hint*. The real
-  // gesture is resolved on the first meaningful movement: a mostly-horizontal
-  // drag is always a move (so grabbing near an edge never blocks dragging to
-  // another day), while a mostly-vertical drag on a handle is a resize.
   function startGesture(e, node, blk, resizeEdge) {
     if (state.busy) return;
     e.preventDefault();
@@ -649,7 +624,7 @@
     const tag = node.querySelector(".block__tag");
 
     node.classList.add("is-dragging");
-    // Span the full column while dragging so lane-splitting doesn't interfere.
+
     clearLaneLayout(node);
 
     const onMove = (ev) => {
@@ -658,25 +633,20 @@
       const dMin = dy / state.pxPerMin;
       if (Math.abs(dy) > 2 || Math.abs(dx) > 2) moved = true;
 
-      // Resolve a handle-hint gesture once the drag direction is clear:
-      // horizontal intent wins as a move, vertical intent stays a resize.
       if (mode === null) {
         if (Math.max(Math.abs(dx), Math.abs(dy)) < 5) return;
         mode = Math.abs(dx) > Math.abs(dy) ? "move" : resizeEdge;
       }
 
-
       if (mode === "move") {
         let ns = snap(startMin0 + dMin);
         ns = Math.max(state.dayStartMin, Math.min(ns, state.dayEndMin - dur0));
-        // Which column is the pointer over?
+
         let idx = Math.floor((ev.clientX - gridRect.left) / colWidth);
         idx = Math.max(0, Math.min(idx, state.days.length - 1));
         const jour = state.days[idx].jour;
         cur = { jour, start: ns, dur: dur0 };
-        // Translate across columns instead of re-parenting: re-parenting a
-        // node with pointer capture releases the capture and aborts the drag,
-        // which used to make dragging stop at the next weekday.
+
         node.style.top = `${minToPx(ns)}px`;
         node.style.transform = `translateX(${(idx - origIdx) * colWidth}px)`;
         highlightColumn(jour);
@@ -710,7 +680,7 @@
         cur.start !== startMin0 ||
         cur.dur !== dur0;
       if (!moved || !changed) {
-        renderBlocks(false); // snap back
+        renderBlocks(false);
         if (!moved) selectCourse(blk.courseId);
         return;
       }
@@ -733,7 +703,7 @@
 
   function commitGesture(mode, blk, cur, anchor) {
     if (occurrenceMode() && anchor) {
-      // Edit only the selected week's occurrence.
+
       const heureDebut = toHHMM(cur.start);
       const heureFin =
         mode === "move"
@@ -766,7 +736,6 @@
     }
   }
 
-  /* --------------------------- actions ---------------------------- */
   function deleteCourse(courseId) {
     apiPost("/course/delete", { session: state.session, courseId }).then(() =>
       toast("Cours déplacé vers la corbeille")
@@ -812,7 +781,6 @@
     }
   }
 
-  /* ---------------------------- modal ----------------------------- */
   function openModal() {
     el.addModal.hidden = false;
     el.fSigle.value = "";
@@ -852,7 +820,6 @@
     n.addEventListener("click", closeModal)
   );
 
-  /* --------------------------- wiring ----------------------------- */
   el.sessionSelect.addEventListener("change", (e) => loadSession(e.target.value, true));
   el.scopeToggle.querySelectorAll(".scope__btn").forEach((b) =>
     b.addEventListener("click", () => setScope(b.dataset.scope))
@@ -923,15 +890,12 @@
     }
   });
 
-  // Re-measure the week select once webfonts finish loading, so its width
-  // matches the final rendered text rather than the fallback font.
   if (document.fonts && document.fonts.ready) {
     document.fonts.ready.then(() => {
       if (!el.weekPicker.hidden) sizeWeekSelect();
     });
   }
 
-  /* ----------------------------- boot ----------------------------- */
   (async () => {
     try {
       const data = await apiGet("");

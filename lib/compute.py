@@ -247,7 +247,6 @@ def _build_final_exam(
 
 
 def _override_target_date(week_date: date, override: dict) -> date:
-    """Resolve the concrete date of a moved occurrence within its own week."""
     jour = override.get("jour")
     if not jour:
         return week_date
