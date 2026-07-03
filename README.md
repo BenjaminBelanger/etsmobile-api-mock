@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Testing](#testing)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
@@ -25,6 +26,19 @@ python start.py
 ```
 
 This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
+
+## Testing
+
+The mock server has a pytest suite covering the API endpoints, failure
+injection, the schedule editor, and the profile/scenario data variations.
+
+```bash
+pip install -r requirements.txt
+python -m pytest
+```
+
+Tests run automatically on every push and pull request via GitHub Actions
+(`.github/workflows/tests.yml`) against Python 3.11–3.13.
 
 ## Schedule Editor UI
 
