@@ -510,7 +510,7 @@
     node.innerHTML = `
       <div class="block__handle block__handle--top"></div>
       <div class="block__inner">
-        <div class="block__sigle">${blk.sigle}<span class="block__grp">gr ${blk.groupe}${kindLabel ? " · " + kindLabel : ""}</span>${badge}</div>
+        <div class="block__sigle"><span class="block__code">${blk.sigle}</span><span class="block__grp">gr ${blk.groupe}${kindLabel ? " · " + kindLabel : ""}</span>${badge}</div>
         <div class="block__title">${escapeHtml(blk.titre)}</div>
         <div class="block__meta"><span>${eff.heureDebut}–${eff.heureFin}</span><span>${blk.room || ""}</span></div>
       </div>
@@ -602,13 +602,18 @@
     node.addEventListener("pointerdown", (e) => {
       if (e.target.classList.contains("block__del")) return;
       if (e.target.classList.contains("block__reset")) return;
-      if (e.target === topH) return startGesture(e, node, blk, "resize-top");
-      if (e.target === botH) return startGesture(e, node, blk, "resize-bottom");
-      startGesture(e, node, blk, "move");
+      let edge = null;
+      if (e.target === topH) edge = "resize-top";
+      else if (e.target === botH) edge = "resize-bottom";
+      startGesture(e, node, blk, edge);
     });
   }
 
-  function startGesture(e, node, blk, mode) {
+  // `resizeEdge` (from the top/bottom handle) is only a *hint*. The real
+  // gesture is resolved on the first meaningful movement: a mostly-horizontal
+  // drag is always a move (so grabbing near an edge never blocks dragging to
+  // another day), while a mostly-vertical drag on a handle is a resize.
+  function startGesture(e, node, blk, resizeEdge) {
     if (state.busy) return;
     e.preventDefault();
     node.setPointerCapture(e.pointerId);
@@ -626,6 +631,7 @@
     const startY = e.clientY;
     const startX = e.clientX;
     let moved = false;
+    let mode = resizeEdge ? null : "move";
     let cur = { jour: jour0, start: startMin0, dur: dur0 };
     const tag = node.querySelector(".block__tag");
 
@@ -635,8 +641,17 @@
 
     const onMove = (ev) => {
       const dy = ev.clientY - startY;
+      const dx = ev.clientX - startX;
       const dMin = dy / state.pxPerMin;
-      if (Math.abs(dy) > 2 || Math.abs(ev.clientX - startX) > 2) moved = true;
+      if (Math.abs(dy) > 2 || Math.abs(dx) > 2) moved = true;
+
+      // Resolve a handle-hint gesture once the drag direction is clear:
+      // horizontal intent wins as a move, vertical intent stays a resize.
+      if (mode === null) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 5) return;
+        mode = Math.abs(dx) > Math.abs(dy) ? "move" : resizeEdge;
+      }
+
 
       if (mode === "move") {
         let ns = snap(startMin0 + dMin);
