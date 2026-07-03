@@ -30,6 +30,7 @@
     weekSelect: document.getElementById("weekSelect"),
     weekPrev: document.getElementById("weekPrev"),
     weekNext: document.getElementById("weekNext"),
+    weekToday: document.getElementById("weekToday"),
     dayHeads: document.getElementById("dayHeads"),
     gutter: document.getElementById("gutter"),
     grid: document.getElementById("grid"),
@@ -96,7 +97,7 @@
   function weekExists(index) {
     return !!state.semester && state.semester.weeks.some((w) => w.index === index);
   }
-  function defaultWeekIndex(semester) {
+  function todayWeekIndex(semester) {
     if (!semester || !semester.weeks.length) return null;
     const today = todayISO();
     for (const w of semester.weeks) {
@@ -107,7 +108,12 @@
         .slice(0, 10);
       if (today >= w.start && today <= sunday) return w.index;
     }
-    return semester.weeks[0].index;
+    return null;
+  }
+  function defaultWeekIndex(semester) {
+    if (!semester || !semester.weeks.length) return null;
+    const today = todayWeekIndex(semester);
+    return today != null ? today : semester.weeks[0].index;
   }
 
   const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
@@ -243,20 +249,27 @@
     const last = semester.weeks[semester.weeks.length - 1].index;
     el.weekPrev.disabled = state.weekIndex <= first;
     el.weekNext.disabled = state.weekIndex >= last;
+    // "Today" jumps back to the current week; only show it when today falls
+    // within the semester and we're not already viewing that week.
+    const todayIdx = todayWeekIndex(semester);
+    el.weekToday.hidden = todayIdx == null || todayIdx === state.weekIndex;
     sizeWeekSelect();
   }
 
-  // A native <select> is as wide as its longest option, which leaves a large
-  // gap before the chevron on shorter weeks. Size it to the current selection.
+  // A native <select> is as wide as its longest option. Size it to the widest
+  // week label so the width stays constant as you navigate — otherwise the
+  // ‹ / › buttons shift and you have to re-aim the mouse.
   function sizeWeekSelect() {
     const sel = el.weekSelect;
-    const opt = sel.options[sel.selectedIndex];
-    if (!opt) return;
+    if (!sel.options.length) return;
     const cs = getComputedStyle(sel);
     const canvas = sizeWeekSelect._c || (sizeWeekSelect._c = document.createElement("canvas"));
     const ctx = canvas.getContext("2d");
     ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
-    const textW = ctx.measureText(opt.textContent).width;
+    let textW = 0;
+    for (const opt of sel.options) {
+      textW = Math.max(textW, ctx.measureText(opt.textContent).width);
+    }
     const padL = parseFloat(cs.paddingLeft) || 0;
     const padR = parseFloat(cs.paddingRight) || 0;
     const bord = (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
@@ -850,6 +863,10 @@
   });
   el.weekPrev.addEventListener("click", () => selectWeek(state.weekIndex - 1));
   el.weekNext.addEventListener("click", () => selectWeek(state.weekIndex + 1));
+  el.weekToday.addEventListener("click", () => {
+    const idx = todayWeekIndex(state.semester);
+    if (idx != null) selectWeek(idx);
+  });
   el.addBtn.addEventListener("click", openModal);  el.undoBtn.addEventListener("click", () =>
     apiPost("/undo", { session: state.session })
   );

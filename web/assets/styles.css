@@ -114,6 +114,9 @@ body {
   border-left: 1px solid var(--line);
 }
 .week-picker[hidden] { display: none; }
+.week-picker__today { margin-left: 2px; }
+.week-picker__today svg { display: block; }
+.week-picker__today[hidden] { display: none; }
 .week-picker__field {
   display: flex; align-items: center; gap: 8px;
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em;
@@ -128,7 +131,8 @@ body {
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-sm);
-  padding: 8px 30px 8px 12px;
+  padding: 8px 30px 8px 30px;
+  text-align: center;
   cursor: pointer;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23837b6d' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
@@ -140,6 +144,12 @@ body {
   padding: 8px 11px;
   font-size: 17px;
   line-height: 1;
+}
+.week-picker .btn--icon {
+  width: 38px;
+  padding-left: 0;
+  padding-right: 0;
+  justify-content: center;
 }
 
 .session-picker {
