@@ -464,7 +464,7 @@
     if (!isEmpty) return;
     const div = document.createElement("div");
     div.className = "board__empty";
-    div.innerHTML = `<p>Aucun cours cette session — ajoutez-en un.</p>`;
+    div.innerHTML = `<p>Aucun cours cette session, ajoutez-en un.</p>`;
     el.board.appendChild(div);
   }
 
@@ -552,7 +552,7 @@
     if (!trash.length) {
       const li = document.createElement("li");
       li.className = "trash__empty";
-      li.textContent = "Vide — rien de supprimé.";
+      li.textContent = "Vide, rien de supprimé.";
       el.trashList.appendChild(li);
       return;
     }
