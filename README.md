@@ -173,23 +173,6 @@ SCENARIO=semaine-relache uvicorn main:app --port 8080 --reload --reload-include 
 
 Scenarios are defined declaratively in `seed/scenarios.json`.
 
-`skipDates` cancel the matching occurrences. `replacedDays` are a swap, not a
-cancellation: the origin day's blocks are relocated onto the replacement date and
-the replacement date's own blocks are dropped, matching how the real Signets API
-moves the seances rather than only announcing the change. Both are materialized
-into the seed at startup, so `lireHoraireDesSeances`, `listeHoraireEtProf` and the
-`/editor` grid all agree; `lireJoursRemplaces` still announces the swap alongside.
-Dates falling outside the session's `dateDebut`..`dateFinCours` window are ignored.
-
-A swap only gives up the replacement day when something actually relocates onto
-it. If no course has a block on the origin weekday there is nothing to host, so
-the swap is inert and the replacement date keeps its own classes rather than
-losing them to a deletion dressed up as a swap.
-
-The same swap applies to the replaced days declared per session in
-`seed/replaced_days.json`, not only to the scenario ones: those sessions serve
-relocated seances too, whether or not a scenario is active.
-
 ## Failure Injection
 
 The mock can simulate flaky-network and broken-server conditions. Failures are configured at startup via env vars and can be tweaked at runtime through `/admin/failures`.
