@@ -5,8 +5,8 @@ import threading
 from datetime import date, timedelta
 
 from . import data_store, sessions
-from ._paths import SEED
-from .data_store import OVERRIDES_FILENAME
+from .compute import override_target_date
+from .resource_specs import COURSE_ACTIVITIES
 
 DAY_START_MIN = 8 * 60
 DAY_END_MIN = 22 * 60
@@ -34,9 +34,10 @@ DAY_SHORT = {
 }
 EDITABLE_DAYS = ["1", "2", "3", "4", "5", "6"]
 
+# Abbreviated, to match the day headers the editor draws on the grid.
 MONTHS_FR = [
-    "janvier", "février", "mars", "avril", "mai", "juin",
-    "juillet", "août", "septembre", "octobre", "novembre", "décembre",
+    "janv.", "févr.", "mars", "avr.", "mai", "juin",
+    "juil.", "août", "sept.", "oct.", "nov.", "déc.",
 ]
 
 
@@ -78,7 +79,7 @@ def _build_semester(session_code: str) -> dict | None:
                 "start": cursor.isoformat(),
                 "end": week_end.isoformat(),
                 "label": f"Semaine {index}",
-                "range": f"{_fr_date_label(cursor.isoformat())} – "
+                "range": f"{_fr_date_label(cursor.isoformat())} - "
                 f"{_fr_date_label(week_end.isoformat())}",
                 "dates": dates,
             }
@@ -124,7 +125,7 @@ def _persist() -> None:
         session: {"courses": doc["courses"], "trash": doc["trash"]}
         for session, doc in _docs.items()
     }
-    path = SEED / OVERRIDES_FILENAME
+    path = data_store.overrides_path()
     path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
@@ -148,6 +149,19 @@ def _load_doc(session: str) -> dict:
     _undo.setdefault(session, [])
     _redo.setdefault(session, [])
     return doc
+
+
+def clear_cache() -> None:
+    """Drop the in-memory documents so the next read rebuilds from the store.
+
+    Persisted edits survive, since _load_doc re-reads schedule_overrides.json.
+    The undo history does not: it holds snapshots of a course list that the
+    reload may have replaced.
+    """
+    with _lock:
+        _docs.clear()
+        _undo.clear()
+        _redo.clear()
 
 
 def _snapshot(session: str) -> None:
@@ -212,8 +226,19 @@ def _occurrence_list(course: dict) -> list[dict]:
 
 
 def _find_occurrence(course: dict, index: int, day: str) -> dict | None:
-    for override in course.get("occurrenceOverrides", []):
-        if override.get("block") == index and override.get("date") == day:
+    overrides = [
+        ov for ov in course.get("occurrenceOverrides", []) if ov.get("block") == index
+    ]
+    for override in overrides:
+        if override.get("date") == day:
+            return override
+    # A relocated occurrence renders on its target date, and the grid hands that
+    # date back; its override is still keyed by the pattern date it replaced.
+    for override in overrides:
+        if override.get("canceled"):
+            continue
+        origin = date.fromisoformat(override["date"])
+        if override_target_date(origin, override).isoformat() == day:
             return override
     return None
 
@@ -232,17 +257,6 @@ def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
     code = schedule.get("codeActivite", "C")
     kind = {"C": "cours", "L": "labo", "TP": "tp"}.get(code, "cours")
     base_jour = str(schedule.get("jour", "1"))
-    occurrences = [
-        {
-            "date": ov["date"],
-            "jour": str(ov.get("jour", base_jour)),
-            "heureDebut": ov.get("heureDebut", schedule.get("heureDebut", "09:00")),
-            "heureFin": ov.get("heureFin", schedule.get("heureFin", "12:00")),
-            "canceled": bool(ov.get("canceled")),
-        }
-        for ov in course.get("occurrenceOverrides", [])
-        if ov.get("block") == index
-    ]
     return {
         "id": f"{_course_key(course)}:{index}",
         "courseId": _course_key(course),
@@ -258,8 +272,64 @@ def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
         "journee": schedule.get("journee", DAY_NAMES.get(str(schedule.get("jour")), "")),
         "heureDebut": schedule.get("heureDebut", "09:00"),
         "heureFin": schedule.get("heureFin", "12:00"),
-        "occurrences": occurrences,
     }
+
+
+_OCCURRENCE_KINDS = {"Labo": "labo", "Final": "exam"}
+
+
+def _block_ids(courses: list[dict]) -> dict[tuple[str, str], str]:
+    block_ids = {}
+    for course in courses:
+        key = _course_key(course)
+        for index, schedule in enumerate(_blocks_of(course)):
+            if schedule is None:
+                continue
+            name = "Labo" if schedule.get("codeActivite", "C") == "L" else "Cours"
+            block_ids.setdefault((key, name), f"{key}:{index}")
+    return block_ids
+
+
+def _overridden(courses: list[dict]) -> set[tuple[str, str]]:
+    marked = set()
+    for course in courses:
+        key = _course_key(course)
+        for override in course.get("occurrenceOverrides", []):
+            if override.get("canceled"):
+                continue
+            origin = date.fromisoformat(override["date"])
+            target = override_target_date(origin, override)
+            marked.add((f"{key}:{override['block']}", target.isoformat()))
+    return marked
+
+
+def _occurrence_row(activity: dict, block_ids: dict, marked: set) -> dict:
+    start = activity["dateDebut"]
+    day = start[:10]
+    course_group = activity["coursGroupe"]
+    sigle, _, groupe = course_group.partition("-")
+    block_id = block_ids.get((course_group, activity.get("nomActivite")))
+    return {
+        "date": day,
+        "jour": str(date.fromisoformat(day).isoweekday()),
+        "blockId": block_id,
+        "courseId": course_group,
+        "sigle": sigle,
+        "groupe": groupe,
+        "titre": activity.get("libelleCours", ""),
+        "room": activity.get("local", ""),
+        "kind": _OCCURRENCE_KINDS.get(activity.get("nomActivite"), "cours"),
+        "heureDebut": start[11:16],
+        "heureFin": activity["dateFin"][11:16],
+        "overridden": (block_id, day) in marked,
+    }
+
+
+def _occurrences(session: str, courses: list[dict]) -> list[dict]:
+    block_ids = _block_ids(courses)
+    marked = _overridden(courses)
+    activities = data_store.load_session(COURSE_ACTIVITIES.filename, session)
+    return [_occurrence_row(a, block_ids, marked) for a in activities]
 
 
 def _normalize_course(course: dict) -> dict:
@@ -301,6 +371,7 @@ def get_state(session: str) -> dict:
             "sessions": data_store.get_sessions_with_courses(),
             "courses": courses,
             "blocks": blocks,
+            "occurrences": _occurrences(session, doc["courses"]),
             "trash": trash,
             "canUndo": bool(_undo.get(session)),
             "canRedo": bool(_redo.get(session)),
@@ -375,6 +446,12 @@ def set_occurrence(
         start, end = _clamp_range(_snap(_to_min(heure_debut)), _snap(_to_min(heure_fin)))
         if end - start < MIN_DURATION_MIN:
             raise EditorError("Occurrence is too short")
+        # Resolve the drop against the week actually on screen. Reading jour back
+        # from the pattern date would land in the wrong week for an occurrence
+        # that a replaced day had already moved out of its own.
+        shown = date.fromisoformat(day)
+        monday = shown - timedelta(days=shown.isoweekday() - 1)
+        target = monday + timedelta(days=int(jour) - 1)
         _snapshot(session)
         _upsert_occurrence(
             course,
@@ -382,6 +459,7 @@ def set_occurrence(
             day,
             jour=str(jour),
             journee=DAY_NAMES[str(jour)],
+            targetDate=target.isoformat(),
             heureDebut=_to_hhmm(start),
             heureFin=_to_hhmm(end),
             canceled=False,
@@ -407,13 +485,10 @@ def reset_occurrence(session: str, block_id: str, day: str) -> dict:
         course, index, _ = _resolve_block(doc, block_id)
         day = _validate_date(day)
         overrides = course.get("occurrenceOverrides", [])
-        remaining = [
-            ov
-            for ov in overrides
-            if not (ov.get("block") == index and ov.get("date") == day)
-        ]
-        if len(remaining) == len(overrides):
+        override = _find_occurrence(course, index, day)
+        if override is None:
             raise EditorError("No override for this occurrence")
+        remaining = [ov for ov in overrides if ov is not override]
         _snapshot(session)
         if remaining:
             course["occurrenceOverrides"] = remaining

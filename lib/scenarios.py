@@ -1,10 +1,12 @@
-"""Applies calendar modifications (skipped days, replacements) for the active session."""
+"""Applies calendar modifications: scenario skips and replacements for the active
+session, plus the replaced days seed/replaced_days.json declares per session."""
 
 import json
 from datetime import date, timedelta
 
+from . import sessions
 from ._paths import SEED
-from .resource_specs import COURSE_ACTIVITIES, REPLACED_DAYS
+from .resource_specs import REPLACED_DAYS
 
 _SCENARIOS: dict = {}
 
@@ -98,16 +100,148 @@ def _resolve_and_cache(scenario_name: str) -> tuple[set[date], list[dict]]:
     return _scenario_cache[cache_key]
 
 
-def apply_scenario(scenario_name: str, active_session: str, filename: str, data):
-    skip_dates, replaced_days = _resolve_and_cache(scenario_name)
+def _course_window(session_code: str) -> tuple[date, date] | None:
+    """The date range the occurrence expansion actually walks, or None if unknown."""
+    for entry in sessions.get_raw_sessions():
+        if entry.get("abrege") != session_code:
+            continue
+        start = entry.get("dateDebut")
+        end = entry.get("dateFinCours") or entry.get("dateFin")
+        if not start or not end:
+            return None
+        return date.fromisoformat(start), date.fromisoformat(end)
+    return None
 
-    if filename == COURSE_ACTIVITIES.filename and skip_dates:
-        if active_session in data:
-            data[active_session] = [
-                act
-                for act in data[active_session]
-                if date.fromisoformat(act["dateDebut"][:10]) not in skip_dates
-            ]
+
+def _add_override(course: dict, entry: dict) -> None:
+    """First write for a (block, date) wins, so relocations outrank plain skips."""
+    overrides = course.setdefault("occurrenceOverrides", [])
+    if not any(
+        o.get("block") == entry["block"] and o.get("date") == entry["date"]
+        for o in overrides
+    ):
+        overrides.append(entry)
+
+
+def _scheduled_courses(
+    session_code: str, courses: list[dict]
+) -> list[tuple[dict, list[dict]]]:
+    return [
+        (course, [course["schedule"]] + course.get("extraActivities", []))
+        for course in courses
+        if course.get("session") == session_code and course.get("schedule") is not None
+    ]
+
+
+def _parse_moves(entries: list[dict]) -> list[tuple[date, date]]:
+    return [
+        (
+            date.fromisoformat(entry["dateOrigine"]),
+            date.fromisoformat(entry["dateRemplacement"]),
+        )
+        for entry in entries
+    ]
+
+
+def _apply_swaps(
+    session_code: str, courses: list[dict], moves: list[tuple[date, date]]
+) -> None:
+    """Materialize `jour remplace` swaps into one session's occurrence overrides.
+
+    The origin day's blocks relocate onto the replacement date, and the
+    replacement date gives up its own timetable to host them. That cancellation
+    only exists to make room: when nothing sits on the origin weekday there is
+    nothing to host, so the swap is inert and the replacement date keeps its
+    classes instead of losing them to a deletion dressed up as a swap.
+    """
+    window = _course_window(session_code)
+
+    def in_window(day: date) -> bool:
+        return window is None or window[0] <= day <= window[1]
+
+    # A move whose landing date falls outside the window would expand into a
+    # seance past dateFinCours, so leave those days to be skipped instead.
+    moves = [(o, r) for o, r in moves if in_window(o) and in_window(r)]
+    if not moves:
+        return
+
+    scheduled = _scheduled_courses(session_code, courses)
+    for origin, replacement in moves:
+        relocating = [
+            (course, index)
+            for course, blocks in scheduled
+            for index, block in enumerate(blocks)
+            if int(block["jour"]) == origin.isoweekday()
+        ]
+        if not relocating:
+            continue
+        for course, index in relocating:
+            _add_override(
+                course,
+                {
+                    "block": index,
+                    "date": origin.isoformat(),
+                    "targetDate": replacement.isoformat(),
+                },
+            )
+        for course, blocks in scheduled:
+            for index, block in enumerate(blocks):
+                if int(block["jour"]) == replacement.isoweekday():
+                    _add_override(
+                        course,
+                        {
+                            "block": index,
+                            "date": replacement.isoformat(),
+                            "canceled": True,
+                        },
+                    )
+
+
+def seed_replaced_day_overrides(courses: list[dict]) -> list[dict]:
+    """Materialize seed/replaced_days.json, which announces swaps for every
+    session it lists rather than only the active one."""
+    entries = json.loads((SEED / REPLACED_DAYS.filename).read_text(encoding="utf-8"))
+    for session_code, days in entries.items():
+        _apply_swaps(session_code, courses, _parse_moves(days))
+    return courses
+
+
+def seed_occurrence_overrides(
+    scenario_name: str, active_session: str, courses: list[dict]
+):
+    skip_dates, replaced_days = _resolve_and_cache(scenario_name)
+    if not skip_dates and not replaced_days:
+        return courses
+
+    # Swaps first: a relocation and a skip can both claim the origin date, and
+    # the first write wins.
+    _apply_swaps(active_session, courses, _parse_moves(replaced_days))
+
+    # Only dates inside the course window can ever match during expansion. The
+    # rest would sit unread in occurrenceOverrides until the first editor save
+    # persisted them into schedule_overrides.json.
+    window = _course_window(active_session)
+    skip_dates = {
+        day for day in skip_dates if window is None or window[0] <= day <= window[1]
+    }
+    if not skip_dates:
+        return courses
+
+    for course, blocks in _scheduled_courses(active_session, courses):
+        for index, block in enumerate(blocks):
+            weekday = int(block["jour"])
+            for day in sorted(skip_dates):
+                if day.isoweekday() != weekday:
+                    continue
+                _add_override(
+                    course,
+                    {"block": index, "date": day.isoformat(), "canceled": True},
+                )
+    return courses
+
+
+def apply_scenario(scenario_name: str, active_session: str, filename: str, data):
+    _, replaced_days = _resolve_and_cache(scenario_name)
 
     if filename == REPLACED_DAYS.filename and replaced_days:
         session_list = data.setdefault(active_session, [])

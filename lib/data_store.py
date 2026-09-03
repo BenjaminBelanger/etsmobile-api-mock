@@ -1,13 +1,14 @@
-"""Loads seed files, applies profiles/scenarios, caches results."""
+"""Loads seed files, materializes profiles/scenarios into them, caches results."""
 
 import copy
 import json
 import os
+from pathlib import Path
 
 from . import profiles, scenarios, sessions
 from ._paths import SEED
 from .compute import build_all_course_data
-from .resource_specs import COURSES, GENERATED_FILENAMES, SESSIONS
+from .resource_specs import COURSES, GENERATED_FILENAMES, PROGRAMS, SESSIONS
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
 
@@ -87,12 +88,21 @@ _seed_courses = None
 _base_courses = None
 _professors = None
 _pools = None
+_programs = None
 _generated = None
 _cache: dict[str, object] = {}
 
 
+def overrides_path() -> Path:
+    """Where the editor persists its edits. Every reader and writer goes through
+    here so a test run can redirect it: the real file under seed/ belongs to
+    whatever server is running, and must not be read or deleted out from under it.
+    """
+    return SEED / OVERRIDES_FILENAME
+
+
 def _load_overrides() -> dict:
-    path = SEED / OVERRIDES_FILENAME
+    path = overrides_path()
     if not path.exists():
         return {}
     try:
@@ -114,7 +124,7 @@ def _apply_overrides(built_courses: list[dict]) -> list[dict]:
 
 
 def _initialize():
-    global _seed_courses, _base_courses, _professors, _pools, _generated
+    global _seed_courses, _base_courses, _professors, _pools, _programs, _generated
     _refresh_config()
     _seed_courses = json.loads((SEED / COURSES.filename).read_text(encoding="utf-8"))
     _professors = json.loads((SEED / "professors.json").read_text(encoding="utf-8"))
@@ -129,6 +139,17 @@ def _initialize():
     _seed_courses = _seed_courses + sessions.generate_random_courses(
         NEXT_SESSION, _seed_courses, _pools, _professors
     )
+    _programs = json.loads((SEED / PROGRAMS.filename).read_text(encoding="utf-8"))
+    if PROFILE_NAME != DEFAULT_PROFILE:
+        _seed_courses = profiles.seed_courses(
+            PROFILE_NAME, ACTIVE_SESSION, _seed_courses
+        )
+        _programs = profiles.seed_programs(PROFILE_NAME, ACTIVE_SESSION, _programs)
+    _seed_courses = scenarios.seed_replaced_day_overrides(_seed_courses)
+    if SCENARIO_NAME != DEFAULT_SCENARIO:
+        _seed_courses = scenarios.seed_occurrence_overrides(
+            SCENARIO_NAME, ACTIVE_SESSION, _seed_courses
+        )
     _base_courses = copy.deepcopy(_seed_courses)
     _seed_courses = _apply_overrides(_seed_courses)
     _generated = build_all_course_data(
@@ -158,12 +179,10 @@ def load(name: str):
         data = _generated[name]
     elif name == SESSIONS.filename:
         data = [dict(s) for s in sessions.get_raw_sessions()]
+    elif name == PROGRAMS.filename:
+        data = copy.deepcopy(_programs)
     else:
         data = json.loads((SEED / name).read_text(encoding="utf-8"))
-    data = sessions.ensure_active_session_data(name, data, ACTIVE_SESSION)
-    data = sessions.ensure_active_session_data(name, data, NEXT_SESSION)
-    if PROFILE_NAME != DEFAULT_PROFILE:
-        data = profiles.apply_profile(PROFILE_NAME, ACTIVE_SESSION, name, data)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         data = scenarios.apply_scenario(SCENARIO_NAME, ACTIVE_SESSION, name, data)
     if name == SESSIONS.filename:

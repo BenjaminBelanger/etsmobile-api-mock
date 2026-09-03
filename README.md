@@ -28,38 +28,30 @@ This launches an interactive menu to pick a student profile, an optional calenda
 
 ## Schedule Editor UI
 
-A visual weekly-schedule editor is served at **`http://localhost:8080/editor`**
-(the root `/` redirects there). It renders the active session's courses in a
-Monday–Saturday week grid and lets you reshape the schedule directly — every
-change is written back to the mock and immediately reflected by the API
-endpoints (`listeCours`, `listeHoraireEtProf`, `lireHoraireDesSeances`, …), so
-the Flutter app sees the edited schedule.
+A visual weekly-schedule editor is served at `http://localhost:8080/editor`
+(the root `/` redirects there). It shows the active session's courses in a week
+grid and lets you move, resize, add and delete them. Edits are written back to
+the mock, so the API endpoints serve the edited schedule.
 
-What you can do:
+Nothing extra is needed to run it. Start the server and open the page:
 
-| Action | How |
-|--------|-----|
-| **Move** a course/lab | Drag the block to another day or time (duration is preserved) |
-| **Resize** | Drag the top or bottom handle to change start/end (snaps to 15 min) |
-| **Delete** | Click the `×` on a block, or select and press `Delete` — it goes to the trash |
-| **Restore** | Click *Restaurer* next to a course in the trash panel |
-| **Add** | *Ajouter un cours* — pick a sigle (autocompletes from the catalog), day, time, and type |
-| **Undo / Redo** | Toolbar buttons or `Ctrl+Z` / `Ctrl+Y` |
-| **Reset** | *Réinitialiser* reverts a session to its original generated schedule |
-| **Switch session** | Session dropdown in the header |
+```bash
+python start.py
+```
 
-### How edits are stored
+### Front-end build
 
-Edits are persisted per session to `seed/schedule_overrides.json`
-(git-ignored). When an override exists for a session, its courses replace the
-generated/seed courses for that session everywhere in the API. Undo/redo
-history lives in memory and resets when the server restarts; *Réinitialiser*
-(or deleting `seed/schedule_overrides.json`) clears an override entirely.
+The editor's front-end assets are already built and committed, so running the
+mock only needs Python. Rebuild them only after editing
+`web/src/fluent-entry.js` or the icon list in `web/build.mjs`:
 
-The editor is also a plain JSON API under `/editor/api/*` — see
-`http://localhost:8080/docs` for the request schemas.
+```bash
+cd web
+npm install
+npm run build
+```
 
-
+## Supported Format
 
 The server supports both JSON (default) and XML responses:
 
@@ -129,7 +121,7 @@ PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.j
 | `normal` (default) | 4 generated courses + labs, Mon-Fri mornings/afternoons |
 | `semester-off` | No courses in active session |
 | `internship-only` | Coop program, no courses |
-| `internship-courses` | Coop program + LOG410 only |
+| `internship-courses` | Coop program + 2 generated evening courses |
 | `new-student` | Brand-new student, no sessions or courses |
 | `generated-light` | 2 courses + labs, Mon-Fri mornings |
 | `generated-busy` | 5 courses + labs, Mon-Fri |
@@ -180,6 +172,23 @@ SCENARIO=semaine-relache uvicorn main:app --port 8080 --reload --reload-include 
 | `long-weekend` | Next Friday + Monday off |
 
 Scenarios are defined declaratively in `seed/scenarios.json`.
+
+`skipDates` cancel the matching occurrences. `replacedDays` are a swap, not a
+cancellation: the origin day's blocks are relocated onto the replacement date and
+the replacement date's own blocks are dropped, matching how the real Signets API
+moves the seances rather than only announcing the change. Both are materialized
+into the seed at startup, so `lireHoraireDesSeances`, `listeHoraireEtProf` and the
+`/editor` grid all agree; `lireJoursRemplaces` still announces the swap alongside.
+Dates falling outside the session's `dateDebut`..`dateFinCours` window are ignored.
+
+A swap only gives up the replacement day when something actually relocates onto
+it. If no course has a block on the origin weekday there is nothing to host, so
+the swap is inert and the replacement date keeps its own classes rather than
+losing them to a deletion dressed up as a swap.
+
+The same swap applies to the replaced days declared per session in
+`seed/replaced_days.json`, not only to the scenario ones: those sessions serve
+relocated seances too, whether or not a scenario is active.
 
 ## Failure Injection
 

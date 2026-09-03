@@ -19,6 +19,7 @@ from lib.data_store import (
 )
 from lib.editor_routes import router as editor_router
 from lib.routes import router
+from lib.schedule_editor import clear_cache as clear_editor_cache
 
 failures.load_from_env()
 
@@ -77,4 +78,7 @@ async def root_redirect():
 @app.post("/reload")
 async def reload_seed_data():
     reload_data()
+    # The editor caches its own copy of the courses; without this the grid keeps
+    # serving the pre-reload session while the occurrences come back fresh.
+    clear_editor_cache()
     return {"status": "ok"}
