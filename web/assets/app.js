@@ -154,7 +154,10 @@ const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek()
 
 function occurrencesForWeek(week) {
   const dates = new Set(Object.values(week.dates));
-  return (state.data.occurrences || []).filter((occ) => dates.has(occ.date));
+  const occMode = occurrenceMode();
+  return (state.data.occurrences || []).filter(
+    (occ) => dates.has(occ.date) && (occMode || !occ.canceled)
+  );
 }
 
 function setStatus(text, busy, isError) {
@@ -465,10 +468,12 @@ function buildBlock(occ, animate, occMode) {
   const end = toMin(occ.heureFin);
   const dur = end - start;
   const editable = !!occ.blockId;
+  const canceled = !!occ.canceled;
   const node = document.createElement("div");
   node.className = "block";
   if (occ.kind === "labo") node.classList.add("is-labo");
   if (occ.kind === "exam") node.classList.add("is-exam");
+  if (canceled) node.classList.add("is-canceled");
   if (animate) node.classList.add("is-entering");
 
   if (durToPx(dur) < 82) node.classList.add("is-compact");
@@ -492,18 +497,23 @@ function buildBlock(occ, animate, occMode) {
   const badge =
     occ.kind === "exam"
       ? `<span class="block__badge block__badge--off" title="Examen final">Examen</span>`
+      : canceled
+      ? `<span class="block__badge block__badge--off" title="Séance annulée cette semaine">Annulée</span>`
       : occ.overridden
       ? `<span class="block__badge" title="Séance modifiée cette semaine">Modifiée</span>`
       : "";
   const resetBtn =
     occMode && editable && occ.overridden
-      ? `<button class="block__reset" title="Rétablir cette séance au modèle">${icon("reset", 13)}</button>`
+      ? `<button class="block__reset" title="${
+          canceled ? "Rétablir cette séance" : "Rétablir cette séance au modèle"
+        }">${icon("reset", 13)}</button>`
       : "";
-  const delBtn = !editable
-    ? ""
-    : `<button class="block__del" title="${
-        occMode ? "Annuler cette séance" : "Supprimer le cours"
-      }">${icon("dismiss", 13)}</button>`;
+  const delBtn =
+    !editable || canceled
+      ? ""
+      : `<button class="block__del" title="${
+          occMode ? "Annuler cette séance" : "Supprimer le cours"
+        }">${icon("dismiss", 13)}</button>`;
 
   node.innerHTML = `
       <div class="block__handle block__handle--top"></div>
@@ -535,7 +545,7 @@ function buildBlock(occ, animate, occMode) {
       }
     });
   }
-  if (editable) attachDrag(node, occ);
+  if (editable && !canceled) attachDrag(node, occ);
   return node;
 }
 
@@ -745,7 +755,7 @@ function resetOccurrence(occ) {
     session: state.session,
     blockId: occ.blockId,
     date: occ.date,
-  }).then(() => toast("Séance rétablie au modèle"));
+  }).then(() => toast(occ.canceled ? "Séance rétablie" : "Séance rétablie au modèle"));
 }
 
 function setScope(scope) {

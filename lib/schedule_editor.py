@@ -119,16 +119,28 @@ def _clamp_range(start: int, end: int) -> tuple[int, int]:
     return start, end
 
 
-def _persist() -> None:
-    payload = {
-        session: {"courses": doc["courses"], "trash": doc["trash"]}
-        for session, doc in _docs.items()
-    }
+def _write_overrides(payload: dict) -> None:
     path = data_store.overrides_path()
-    path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    if payload:
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+    else:
+        path.unlink(missing_ok=True)
     data_store.reload()
+
+
+def _persist(session: str) -> None:
+    doc = _docs[session]
+    payload = data_store._load_overrides()
+    payload[session] = {"courses": doc["courses"], "trash": doc["trash"]}
+    _write_overrides(payload)
+
+
+def _forget(session: str) -> None:
+    payload = data_store._load_overrides()
+    payload.pop(session, None)
+    _write_overrides(payload)
 
 
 def _load_doc(session: str) -> dict:
@@ -225,13 +237,15 @@ def _find_occurrence(course: dict, index: int, day: str) -> dict | None:
     for override in overrides:
         if override.get("date") == day:
             return override
+    canceled = None
     for override in overrides:
-        if override.get("canceled"):
-            continue
         origin = date.fromisoformat(override["date"])
-        if override_target_date(origin, override).isoformat() == day:
+        if override_target_date(origin, override).isoformat() != day:
+            continue
+        if not override.get("canceled"):
             return override
-    return None
+        canceled = canceled or override
+    return canceled
 
 
 def _upsert_occurrence(course: dict, index: int, day: str, **fields) -> dict:
@@ -313,14 +327,52 @@ def _occurrence_row(activity: dict, block_ids: dict, marked: set) -> dict:
         "heureDebut": start[11:16],
         "heureFin": activity["dateFin"][11:16],
         "overridden": (block_id, day) in marked,
+        "canceled": False,
     }
+
+
+def _canceled_rows(courses: list[dict]) -> list[dict]:
+    rows = []
+    for course in courses:
+        key = _course_key(course)
+        blocks = _blocks_of(course)
+        for override in course.get("occurrenceOverrides", []):
+            if not override.get("canceled"):
+                continue
+            index = override.get("block", 0)
+            schedule = blocks[index] if index < len(blocks) else None
+            if schedule is None:
+                continue
+            origin = date.fromisoformat(override["date"])
+            day = override_target_date(origin, override).isoformat()
+            code = schedule.get("codeActivite", "C")
+            rows.append(
+                {
+                    "date": day,
+                    "jour": str(date.fromisoformat(day).isoweekday()),
+                    "blockId": f"{key}:{index}",
+                    "courseId": key,
+                    "sigle": course["sigle"],
+                    "groupe": course["groupe"],
+                    "titre": course.get("titreCours", ""),
+                    "room": schedule.get("room", course.get("room", "")),
+                    "kind": "labo" if code == "L" else "cours",
+                    "heureDebut": override.get("heureDebut", schedule["heureDebut"]),
+                    "heureFin": override.get("heureFin", schedule["heureFin"]),
+                    "overridden": True,
+                    "canceled": True,
+                }
+            )
+    return rows
 
 
 def _occurrences(session: str, courses: list[dict]) -> list[dict]:
     block_ids = _block_ids(courses)
     marked = _overridden(courses)
     activities = data_store.load_session(COURSE_ACTIVITIES.filename, session)
-    return [_occurrence_row(a, block_ids, marked) for a in activities]
+    rows = [_occurrence_row(a, block_ids, marked) for a in activities]
+    rows.extend(_canceled_rows(courses))
+    return rows
 
 
 def _normalize_course(course: dict) -> dict:
@@ -402,7 +454,7 @@ def move_block(session: str, block_id: str, jour: str, heure_debut: str) -> dict
         start = _snap(_to_min(heure_debut))
         _snapshot(session)
         _apply_time(schedule, jour, start, start + duration)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -416,7 +468,7 @@ def resize_block(session: str, block_id: str, heure_debut: str, heure_fin: str) 
             raise EditorError("Block is too short")
         _snapshot(session)
         _apply_time(schedule, schedule.get("jour", "1"), start, end)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -452,7 +504,7 @@ def set_occurrence(
             heureFin=_to_hhmm(end),
             canceled=False,
         )
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -463,7 +515,7 @@ def cancel_occurrence(session: str, block_id: str, day: str) -> dict:
         day = _validate_date(day)
         _snapshot(session)
         _upsert_occurrence(course, index, day, canceled=True)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -482,7 +534,7 @@ def reset_occurrence(session: str, block_id: str, day: str) -> dict:
             course["occurrenceOverrides"] = remaining
         else:
             course.pop("occurrenceOverrides", None)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -493,7 +545,7 @@ def delete_course(session: str, course_id: str) -> dict:
         _snapshot(session)
         doc["courses"].remove(course)
         doc["trash"].append(course)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -508,7 +560,7 @@ def restore_course(session: str, course_id: str) -> dict:
         _snapshot(session)
         doc["trash"].remove(course)
         doc["courses"].append(course)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -586,7 +638,7 @@ def add_course(
         }
         _snapshot(session)
         doc["courses"].append(record)
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -597,7 +649,7 @@ def undo(session: str) -> dict:
             raise EditorError("Nothing to undo")
         _redo.setdefault(session, []).append(copy.deepcopy(_docs[session]))
         _docs[session] = stack.pop()
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -608,7 +660,7 @@ def redo(session: str) -> dict:
             raise EditorError("Nothing to redo")
         _undo.setdefault(session, []).append(copy.deepcopy(_docs[session]))
         _docs[session] = stack.pop()
-        _persist()
+        _persist(session)
     return get_state(session)
 
 
@@ -620,5 +672,5 @@ def reset_session(session: str) -> dict:
             "courses": data_store.get_session_courses(session, base=True),
             "trash": [],
         }
-        _persist()
+        _forget(session)
     return get_state(session)

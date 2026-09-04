@@ -329,6 +329,17 @@ body {
 }
 .block.is-exam .block__handle { display: none; }
 
+.block.is-canceled {
+  cursor: default;
+  border-style: dashed;
+  background: color-mix(in srgb, var(--bg) 28%, transparent);
+  box-shadow: none;
+}
+.block.is-canceled .block__handle { display: none; }
+.block.is-canceled .block__inner { opacity: 0.65; }
+.block.is-canceled .block__time { text-decoration: line-through; }
+.block.is-canceled .block__reset { opacity: 1; }
+
 .block__handle {
   position: absolute; left: 0; right: 0; height: 8px;
   cursor: ns-resize;
