@@ -21,7 +21,7 @@ PROFILE_DESCRIPTIONS = {
     "normal": "4 cours + labos, Lun-Ven jour seulement",
     "semester-off": "Aucun cours (session libre)",
     "internship-only": "Stage coopératif seulement",
-    "internship-courses": "Stage coopératif + LOG410",
+    "internship-courses": "Stage coopératif + 2 cours du soir",
     "generated-light": "2 cours + labos, Lun-Ven matins",
     "generated-busy": "5 cours + labos, Lun-Ven",
     "generated-evening": "3 cours + labos, Lun-Ven soirs",

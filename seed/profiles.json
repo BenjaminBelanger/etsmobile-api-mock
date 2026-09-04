@@ -23,7 +23,7 @@
           "session": "$ACTIVE_SESSION",
           "titreCours": "Stage industriel II",
           "nbCredits": 3,
-          "programmeEtudes": "0725",
+          "programmeEtudes": "0726",
           "cote": "",
           "professorId": "last4-first4",
           "room": "",
@@ -45,7 +45,7 @@
       ],
       "addPrograms": [
         {
-          "code": "0725",
+          "code": "0726",
           "libelle": "Microprogramme de 1er cycle en enseignement coopératif II",
           "profil": "",
           "statut": "actif",
@@ -64,8 +64,12 @@
     }
   },
   "internship-courses": {
+    "generateCourses": {
+      "count": 2,
+      "allowedDays": ["1", "2", "3", "4", "5"],
+      "timePreference": "evening"
+    },
     "activeSession": {
-      "keepCourses": ["LOG410"],
       "addCourses": [
         {
           "sigle": "STA206",
@@ -73,7 +77,7 @@
           "session": "$ACTIVE_SESSION",
           "titreCours": "Stage industriel II",
           "nbCredits": 3,
-          "programmeEtudes": "0725",
+          "programmeEtudes": "0726",
           "cote": "",
           "professorId": "last4-first4",
           "room": "",
@@ -95,7 +99,7 @@
       ],
       "addPrograms": [
         {
-          "code": "0725",
+          "code": "0726",
           "libelle": "Microprogramme de 1er cycle en enseignement coopératif II",
           "profil": "",
           "statut": "actif",

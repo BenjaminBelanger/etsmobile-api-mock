@@ -246,7 +246,10 @@ def _build_final_exam(
     return exam_record, exam_date_str
 
 
-def _override_target_date(week_date: date, override: dict) -> date:
+def override_target_date(week_date: date, override: dict) -> date:
+    target = override.get("targetDate")
+    if target:
+        return date.fromisoformat(target)
     jour = override.get("jour")
     if not jour:
         return week_date
@@ -287,7 +290,7 @@ def _build_activities(
             if override and override.get("canceled"):
                 continue
             if override:
-                occ_date = _override_target_date(week_date, override)
+                occ_date = override_target_date(week_date, override)
                 start_hhmm = override.get("heureDebut", activity_schedule["heureDebut"])
                 end_hhmm = override.get("heureFin", activity_schedule["heureFin"])
             else:
