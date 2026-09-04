@@ -337,7 +337,6 @@ body {
 }
 .block.is-canceled .block__handle { display: none; }
 .block.is-canceled .block__inner { opacity: 0.65; }
-.block.is-canceled .block__time { text-decoration: line-through; }
 .block.is-canceled .block__reset { opacity: 1; }
 
 .block__handle {

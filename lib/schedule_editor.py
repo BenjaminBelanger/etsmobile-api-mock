@@ -34,6 +34,8 @@ DAY_SHORT = {
 }
 EDITABLE_DAYS = ["1", "2", "3", "4", "5", "6"]
 
+_OCCURRENCE_BASE_KEYS = {"block", "date", "canceled"}
+
 MONTHS_FR = [
     "janv.", "févr.", "mars", "avr.", "mai", "juin",
     "juil.", "août", "sept.", "oct.", "nov.", "déc.",
@@ -246,6 +248,10 @@ def _find_occurrence(course: dict, index: int, day: str) -> dict | None:
             return override
         canceled = canceled or override
     return canceled
+
+
+def _has_edits(override: dict) -> bool:
+    return any(key not in _OCCURRENCE_BASE_KEYS for key in override)
 
 
 def _upsert_occurrence(course: dict, index: int, day: str, **fields) -> dict:
@@ -528,12 +534,15 @@ def reset_occurrence(session: str, block_id: str, day: str) -> dict:
         override = _find_occurrence(course, index, day)
         if override is None:
             raise EditorError("No override for this occurrence")
-        remaining = [ov for ov in overrides if ov is not override]
         _snapshot(session)
-        if remaining:
-            course["occurrenceOverrides"] = remaining
+        if override.get("canceled") and _has_edits(override):
+            override.pop("canceled")
         else:
-            course.pop("occurrenceOverrides", None)
+            remaining = [ov for ov in overrides if ov is not override]
+            if remaining:
+                course["occurrenceOverrides"] = remaining
+            else:
+                course.pop("occurrenceOverrides", None)
         _persist(session)
     return get_state(session)
 
