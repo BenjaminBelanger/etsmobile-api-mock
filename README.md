@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
 - [Managing Courses](#managing-courses)
@@ -24,6 +25,31 @@ python start.py
 ```
 
 This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
+
+## Schedule Editor UI
+
+A visual weekly-schedule editor is served at `http://localhost:8080/editor`
+(the root `/` redirects there). It shows the active session's courses in a week
+grid and lets you move, resize, add and delete them. Edits are written back to
+the mock, so the API endpoints serve the edited schedule.
+
+Nothing extra is needed to run it. Start the server and open the page:
+
+```bash
+python start.py
+```
+
+### Front-end build
+
+The editor's front-end assets are already built and committed, so running the
+mock only needs Python. Rebuild them only after editing
+`web/src/fluent-entry.js` or the icon list in `web/build.mjs`:
+
+```bash
+cd web
+npm install
+npm run build
+```
 
 ## Supported Format
 
@@ -95,7 +121,7 @@ PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.j
 | `normal` (default) | 4 generated courses + labs, Mon-Fri mornings/afternoons |
 | `semester-off` | No courses in active session |
 | `internship-only` | Coop program, no courses |
-| `internship-courses` | Coop program + LOG410 only |
+| `internship-courses` | Coop program + 2 generated evening courses |
 | `new-student` | Brand-new student, no sessions or courses |
 | `generated-light` | 2 courses + labs, Mon-Fri mornings |
 | `generated-busy` | 5 courses + labs, Mon-Fri |

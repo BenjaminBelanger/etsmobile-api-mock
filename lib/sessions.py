@@ -1,6 +1,5 @@
 """Used for active session detection, date shifting, random course generation."""
 
-import copy
 import hashlib
 import json
 import random
@@ -8,7 +7,6 @@ import re
 from datetime import date, timedelta
 
 from ._paths import SEED
-from .resource_specs import SESSION_KEYED_FILENAMES, COURSES, SESSIONS
 
 LAB_DURATION_HOURS = 3
 
@@ -82,16 +80,6 @@ def _shift_date_str(date_str: str, day_delta: int) -> str:
     return d.isoformat() + suffix
 
 
-def _shift_dates_in_data(data, day_delta: int):
-    if isinstance(data, dict):
-        return {k: _shift_dates_in_data(v, day_delta) for k, v in data.items()}
-    if isinstance(data, list):
-        return [_shift_dates_in_data(item, day_delta) for item in data]
-    if isinstance(data, str) and _DATE_RE.match(data):
-        return _shift_date_str(data, day_delta)
-    return data
-
-
 def _clone_session_dates(target_code: str) -> dict:
     """Clone the latest same-type session, shifting dates by the year difference
     while preserving weekday alignment."""
@@ -138,16 +126,6 @@ def _get_session_dates(code: str) -> dict | None:
     if source:
         return _clone_session_dates(code)
     return None
-
-
-def _find_best_source_in_keys(keys, target_code: str) -> str | None:
-    prefix = _session_prefix(target_code)
-    candidates = [
-        key
-        for key in keys
-        if key and key != target_code and _session_prefix(key) == prefix
-    ]
-    return max(candidates, key=lambda s: int(s[1:])) if candidates else None
 
 
 def ensure_session_metadata(session_code: str) -> None:
@@ -417,49 +395,3 @@ def generate_profile_courses(
     )
 
     return other_courses + records
-
-
-def ensure_active_session_data(filename: str, data, active_session: str):
-    """Clone data from the nearest same-type session if active_session is missing."""
-    if filename == SESSIONS.filename:
-        if not any(s["abrege"] == active_session for s in data):
-            source = _find_source_session(active_session)
-            if source:
-                data = data + [_clone_session_dates(active_session)]
-        return data
-
-    target_meta = _get_session_dates(active_session)
-    if target_meta is None:
-        return data
-
-    if filename == COURSES.filename:
-        if not any(c.get("session") == active_session for c in data):
-            available = {c.get("session") for c in data}
-            source = _find_best_source_in_keys(available, active_session)
-            if source:
-                source_meta = _get_session_by_code(source)
-                if source_meta:
-                    cloned = [
-                        {**c, "session": active_session, "cote": ""}
-                        for c in data
-                        if c.get("session") == source
-                    ]
-                    data = data + cloned
-        return data
-
-    if filename in SESSION_KEYED_FILENAMES and isinstance(data, dict):
-        if active_session not in data:
-            source = _find_best_source_in_keys(data.keys(), active_session)
-            if source:
-                source_meta = _get_session_by_code(source)
-                if source_meta:
-                    day_delta = (
-                        date.fromisoformat(target_meta["dateDebut"])
-                        - date.fromisoformat(source_meta["dateDebut"])
-                    ).days
-                    cloned = copy.deepcopy(data[source])
-                    cloned = _shift_dates_in_data(cloned, day_delta)
-                    data[active_session] = cloned
-        return data
-
-    return data

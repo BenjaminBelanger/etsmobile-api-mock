@@ -1,18 +1,7 @@
-"""Reads profiles.json and strips/adds/generates courses for the active session."""
-
 import json
 import os
 
 from ._paths import SEED
-from .resource_specs import (
-    COURSES,
-    FIXTURE_SPECS,
-    PROGRAMS,
-    SESSION_KEYED_FILENAMES,
-    sigle_from_item,
-    sigle_from_key,
-)
-from .schedule_activities import flatten_teachers_by_course
 
 _PROFILES: dict = {}
 
@@ -42,154 +31,37 @@ def _interpolate(value, active_session_code: str):
     return value
 
 
-def _filter_flat_list(
-    spec, data: list, active_session: str, keep_sigles: set[str] | None
-) -> list:
-    session_key = spec.session_field
-    sigle_key = spec.sigle_field or "sigle"
-    if keep_sigles is None:
-        return [c for c in data if c.get(session_key) != active_session]
-    return [
-        c
-        for c in data
-        if c.get(session_key) != active_session or c.get(sigle_key) in keep_sigles
-    ]
-
-
-def _filter_session_grouped_dict(
-    spec, data: dict, active_session: str, keep_sigles: set[str] | None
-) -> dict:
-    if active_session not in data:
-        return data
-    if keep_sigles is None:
-        data.pop(active_session, None)
-    else:
-        data[active_session] = {
-            k: v
-            for k, v in data[active_session].items()
-            if sigle_from_key(spec, k) in keep_sigles
-        }
-    return data
-
-
-def _filter_session_list(
-    spec, data: dict, active_session: str, keep_sigles: set[str] | None
-) -> dict:
-    if active_session not in data:
-        return data
-    if keep_sigles is None:
-        data.pop(active_session, None)
-    else:
-        data[active_session] = [
-            item
-            for item in data[active_session]
-            if sigle_from_item(spec, item) in keep_sigles
-        ]
-    return data
-
-
-def _filter_schedule_activities(
-    spec, data: dict, active_session: str, keep_sigles: set[str] | None
-) -> dict:
-    if active_session not in data:
-        return data
-    session_data = data[active_session]
-    list_key = "listeActivites"
-    sigle_field = spec.sigle_field or "sigle"
-
-    if keep_sigles is None:
-        data.pop(active_session, None)
-    else:
-        session_data[list_key] = [
-            a
-            for a in session_data.get(list_key, [])
-            if a.get(sigle_field) in keep_sigles
-        ]
-        teachers_by_course = {
-            course_key: teachers
-            for course_key, teachers in session_data.get(
-                "enseignantsParCours", {}
-            ).items()
-            if course_key.split("-")[0] in keep_sigles
-        }
-        session_data["enseignantsParCours"] = teachers_by_course
-        session_data["listeEnseignants"] = flatten_teachers_by_course(
-            teachers_by_course
-        )
-    return data
-
-
-_FILTER_DISPATCH = {
-    "flat_list": _filter_flat_list,
-    "session_dict": _filter_session_grouped_dict,
-    "session_list": _filter_session_list,
-    "schedule_activities": _filter_schedule_activities,
-}
-
-
-def _strip_courses_from_file(
-    filename: str, data, active_session: str, keep_sigles: set | None
-):
-    spec = FIXTURE_SPECS.get(filename)
-    if spec is None:
-        return data
-    handler = _FILTER_DISPATCH.get(spec.shape)
-    if handler is None:
-        return data
-    return handler(spec, data, active_session, keep_sigles)
-
-
-def _strip_session_keyed_data(filename: str, data, active_session: str):
-    if filename in SESSION_KEYED_FILENAMES and isinstance(data, dict):
-        data.pop(active_session, None)
-    return data
-
-
-def apply_profile(profile_name: str, active_session: str, filename: str, data):
+def seed_courses(profile_name: str, active_session: str, courses: list[dict]):
     profile = _PROFILES.get(profile_name, {})
     if not profile:
-        return data
+        return courses
 
-    global_cfg = profile.get("global", {})
-    if global_cfg:
-        if global_cfg.get("stripCourses") and filename == COURSES.filename:
-            data = []
-        if (
-            global_cfg.get("stripSessionKeyedData")
-            and filename in SESSION_KEYED_FILENAMES
-        ):
-            data = {}
-        replace_programs = global_cfg.get("replacePrograms")
-        if filename == PROGRAMS.filename and replace_programs is not None:
-            data = [_interpolate(p, active_session) for p in replace_programs]
+    if profile.get("global", {}).get("stripCourses"):
+        courses = []
 
     active_cfg = profile.get("activeSession", {})
-    if not active_cfg:
-        return data
+    if active_cfg.get("stripCourses"):
+        courses = [c for c in courses if c.get("session") != active_session]
 
-    strip_courses = active_cfg.get("stripCourses", False)
-    keep_courses = active_cfg.get("keepCourses")
-    strip_session = active_cfg.get("stripSessionKeyedData", False)
     add_courses = active_cfg.get("addCourses", [])
-    add_programs = active_cfg.get("addPrograms", [])
+    if add_courses:
+        courses = courses + [_interpolate(c, active_session) for c in add_courses]
+    return courses
 
-    if keep_courses is not None:
-        data = _strip_courses_from_file(
-            filename, data, active_session, set(keep_courses)
-        )
-    elif strip_courses:
-        if filename == COURSES.filename:
-            data = _strip_courses_from_file(filename, data, active_session, None)
-        if strip_session:
-            data = _strip_session_keyed_data(filename, data, active_session)
 
-    if filename == COURSES.filename and add_courses:
-        data = data + [_interpolate(c, active_session) for c in add_courses]
+def seed_programs(profile_name: str, active_session: str, programs: list[dict]):
+    profile = _PROFILES.get(profile_name, {})
+    if not profile:
+        return programs
 
-    if filename == PROGRAMS.filename and add_programs:
-        data = data + [_interpolate(p, active_session) for p in add_programs]
+    replace_programs = profile.get("global", {}).get("replacePrograms")
+    if replace_programs is not None:
+        programs = [_interpolate(p, active_session) for p in replace_programs]
 
-    return data
+    add_programs = profile.get("activeSession", {}).get("addPrograms", [])
+    if add_programs:
+        programs = programs + [_interpolate(p, active_session) for p in add_programs]
+    return programs
 
 
 def _parse_schedule_days(value: str) -> list[str]:

@@ -379,8 +379,8 @@
     "room": "A-1502",
     "examRoom": "A-1302",
     "schedule": {
-      "jour": "3",
-      "journee": "Mercredi",
+      "jour": "1",
+      "journee": "Lundi",
       "heureDebut": "09:00",
       "heureFin": "12:00",
       "codeActivite": "C",
@@ -535,8 +535,8 @@
     "room": "A-2345",
     "examRoom": "A-1302",
     "schedule": {
-      "jour": "5",
-      "journee": "Vendredi",
+      "jour": "1",
+      "journee": "Lundi",
       "heureDebut": "09:00",
       "heureFin": "12:30",
       "codeActivite": "C",
@@ -730,8 +730,8 @@
     "room": "A-1502",
     "examRoom": "A-1302",
     "schedule": {
-      "jour": "3",
-      "journee": "Mercredi",
+      "jour": "1",
+      "journee": "Lundi",
       "heureDebut": "09:00",
       "heureFin": "12:00",
       "codeActivite": "C",

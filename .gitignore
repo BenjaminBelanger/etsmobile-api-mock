@@ -8,3 +8,6 @@ build/
 venv/
 env/
 .venv/
+
+seed/schedule_overrides.json
+node_modules/

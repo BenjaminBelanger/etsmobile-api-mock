@@ -4,9 +4,11 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from lib import failures
+from lib._paths import ROOT
 from lib.data_store import (
     ACTIVE_SESSION,
     DEFAULT_SCENARIO,
@@ -15,7 +17,9 @@ from lib.data_store import (
     SCENARIO_NAME,
     reload as reload_data,
 )
+from lib.editor_routes import router as editor_router
 from lib.routes import router
+from lib.schedule_editor import clear_cache as clear_editor_cache
 
 failures.load_from_env()
 
@@ -58,9 +62,21 @@ app.middleware("http")(failures.failure_middleware)
 
 app.include_router(router)
 app.include_router(failures.router)
+app.include_router(editor_router)
+app.mount(
+    "/editor/assets",
+    StaticFiles(directory=ROOT / "web" / "assets"),
+    name="editor-assets",
+)
+
+
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/editor")
 
 
 @app.post("/reload")
 async def reload_seed_data():
     reload_data()
+    clear_editor_cache()
     return {"status": "ok"}

@@ -1,11 +1,12 @@
-"""Interactive launcher for the mock server (profile/scenario/schedule selection)."""
-
 import json
 import os
+import signal
 import subprocess
 import sys
 
 from lib._paths import SEED
+
+OVERRIDES_FILENAME = "schedule_overrides.json"
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -20,7 +21,7 @@ PROFILE_DESCRIPTIONS = {
     "normal": "4 cours + labos, Lun-Ven jour seulement",
     "semester-off": "Aucun cours (session libre)",
     "internship-only": "Stage coopératif seulement",
-    "internship-courses": "Stage coopératif + LOG410",
+    "internship-courses": "Stage coopératif + 2 cours du soir",
     "generated-light": "2 cours + labos, Lun-Ven matins",
     "generated-busy": "5 cours + labos, Lun-Ven",
     "generated-evening": "3 cours + labos, Lun-Ven soirs",
@@ -230,6 +231,77 @@ def _configure_custom() -> dict | None:
     }
 
 
+def _clear_overrides() -> None:
+    path = SEED / OVERRIDES_FILENAME
+    try:
+        if path.exists():
+            path.unlink()
+            print("Configuration précédente réinitialisée (overrides supprimés).")
+    except OSError:
+        pass
+
+
+def _stop_existing_servers() -> None:
+    self_pid = os.getpid()
+
+    def _pids_matching() -> list[int]:
+        pids: list[int] = []
+        try:
+            if os.name == "nt":
+                out = subprocess.run(
+                    [
+                        "powershell",
+                        "-NoProfile",
+                        "-Command",
+                        "Get-CimInstance Win32_Process "
+                        "| Where-Object { $_.ProcessId -ne $PID "
+                        "-and $_.CommandLine -match 'uvicorn' "
+                        "-and $_.CommandLine -match 'main:app' } "
+                        "| Select-Object -ExpandProperty ProcessId",
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                lines = out.stdout.split()
+            else:
+                out = subprocess.run(
+                    ["pgrep", "-f", "uvicorn.*main:app"],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                lines = out.stdout.split()
+        except (OSError, subprocess.SubprocessError):
+            return []
+        for line in lines:
+            try:
+                pid = int(line.strip())
+            except ValueError:
+                continue
+            if pid != self_pid:
+                pids.append(pid)
+        return pids
+
+    pids = _pids_matching()
+    if not pids:
+        return
+
+    print(f"Arrêt de {len(pids)} serveur(s) déjà en cours...")
+    for pid in pids:
+        try:
+            if os.name == "nt":
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True,
+                    timeout=15,
+                )
+            else:
+                os.kill(pid, signal.SIGTERM)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+
 def main():
     profile = _select_profile()
     if profile is None:
@@ -268,6 +340,11 @@ def main():
         f"\nDémarrage du serveur avec le profil « {profile_display} »"
         f"{scenario_display}{week_display}...\n"
     )
+    print("  API   : http://localhost:8080/docs")
+    print("  Horaire (éditeur visuel) : http://localhost:8080/editor\n")
+
+    _stop_existing_servers()
+    _clear_overrides()
 
     subprocess.run(
         [

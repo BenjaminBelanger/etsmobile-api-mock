@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>Horaire - ÉTS Mock</title>
+    <link rel="stylesheet" href="/editor/assets/vendor/fluent-theme.css" />
+    <link rel="stylesheet" href="/editor/assets/styles.css" />
+    <script type="module" src="/editor/assets/app.js"></script>
+  </head>
+  <body>
+    <div class="app" id="app">
+      <header class="topbar">
+        <div class="topbar__center">
+          <div class="picker">
+            <span class="picker__label">Session</span>
+            <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
+              <fluent-listbox></fluent-listbox>
+            </fluent-dropdown>
+          </div>
+
+          <div class="week-picker" id="weekPicker" hidden>
+            <fluent-button id="weekPrev" appearance="subtle" icon-only data-icon="chevronLeft" aria-label="Semaine précédente"></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekPrev">Semaine précédente</fluent-tooltip>
+
+            <fluent-dropdown id="weekSelect" appearance="filled-darker" aria-label="Semaine"><fluent-listbox></fluent-listbox></fluent-dropdown>
+
+            <fluent-button id="weekNext" appearance="subtle" icon-only data-icon="chevronRight" aria-label="Semaine suivante"></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekNext">Semaine suivante</fluent-tooltip>
+
+            <fluent-button id="weekToday" appearance="subtle" icon-only data-icon="today" aria-label="Semaine courante" hidden></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekToday">Aller à la semaine courante</fluent-tooltip>
+          </div>
+        </div>
+
+        <div class="toolbar">
+          <fluent-tablist id="scopeToggle" appearance="subtle" size="small" activeid="scopeSeries" aria-label="Portée des modifications">
+            <fluent-tab id="scopeSeries" data-scope="series">Toutes les semaines</fluent-tab>
+            <fluent-tab id="scopeOccurrence" data-scope="occurrence">Cette séance</fluent-tab>
+          </fluent-tablist>
+
+          <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
+
+          <fluent-button id="undoBtn" appearance="subtle" icon-only data-icon="undo" aria-label="Annuler"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="undoBtn">Annuler (Ctrl+Z)</fluent-tooltip>
+
+          <fluent-button id="redoBtn" appearance="subtle" icon-only data-icon="redo" aria-label="Rétablir"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="redoBtn">Rétablir (Ctrl+Y)</fluent-tooltip>
+
+          <fluent-button id="resetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Réinitialiser la session"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="resetBtn">Réinitialiser la session</fluent-tooltip>
+
+          <fluent-button id="addBtn" appearance="primary">
+            <span slot="start" data-icon="add" data-icon-size="16"></span>
+            Ajouter un cours
+          </fluent-button>
+        </div>
+      </header>
+
+      <main class="layout">
+        <section class="board" id="board">
+          <div class="week" id="week">
+            <div class="week__gutterhead"></div>
+            <div class="week__dayheads" id="dayHeads"></div>
+            <div class="week__gutter" id="gutter"></div>
+            <div class="week__grid" id="grid"></div>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="delete" data-icon-size="16"></span>
+              <h2>Corbeille</h2>
+            </header>
+            <ul class="trash" id="trashList"></ul>
+          </section>
+        </aside>
+      </main>
+
+      <footer class="statusbar">
+        <fluent-progress-bar id="statusProgress" thickness="medium" hidden></fluent-progress-bar>
+        <span class="statusbar__dot" id="statusDot"></span>
+        <fluent-text size="300" id="statusText">Prêt.</fluent-text>
+      </footer>
+    </div>
+
+    <fluent-dialog id="addDialog" type="modal" aria-label="Ajouter un cours">
+      <fluent-dialog-body>
+        <span slot="title">Ajouter un cours</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close></fluent-button>
+
+        <form id="addForm" class="form" novalidate>
+          <fluent-field label-position="above">
+            <fluent-label slot="label" required>Sigle</fluent-label>
+            <fluent-dropdown slot="input" id="fSigle" type="combobox" appearance="filled-darker" placeholder="LOG430" aria-label="Sigle"><fluent-listbox></fluent-listbox></fluent-dropdown>
+          </fluent-field>
+
+          <fluent-field label-position="above">
+            <fluent-label slot="label">Titre</fluent-label>
+            <fluent-text-input slot="input" id="fTitre" appearance="filled-darker" placeholder="Rempli automatiquement si connu" aria-label="Titre"></fluent-text-input>
+          </fluent-field>
+
+          <div class="form__row">
+            <fluent-field label-position="above">
+              <fluent-label slot="label">Jour</fluent-label>
+              <fluent-dropdown slot="input" id="fJour" appearance="filled-darker" aria-label="Jour"><fluent-listbox></fluent-listbox></fluent-dropdown>
+            </fluent-field>
+
+            <fluent-field label-position="above">
+              <fluent-label slot="label">Type</fluent-label>
+              <fluent-dropdown slot="input" id="fKind" appearance="filled-darker" aria-label="Type">
+                <fluent-listbox>
+                  <fluent-option value="cours" selected>Cours</fluent-option>
+                  <fluent-option value="labo">Laboratoire</fluent-option>
+                </fluent-listbox>
+              </fluent-dropdown>
+            </fluent-field>
+          </div>
+
+          <div class="form__row">
+            <fluent-field label-position="above">
+              <fluent-label slot="label">Début</fluent-label>
+              <input slot="input" class="time-input" id="fStart" type="time" value="09:00" step="900" aria-label="Heure de début" />
+            </fluent-field>
+
+            <fluent-field label-position="above">
+              <fluent-label slot="label">Fin</fluent-label>
+              <input slot="input" class="time-input" id="fEnd" type="time" value="12:30" step="900" aria-label="Heure de fin" />
+            </fluent-field>
+          </div>
+        </form>
+
+        <fluent-button slot="action" appearance="secondary" data-close>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="addSubmit">Ajouter</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="resetDialog" type="alert" aria-label="Réinitialiser la session">
+      <fluent-dialog-body>
+        <span slot="title">Réinitialiser la session ?</span>
+        <p class="dialog__text">
+          L’horaire de <b id="resetSession"></b> reviendra à sa version d’origine.
+          Les cours ajoutés, déplacés ou supprimés seront perdus.
+        </p>
+        <fluent-button slot="action" appearance="secondary" data-close-reset>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="resetConfirm">Réinitialiser</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <div class="toast-host" id="toastHost" hidden>
+      <fluent-message-bar id="toast" intent="success" shape="rounded" layout="singleline">
+        <span id="toastText"></span>
+      </fluent-message-bar>
+    </div>
+  </body>
+</html>
