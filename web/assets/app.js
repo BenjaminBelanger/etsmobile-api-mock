@@ -641,7 +641,9 @@ function propInput(key, label, value, type, opts = {}) {
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
-  const title = pinned ? ' title="Valeur épinglée, videz le champ pour régénérer"' : "";
+  const title = pinned
+    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
+    : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-darker"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
@@ -750,14 +752,14 @@ function examHtml(exam) {
 function detailHtml(course) {
   const evals = course.evaluations || [];
   const openIndex = state.evalIndex;
-  const pinnedGrades = evals.some((ev) => (ev.pinned || []).length);
+  const canResetGrades = !!course.canResetGrades;
   return `<p class="detail__title">${escapeHtml(course.titre)}</p>
       ${propInput("course:cote", "Cote", course.cote, "text", { narrow: true })}
       <section class="detail__section">
         <header class="detail__head">
           <h3>Évaluations</h3>
           ${iconButton("addEval", "add", "Ajouter un élément")}
-          ${pinnedGrades ? iconButton("resetGrades", "reset", "Rétablir les notes générées") : ""}
+          ${canResetGrades ? iconButton("resetGrades", "reset", "Régénérer les notes") : ""}
         </header>
         ${summaryHtml(course.summary)}
         <ul class="evals">${evals

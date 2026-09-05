@@ -72,15 +72,23 @@ def _exam_date(start: date, end: date, rng: random.Random) -> date:
     return rng.choice(candidates) if candidates else start
 
 
-def _pinned_number(evaluation: dict, key: str) -> str:
-    value = evaluation.get(key)
+def _stored_value(evaluation: dict, key: str):
+    """The value set on the evaluation, else the one frozen when first generated."""
+    if key in evaluation:
+        return evaluation[key]
+    generated = evaluation.get("generated")
+    return generated.get(key) if isinstance(generated, dict) else None
+
+
+def _stored_number(evaluation: dict, key: str) -> str:
+    value = _stored_value(evaluation, key)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return ""
     return _format_french(float(value))
 
 
-def _pinned_percentile(evaluation: dict) -> str:
-    value = evaluation.get("rangCentile")
+def _stored_percentile(evaluation: dict) -> str:
+    value = _stored_value(evaluation, "rangCentile")
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return ""
     return str(int(value))
@@ -192,7 +200,7 @@ def _build_evaluations(
     target_dates = [
         _nearest_weekday(start + timedelta(days=int(f * duration))) for f in fractions
     ]
-    if target_dates and not evals[-1].get("dateCible"):
+    if target_dates and not _stored_value(evals[-1], "dateCible"):
         target_dates[-1] = _parse_date(exam_date_str)
 
     num_published = max(
@@ -201,22 +209,23 @@ def _build_evaluations(
 
     items = []
     for idx, ev in enumerate(evals):
-        pinned_publie = ev.get("publie")
+        stored_publie = _stored_value(ev, "publie")
         published = (
-            pinned_publie if isinstance(pinned_publie, bool) else idx < num_published
+            stored_publie if isinstance(stored_publie, bool) else idx < num_published
         )
         item = {
             "coursGroupe": course_group,
             "nom": ev["nom"],
             "equipe": f"\u00c9quipe {team_num}" if ev["isTeam"] else "",
-            "dateCible": ev.get("dateCible") or target_dates[idx].isoformat(),
-            "note": _pinned_number(ev, "note"),
+            "dateCible": _stored_value(ev, "dateCible")
+            or target_dates[idx].isoformat(),
+            "note": _stored_number(ev, "note"),
             "corrigeSur": str(ev["corrigeSur"]),
             "ponderation": str(ev["ponderation"]),
-            "moyenne": _pinned_number(ev, "moyenne"),
-            "ecartType": _pinned_number(ev, "ecartType"),
-            "mediane": _pinned_number(ev, "mediane"),
-            "rangCentile": _pinned_percentile(ev),
+            "moyenne": _stored_number(ev, "moyenne"),
+            "ecartType": _stored_number(ev, "ecartType"),
+            "mediane": _stored_number(ev, "mediane"),
+            "rangCentile": _stored_percentile(ev),
             "publie": "Oui" if published else "Non",
             "messageDuProf": "",
             "ignoreDuCalcul": "Non",

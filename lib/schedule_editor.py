@@ -482,6 +482,7 @@ def _normalize_course(course: dict, sheet: dict | None, exam: dict | None) -> di
         "blocks": blocks,
         "evaluations": evaluations,
         "summary": {key: (sheet or {}).get(key, "") for key in _SUMMARY_FIELDS},
+        "canResetGrades": _has_grade_state(course),
         "exam": _normalize_exam(course, exam),
     }
 
@@ -782,6 +783,50 @@ def _rename_teammates(course: dict, old: str, new: str) -> None:
     }
 
 
+def _computed_grade(item: dict, field: str):
+    if field == "publie":
+        return item.get("publie") == "Oui"
+    if field == "dateCible":
+        return item.get("dateCible") or None
+    if field == "rangCentile":
+        return _whole(item.get("rangCentile", ""))
+    return _number(item.get(field, ""))
+
+
+def _generated_of(evaluation: dict) -> dict:
+    generated = evaluation.get("generated")
+    return generated if isinstance(generated, dict) else {}
+
+
+def _freeze_grades(session: str, course: dict) -> None:
+    """Store the generated grades on the evaluations that currently show them.
+
+    Generation is position-based, so anything left to the generator is re-rolled
+    whenever the list changes. Freezing first makes a move, an insert or a delete
+    a pure reordering of rows that already own their values.
+    """
+    sheet = data_store.load_session(EVALUATIONS.filename, session, {})
+    computed = sheet.get(_course_key(course), {}).get("liste", [])
+    for source, item in zip(_evaluations_of(course), computed):
+        generated = _generated_of(source)
+        for field in _PINNED_FIELDS:
+            if field in source or field in generated:
+                continue
+            value = _computed_grade(item, field)
+            if value is not None:
+                generated[field] = value
+        if generated:
+            source["generated"] = generated
+
+
+def _has_grade_state(course: dict) -> bool:
+    return any(
+        key in ev or key in _generated_of(ev)
+        for ev in course.get("evaluations", [])
+        for key in _PINNED_FIELDS
+    )
+
+
 def _parse_amount(value, field: str) -> float:
     try:
         return float(str(value).strip().replace(",", "."))
@@ -824,6 +869,7 @@ def set_evaluation(session: str, course_id: str, index: int, field: str, value) 
         item = _resolve_evaluation(course, index)
         resolved = _normalize_eval_value(evals, item, field, value)
         _snapshot(session)
+        _freeze_grades(session, course)
         if resolved is _REMOVE:
             item.pop(field, None)
         elif field == "nom":
@@ -841,6 +887,7 @@ def add_evaluation(session: str, course_id: str) -> dict:
         course = _find_course(doc, course_id)
         evals = _evaluations_of(course)
         _snapshot(session)
+        _freeze_grades(session, course)
         evals.append(
             {
                 "nom": _new_eval_name(evals),
@@ -860,6 +907,7 @@ def delete_evaluation(session: str, course_id: str, index: int) -> dict:
         evals = _evaluations_of(course)
         item = _resolve_evaluation(course, index)
         _snapshot(session)
+        _freeze_grades(session, course)
         evals.remove(item)
         teammates = course.get("teammates")
         if teammates:
@@ -878,6 +926,7 @@ def move_evaluation(session: str, course_id: str, index: int, to_index: int) -> 
             raise EditorError(f"Evaluation {to_index} not found")
         if to_index != index:
             _snapshot(session)
+            _freeze_grades(session, course)
             evals.pop(index)
             evals.insert(to_index, item)
             _persist(session)
@@ -889,10 +938,11 @@ def reset_grades(session: str, course_id: str) -> dict:
         doc = _load_doc(session)
         course = _find_course(doc, course_id)
         evals = _evaluations_of(course)
-        if not any(key in ev for ev in evals for key in _PINNED_FIELDS):
-            raise EditorError("This course has no pinned grades")
+        if not _has_grade_state(course):
+            raise EditorError("This course has no stored grades")
         _snapshot(session)
         for item in evals:
+            item.pop("generated", None)
             for key in _PINNED_FIELDS:
                 item.pop(key, None)
         _persist(session)
