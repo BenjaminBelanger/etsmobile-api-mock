@@ -683,7 +683,7 @@ function warningsHtml(evals) {
 
 const STAT_FIELDS = ["rangCentile", "moyenne", "mediane", "ecartType"];
 
-function propsHtml(ev, count) {
+function propsHtml(ev) {
   const pinned = ev.pinned || [];
   const grade = (field, label, type = "text") =>
     propInput(`ev:${field}`, label, fieldText(ev[field]), type, {
@@ -722,14 +722,12 @@ function propsHtml(ev, count) {
             : ""
         }
         <div class="props__actions">
-          ${iconButton("up", "arrowUp", "Monter", ev.index === 0)}
-          ${iconButton("down", "arrowDown", "Descendre", ev.index === count - 1)}
           <fluent-button class="props__del" data-act="delete" appearance="subtle" size="small">Supprimer</fluent-button>
         </div>
       </div>`;
 }
 
-function evalHtml(ev, isOpen, count) {
+function evalHtml(ev, isOpen) {
   const hasNote = ev.note != null;
   const note = hasNote
     ? `${plain(ev.note)}<span class="evals__sur">/${plain(ev.corrigeSur)}</span>`
@@ -744,7 +742,7 @@ function evalHtml(ev, isOpen, count) {
             ev.publie ? "Publié" : "Non publié"
           }"></span>
         </button>
-        ${isOpen ? propsHtml(ev, count) : ""}
+        ${isOpen ? propsHtml(ev) : ""}
       </li>`;
 }
 
@@ -785,7 +783,7 @@ function detailHtml(course) {
         </header>
         ${summaryHtml(course.summary)}
         <ul class="evals">${evals
-          .map((ev) => evalHtml(ev, ev.index === openIndex, evals.length))
+          .map((ev) => evalHtml(ev, ev.index === openIndex))
           .join("")}</ul>
         ${evals.length ? "" : `<p class="detail__empty">Aucun élément d'évaluation.</p>`}
         ${warningsHtml(evals)}
@@ -819,13 +817,35 @@ function renderDetail() {
 }
 
 function wireDetail(course) {
+  const list = el.detail.querySelector(".evals");
+  const count = (course.evaluations || []).length;
   el.detail.querySelectorAll(".evals__row").forEach((row) => {
     row.addEventListener("click", () => {
+      if (evalClickBlocked) {
+        evalClickBlocked = false;
+        return;
+      }
       const index = Number(row.dataset.index);
       state.evalIndex = state.evalIndex === index ? null : index;
       renderDetail();
       const next = el.detail.querySelector(`.evals__row[data-index="${index}"]`);
       if (next) next.focus();
+    });
+    row.addEventListener("pointerdown", (e) => {
+      evalClickBlocked = false;
+      startEvalDrag(e, course, list, row.closest(".evals__item"));
+    });
+    row.addEventListener("keydown", (e) => {
+      const dir = e.altKey && (e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0);
+      if (!dir) return;
+      const from = Number(row.dataset.index);
+      const to = from + dir;
+      if (to < 0 || to >= count) return;
+      e.preventDefault();
+      moveEvaluation(course, from, to).then(() => {
+        const moved = el.detail.querySelector(`.evals__row[data-index="${to}"]`);
+        if (moved) moved.focus();
+      });
     });
   });
   el.detail.querySelectorAll("[data-key]").forEach((node) => {
@@ -882,14 +902,6 @@ function runDetailAction(course, action) {
     apiPost("/evaluation/delete", { ...body, index: state.evalIndex }).then(() =>
       toast("Élément supprimé")
     );
-  } else if (action === "up" || action === "down") {
-    const from = state.evalIndex;
-    const to = from + (action === "up" ? -1 : 1);
-    state.evalIndex = to;
-    apiPost("/evaluation/move", { ...body, index: from, toIndex: to }).catch(() => {
-      state.evalIndex = from;
-      renderDetail();
-    });
   } else if (action === "toggleStats") {
     state.statsOpen = !state.statsOpen;
     renderDetail();
@@ -900,6 +912,121 @@ function runDetailAction(course, action) {
   } else if (action === "examReset") {
     apiPost("/exam/reset", body).then(() => toast("Examen final rétabli"));
   }
+}
+
+const EVAL_DRAG_PX = 4;
+const EVAL_DROP_MS = 150;
+let evalClickBlocked = false;
+
+function shiftIndex(idx, from, to) {
+  if (idx == null) return null;
+  if (idx === from) return to;
+  if (from < idx && idx <= to) return idx - 1;
+  if (to <= idx && idx < from) return idx + 1;
+  return idx;
+}
+
+function moveEvaluation(course, from, to, delay) {
+  const previous = state.evalIndex;
+  state.evalIndex = shiftIndex(previous, from, to);
+  const send = () =>
+    apiPost("/evaluation/move", {
+      session: state.session,
+      courseId: course.courseId,
+      index: from,
+      toIndex: to,
+    }).catch(() => {
+      state.evalIndex = previous;
+      renderDetail();
+    });
+  if (!delay) return send();
+  return new Promise((resolve) => setTimeout(() => resolve(send()), delay));
+}
+
+function startEvalDrag(e, course, list, item) {
+  if (state.busy || e.button !== 0 || !list || !item) return;
+  const items = Array.from(list.children);
+  if (items.length < 2) return;
+
+  const from = items.indexOf(item);
+  const listTop = list.getBoundingClientRect().top;
+  const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+  const boxes = items.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { top: rect.top - listTop, height: rect.height };
+  });
+  const own = boxes[from];
+  const middles = boxes.map((box) => box.top + box.height / 2);
+  const step = own.height + gap;
+  const last = boxes[items.length - 1];
+  const minTop = boxes[0].top;
+  const maxTop = last.top + last.height - own.height;
+  const grab = e.clientY - listTop - own.top;
+
+  const rest = [];
+  items.forEach((node, i) => {
+    if (i === from) return;
+    const base = i > from ? -step : 0;
+    rest.push({ node, base, top: boxes[i].top + base, height: boxes[i].height });
+  });
+  const slotTop = (k) =>
+    k === 0 ? boxes[0].top : rest[k - 1].top + rest[k - 1].height + gap;
+
+  let dragging = false;
+  let to = from;
+
+  const openSlot = (k) => {
+    rest.forEach((r, m) => {
+      const offset = r.base + (m >= k ? step : 0);
+      r.node.style.transform = offset ? `translateY(${offset}px)` : "";
+    });
+  };
+
+  const onMove = (ev) => {
+    if (!dragging) {
+      if (Math.abs(ev.clientY - e.clientY) < EVAL_DRAG_PX) return;
+      dragging = true;
+      item.classList.add("is-dragging");
+    }
+    const wanted = ev.clientY - list.getBoundingClientRect().top - grab;
+    const top = Math.max(minTop, Math.min(wanted, maxTop));
+    item.style.transform = `translateY(${top - own.top}px)`;
+
+    const bottom = top + own.height;
+    let k = from;
+    for (let i = from + 1; i < items.length; i += 1) {
+      if (bottom > middles[i]) k += 1;
+    }
+    for (let i = from - 1; i >= 0; i -= 1) {
+      if (top < middles[i]) k -= 1;
+    }
+    if (k !== to) {
+      to = k;
+      openSlot(k);
+    }
+  };
+
+  const finish = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", finish);
+    if (!dragging) return;
+    evalClickBlocked = true;
+    if (!item.isConnected) return;
+    item.classList.remove("is-dragging");
+    item.classList.add("is-settling");
+    item.style.transform = to === from ? "" : `translateY(${slotTop(to) - own.top}px)`;
+    if (to === from) {
+      openSlot(from);
+      setTimeout(() => item.classList.remove("is-settling"), EVAL_DROP_MS);
+      return;
+    }
+    moveEvaluation(course, from, to, EVAL_DROP_MS);
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", finish);
+  window.addEventListener("pointercancel", finish);
 }
 
 let catalogFilled = false;
