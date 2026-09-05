@@ -17,6 +17,7 @@ const state = {
   selectedCourseId: null,
   detailCourseId: null,
   evalIndex: null,
+  statsOpen: false,
   semester: null,
   weekIndex: null,
   editScope: "series",
@@ -680,28 +681,46 @@ function warningsHtml(evals) {
     .join("")}</div>`;
 }
 
+const STAT_FIELDS = ["rangCentile", "moyenne", "mediane", "ecartType"];
+
 function propsHtml(ev, count) {
   const pinned = ev.pinned || [];
   const grade = (field, label, type = "text") =>
     propInput(`ev:${field}`, label, fieldText(ev[field]), type, {
       pinned: pinned.includes(field),
     });
+  const open = state.statsOpen;
+  const statsPinned = STAT_FIELDS.some((field) => pinned.includes(field));
+  const statsTitle = statsPinned
+    ? ' title="Contient des valeurs modifiées"'
+    : "";
   return `<div class="props">
         <div class="props__grid">
           ${propInput("ev:nom", "Nom", ev.nom, "text", { wide: true })}
-          ${propInput("ev:ponderation", "Pondération", fieldText(ev.ponderation), "text")}
-          ${propInput("ev:corrigeSur", "Corrigé sur", fieldText(ev.corrigeSur), "text")}
           ${grade("note", "Note")}
-          ${grade("rangCentile", "Rang centile")}
-          ${grade("moyenne", "Moyenne")}
-          ${grade("mediane", "Médiane")}
-          ${grade("ecartType", "Écart type")}
+          ${propInput("ev:corrigeSur", "Corrigé sur", fieldText(ev.corrigeSur), "text")}
+          ${propInput("ev:ponderation", "Pondération", fieldText(ev.ponderation), "text")}
           ${grade("dateCible", "Date cible", "date")}
         </div>
         <div class="props__checks">
           ${checkBox("ev:publie", "Publié", ev.publie, pinned.includes("publie"))}
           ${checkBox("ev:isTeam", "Équipe", ev.isTeam, false)}
         </div>
+        <button type="button" class="stats${open ? " is-open" : ""}${
+          statsPinned ? " is-pinned" : ""
+        }" data-act="toggleStats" aria-expanded="${open}"${statsTitle}>
+          ${icon("chevronRight", 16)}<span>Statistiques</span>
+        </button>
+        ${
+          open
+            ? `<div class="props__grid">
+          ${grade("rangCentile", "Rang centile")}
+          ${grade("moyenne", "Moyenne")}
+          ${grade("mediane", "Médiane")}
+          ${grade("ecartType", "Écart type")}
+        </div>`
+            : ""
+        }
         <div class="props__actions">
           ${iconButton("up", "arrowUp", "Monter", ev.index === 0)}
           ${iconButton("down", "arrowDown", "Descendre", ev.index === count - 1)}
@@ -711,8 +730,11 @@ function propsHtml(ev, count) {
 }
 
 function evalHtml(ev, isOpen, count) {
-  const note = ev.note == null ? "" : plain(ev.note);
-  const warn = ev.note != null && ev.note > ev.corrigeSur;
+  const hasNote = ev.note != null;
+  const note = hasNote
+    ? `${plain(ev.note)}<span class="evals__sur">/${plain(ev.corrigeSur)}</span>`
+    : "";
+  const warn = hasNote && ev.note > ev.corrigeSur;
   return `<li class="evals__item${isOpen ? " is-open" : ""}">
         <button type="button" class="evals__row" data-index="${ev.index}" aria-expanded="${isOpen}">
           <span class="evals__name">${escapeHtml(ev.nom)}</span>
@@ -868,6 +890,11 @@ function runDetailAction(course, action) {
       state.evalIndex = from;
       renderDetail();
     });
+  } else if (action === "toggleStats") {
+    state.statsOpen = !state.statsOpen;
+    renderDetail();
+    const next = el.detail.querySelector(".stats");
+    if (next) next.focus();
   } else if (action === "resetGrades") {
     apiPost("/grades/reset", body).then(() => toast("Notes régénérées"));
   } else if (action === "examReset") {
