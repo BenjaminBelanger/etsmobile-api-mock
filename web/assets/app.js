@@ -2,7 +2,7 @@ import "./vendor/fluent.js";
 import { icon } from "./vendor/fluent-icons.js";
 
 const API = "/editor/api";
-const TINTS = 8;
+const TINTS = 12;
 
 const state = {
   session: null,
@@ -81,11 +81,32 @@ const totalMin = () => state.dayEndMin - state.dayStartMin;
 const minToPx = (min) => (min - state.dayStartMin) * state.pxPerMin;
 const durToPx = (min) => min * state.pxPerMin;
 
-const tintFor = (sigle) => {
+const tints = new Map();
+
+function assignTints(courses) {
+  const sigles = [...new Set(courses.map((c) => c.sigle))];
+  const live = new Set(sigles);
+  tints.forEach((_, sigle) => {
+    if (!live.has(sigle)) tints.delete(sigle);
+  });
+  const taken = new Set(tints.values());
+  sigles.forEach((sigle) => {
+    if (tints.has(sigle)) return;
+    let t = 0;
+    while (t < TINTS && taken.has(t)) t++;
+    if (t === TINTS) t = hashTint(sigle);
+    taken.add(t);
+    tints.set(sigle, t);
+  });
+}
+
+function hashTint(sigle) {
   let h = 0;
   for (let i = 0; i < sigle.length; i++) h = (h * 31 + sigle.charCodeAt(i)) >>> 0;
   return h % TINTS;
-};
+}
+
+const tintFor = (sigle) => tints.get(sigle) ?? hashTint(sigle);
 
 const MONTHS_FR = [
   "janv.", "févr.", "mars", "avr.", "mai", "juin",
@@ -217,6 +238,7 @@ function applyState(data, opts) {
   state.snap = meta.snapMin;
   state.minDuration = meta.minDuration;
   state.days = meta.days;
+  assignTints(data.courses || []);
   state.semester = meta.semester || null;
   if (
     prevSession !== data.session ||

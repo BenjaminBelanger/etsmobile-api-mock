@@ -15,14 +15,18 @@
 
   --font-ui: var(--fontFamilyBase);
 
-  --c0-bg: var(--colorPaletteBlueBackground2);       --c0-bd: var(--colorPaletteBlueBorderActive);       --c0-tx: var(--colorPaletteBlueForeground2);
-  --c1-bg: var(--colorPaletteSeafoamBackground2);    --c1-bd: var(--colorPaletteSeafoamBorderActive);    --c1-tx: var(--colorPaletteSeafoamForeground2);
-  --c2-bg: var(--colorPalettePurpleBackground2);     --c2-bd: var(--colorPalettePurpleBorderActive);     --c2-tx: var(--colorPalettePurpleForeground2);
-  --c3-bg: var(--colorPaletteMarigoldBackground2);   --c3-bd: var(--colorPaletteMarigoldBorderActive);   --c3-tx: var(--colorPaletteMarigoldForeground2);
-  --c4-bg: var(--colorPaletteTealBackground2);       --c4-bd: var(--colorPaletteTealBorderActive);       --c4-tx: var(--colorPaletteTealForeground2);
-  --c5-bg: var(--colorPaletteBerryBackground2);      --c5-bd: var(--colorPaletteBerryBorderActive);      --c5-tx: var(--colorPaletteBerryForeground2);
-  --c6-bg: var(--colorPaletteCornflowerBackground2); --c6-bd: var(--colorPaletteCornflowerBorderActive); --c6-tx: var(--colorPaletteCornflowerForeground2);
-  --c7-bg: var(--colorPalettePeachBackground2);      --c7-bd: var(--colorPalettePeachBorderActive);      --c7-tx: var(--colorPalettePeachForeground2);
+  --c0-bg: var(--colorPaletteBlueBackground2);             --c0-bd: var(--colorPaletteBlueBorderActive);            --c0-tx: var(--colorPaletteBlueForeground2);
+  --c1-bg: var(--colorPaletteSeafoamBackground2);          --c1-bd: var(--colorPaletteSeafoamBorderActive);         --c1-tx: var(--colorPaletteSeafoamForeground2);
+  --c2-bg: var(--colorPaletteBerryBackground2);            --c2-bd: var(--colorPaletteBerryBorderActive);           --c2-tx: var(--colorPaletteBerryForeground2);
+  --c3-bg: var(--colorPaletteMarigoldBackground2);         --c3-bd: var(--colorPaletteMarigoldBorderActive);        --c3-tx: var(--colorPaletteMarigoldForeground2);
+  --c4-bg: var(--colorPalettePurpleBackground2);           --c4-bd: var(--colorPalettePurpleBorderActive);          --c4-tx: var(--colorPalettePurpleForeground2);
+  --c5-bg: var(--colorPaletteTealBackground2);             --c5-bd: var(--colorPaletteTealBorderActive);            --c5-tx: var(--colorPaletteTealForeground2);
+  --c6-bg: var(--colorPalettePeachBackground2);            --c6-bd: var(--colorPalettePeachBorderActive);           --c6-tx: var(--colorPalettePeachForeground2);
+  --c7-bg: var(--colorPaletteCornflowerBackground2);       --c7-bd: var(--colorPaletteCornflowerBorderActive);      --c7-tx: var(--colorPaletteCornflowerForeground2);
+  --c8-bg: var(--colorPaletteForestBackground2);           --c8-bd: var(--colorPaletteForestBorderActive);          --c8-tx: var(--colorPaletteForestForeground2);
+  --c9-bg: var(--colorPaletteCranberryBackground2);        --c9-bd: var(--colorPaletteCranberryBorderActive);       --c9-tx: var(--colorPaletteCranberryForeground2);
+  --c10-bg: var(--colorPalettePlatinumBackground2);        --c10-bd: var(--colorPalettePlatinumBorderActive);       --c10-tx: var(--colorPalettePlatinumForeground2);
+  --c11-bg: var(--colorPaletteLavenderBackground2);        --c11-bd: var(--colorPaletteLavenderBorderActive);       --c11-tx: var(--colorPaletteLavenderForeground2);
 }
 
 * { box-sizing: border-box; }
