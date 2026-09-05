@@ -645,7 +645,7 @@ function propInput(key, label, value, type, opts = {}) {
   const title = pinned
     ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
     : "";
-  return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-darker"
+  return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
 
