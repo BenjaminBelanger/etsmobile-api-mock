@@ -10,4 +10,5 @@ env/
 .venv/
 
 seed/schedule_overrides.json
+.nl_schedule/
 node_modules/

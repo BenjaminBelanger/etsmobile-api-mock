@@ -34,6 +34,13 @@ DAY_SHORT = {
 }
 EDITABLE_DAYS = ["1", "2", "3", "4", "5", "6"]
 
+ACTIVITY_KINDS = {"C": "cours", "L": "labo", "TP": "tp"}
+ACTIVITY_LABELS = {
+    "C": "Activité de cours",
+    "L": "Activité de laboratoire",
+    "TP": "Activité de travaux pratiques",
+}
+
 _OCCURRENCE_BASE_KEYS = {"block", "date", "canceled"}
 
 _PINNED_FIELDS = (
@@ -289,7 +296,7 @@ def _upsert_occurrence(course: dict, index: int, day: str, **fields) -> dict:
 
 def _normalize_block(course: dict, index: int, schedule: dict) -> dict:
     code = schedule.get("codeActivite", "C")
-    kind = {"C": "cours", "L": "labo", "TP": "tp"}.get(code, "cours")
+    kind = ACTIVITY_KINDS.get(code, "cours")
     base_jour = str(schedule.get("jour", "1"))
     return {
         "id": f"{_course_key(course)}:{index}",
