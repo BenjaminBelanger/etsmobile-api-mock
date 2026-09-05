@@ -6,7 +6,7 @@ from datetime import date, timedelta
 
 from . import data_store, sessions
 from .compute import override_target_date
-from .resource_specs import COURSE_ACTIVITIES
+from .resource_specs import COURSE_ACTIVITIES, EVALUATIONS, FINAL_EXAMS
 
 DAY_START_MIN = 8 * 60
 DAY_END_MIN = 22 * 60
@@ -35,6 +35,29 @@ DAY_SHORT = {
 EDITABLE_DAYS = ["1", "2", "3", "4", "5", "6"]
 
 _OCCURRENCE_BASE_KEYS = {"block", "date", "canceled"}
+
+_PINNED_FIELDS = (
+    "note",
+    "moyenne",
+    "mediane",
+    "ecartType",
+    "rangCentile",
+    "dateCible",
+    "publie",
+)
+_EVAL_FIELDS = ("nom", "ponderation", "corrigeSur", "isTeam") + _PINNED_FIELDS
+_EXAM_FIELDS = ("dateExamen", "heureDebut", "heureFin", "local")
+_SUMMARY_FIELDS = (
+    "noteACeJour",
+    "scoreFinalSur100",
+    "moyenneClasse",
+    "medianeClasse",
+    "ecartTypeClasse",
+    "rangCentileClasse",
+    "tauxPublication",
+)
+_NEW_EVAL_NAME = "Nouvel élément"
+_REMOVE = object()
 
 MONTHS_FR = [
     "janv.", "févr.", "mars", "avr.", "mai", "juin",
@@ -298,7 +321,15 @@ def _block_ids(courses: list[dict]) -> dict[tuple[str, str], str]:
                 continue
             name = "Labo" if schedule.get("codeActivite", "C") == "L" else "Cours"
             block_ids.setdefault((key, name), f"{key}:{index}")
+        if course.get("schedule") is not None:
+            block_ids[(key, "Final")] = f"{key}:exam"
     return block_ids
+
+
+def _exam_overridden(courses: list[dict]) -> set[str]:
+    return {
+        f"{_course_key(course)}:exam" for course in courses if course.get("finalExam")
+    }
 
 
 def _overridden(courses: list[dict]) -> set[tuple[str, str]]:
@@ -314,7 +345,9 @@ def _overridden(courses: list[dict]) -> set[tuple[str, str]]:
     return marked
 
 
-def _occurrence_row(activity: dict, block_ids: dict, marked: set) -> dict:
+def _occurrence_row(
+    activity: dict, block_ids: dict, marked: set, exam_marked: set
+) -> dict:
     start = activity["dateDebut"]
     day = start[:10]
     course_group = activity["coursGroupe"]
@@ -332,7 +365,7 @@ def _occurrence_row(activity: dict, block_ids: dict, marked: set) -> dict:
         "kind": _OCCURRENCE_KINDS.get(activity.get("nomActivite"), "cours"),
         "heureDebut": start[11:16],
         "heureFin": activity["dateFin"][11:16],
-        "overridden": (block_id, day) in marked,
+        "overridden": (block_id, day) in marked or block_id in exam_marked,
         "canceled": False,
     }
 
@@ -375,26 +408,81 @@ def _canceled_rows(courses: list[dict]) -> list[dict]:
 def _occurrences(session: str, courses: list[dict]) -> list[dict]:
     block_ids = _block_ids(courses)
     marked = _overridden(courses)
+    exam_marked = _exam_overridden(courses)
     activities = data_store.load_session(COURSE_ACTIVITIES.filename, session)
-    rows = [_occurrence_row(a, block_ids, marked) for a in activities]
+    rows = [_occurrence_row(a, block_ids, marked, exam_marked) for a in activities]
     rows.extend(_canceled_rows(courses))
     return rows
 
 
-def _normalize_course(course: dict) -> dict:
+def _number(value: str) -> float | None:
+    if not value:
+        return None
+    try:
+        return float(value.replace(",", "."))
+    except (AttributeError, ValueError):
+        return None
+
+
+def _whole(value: str) -> int | None:
+    number = _number(value)
+    return None if number is None else int(number)
+
+
+def _normalize_evaluation(source: dict, computed: dict, index: int) -> dict:
+    return {
+        "index": index,
+        "nom": source["nom"],
+        "ponderation": int(source["ponderation"]),
+        "corrigeSur": int(source["corrigeSur"]),
+        "isTeam": bool(source.get("isTeam")),
+        "note": _number(computed.get("note", "")),
+        "moyenne": _number(computed.get("moyenne", "")),
+        "mediane": _number(computed.get("mediane", "")),
+        "ecartType": _number(computed.get("ecartType", "")),
+        "rangCentile": _whole(computed.get("rangCentile", "")),
+        "dateCible": computed.get("dateCible", ""),
+        "publie": computed.get("publie") == "Oui",
+        "equipe": computed.get("equipe", ""),
+        "pinned": [key for key in _PINNED_FIELDS if key in source],
+    }
+
+
+def _normalize_exam(course: dict, computed: dict | None) -> dict | None:
+    if not computed:
+        return None
+    override = course.get("finalExam") or {}
+    return {
+        **{key: computed.get(key, "") for key in _EXAM_FIELDS},
+        "pinned": [key for key in _EXAM_FIELDS if override.get(key)],
+    }
+
+
+def _normalize_course(course: dict, sheet: dict | None, exam: dict | None) -> dict:
     blocks = []
     for index, schedule in enumerate(_blocks_of(course)):
         if schedule is None:
             continue
         blocks.append(_normalize_block(course, index, schedule))
+    computed = (sheet or {}).get("liste", [])
+    evaluations = [
+        _normalize_evaluation(
+            source, computed[index] if index < len(computed) else {}, index
+        )
+        for index, source in enumerate(course.get("evaluations", []))
+    ]
     return {
         "courseId": _course_key(course),
         "sigle": course["sigle"],
         "groupe": course["groupe"],
         "titre": course.get("titreCours", ""),
         "room": course.get("room", ""),
+        "cote": course.get("cote", ""),
         "hasSchedule": course.get("schedule") is not None,
         "blocks": blocks,
+        "evaluations": evaluations,
+        "summary": {key: (sheet or {}).get(key, "") for key in _SUMMARY_FIELDS},
+        "exam": _normalize_exam(course, exam),
     }
 
 
@@ -403,7 +491,15 @@ def get_state(session: str) -> dict:
         if not session or session not in data_store.get_sessions_with_courses():
             session = data_store.resolve_default_session()
         doc = _load_doc(session)
-        courses = [_normalize_course(c) for c in doc["courses"]]
+        sheets = data_store.load_session(EVALUATIONS.filename, session, {})
+        exams = {
+            f"{record['sigle']}-{record['groupe']}": record
+            for record in data_store.load_session(FINAL_EXAMS.filename, session)
+        }
+        courses = [
+            _normalize_course(c, sheets.get(_course_key(c)), exams.get(_course_key(c)))
+            for c in doc["courses"]
+        ]
         blocks = [b for c in courses for b in c["blocks"]]
         trash = [
             {
@@ -647,6 +743,241 @@ def add_course(
         }
         _snapshot(session)
         doc["courses"].append(record)
+        _persist(session)
+    return get_state(session)
+
+
+def _evaluations_of(course: dict) -> list[dict]:
+    return course.setdefault("evaluations", [])
+
+
+def _resolve_evaluation(course: dict, index: int) -> dict:
+    evals = _evaluations_of(course)
+    if index < 0 or index >= len(evals):
+        raise EditorError(f"Evaluation {index} not found")
+    return evals[index]
+
+
+def _check_name(evals: list[dict], name: str, current: dict) -> None:
+    if any(ev is not current and ev["nom"] == name for ev in evals):
+        raise EditorError(f"An evaluation named '{name}' already exists")
+
+
+def _new_eval_name(evals: list[dict]) -> str:
+    used = {ev["nom"] for ev in evals}
+    if _NEW_EVAL_NAME not in used:
+        return _NEW_EVAL_NAME
+    suffix = 2
+    while f"{_NEW_EVAL_NAME} {suffix}" in used:
+        suffix += 1
+    return f"{_NEW_EVAL_NAME} {suffix}"
+
+
+def _rename_teammates(course: dict, old: str, new: str) -> None:
+    teammates = course.get("teammates")
+    if not teammates or old == new or old not in teammates:
+        return
+    course["teammates"] = {
+        (new if key == old else key): members for key, members in teammates.items()
+    }
+
+
+def _parse_amount(value, field: str) -> float:
+    try:
+        return float(str(value).strip().replace(",", "."))
+    except ValueError as exc:
+        raise EditorError(f"Invalid value for '{field}'") from exc
+
+
+def _normalize_eval_value(evals: list[dict], item: dict, field: str, value):
+    if field == "nom":
+        name = str(value or "").strip()
+        if not name:
+            raise EditorError("An evaluation name is required")
+        _check_name(evals, name, item)
+        return name
+    if field in ("ponderation", "corrigeSur"):
+        amount = int(round(_parse_amount(value, field)))
+        if amount < (1 if field == "corrigeSur" else 0):
+            raise EditorError(f"'{field}' is out of range")
+        return amount
+    if field == "isTeam":
+        return bool(value)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return _REMOVE
+    if field == "publie":
+        return bool(value)
+    if field == "dateCible":
+        return _validate_date(str(value).strip())
+    if field == "rangCentile":
+        return max(0, min(100, int(round(_parse_amount(value, field)))))
+    return round(_parse_amount(value, field), 1)
+
+
+def set_evaluation(session: str, course_id: str, index: int, field: str, value) -> dict:
+    if field not in _EVAL_FIELDS:
+        raise EditorError(f"Unknown field '{field}'")
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        evals = _evaluations_of(course)
+        item = _resolve_evaluation(course, index)
+        resolved = _normalize_eval_value(evals, item, field, value)
+        _snapshot(session)
+        if resolved is _REMOVE:
+            item.pop(field, None)
+        elif field == "nom":
+            _rename_teammates(course, item["nom"], resolved)
+            item["nom"] = resolved
+        else:
+            item[field] = resolved
+        _persist(session)
+    return get_state(session)
+
+
+def add_evaluation(session: str, course_id: str) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        evals = _evaluations_of(course)
+        _snapshot(session)
+        evals.append(
+            {
+                "nom": _new_eval_name(evals),
+                "ponderation": 0,
+                "corrigeSur": 100,
+                "isTeam": False,
+            }
+        )
+        _persist(session)
+    return get_state(session)
+
+
+def delete_evaluation(session: str, course_id: str, index: int) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        evals = _evaluations_of(course)
+        item = _resolve_evaluation(course, index)
+        _snapshot(session)
+        evals.remove(item)
+        teammates = course.get("teammates")
+        if teammates:
+            teammates.pop(item["nom"], None)
+        _persist(session)
+    return get_state(session)
+
+
+def move_evaluation(session: str, course_id: str, index: int, to_index: int) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        evals = _evaluations_of(course)
+        item = _resolve_evaluation(course, index)
+        if to_index < 0 or to_index >= len(evals):
+            raise EditorError(f"Evaluation {to_index} not found")
+        if to_index != index:
+            _snapshot(session)
+            evals.pop(index)
+            evals.insert(to_index, item)
+            _persist(session)
+    return get_state(session)
+
+
+def reset_grades(session: str, course_id: str) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        evals = _evaluations_of(course)
+        if not any(key in ev for ev in evals for key in _PINNED_FIELDS):
+            raise EditorError("This course has no pinned grades")
+        _snapshot(session)
+        for item in evals:
+            for key in _PINNED_FIELDS:
+                item.pop(key, None)
+        _persist(session)
+    return get_state(session)
+
+
+def set_cote(session: str, course_id: str, cote: str) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        _snapshot(session)
+        course["cote"] = str(cote or "").strip().upper()
+        _persist(session)
+    return get_state(session)
+
+
+def _current_exam(session: str, course: dict) -> dict:
+    key = _course_key(course)
+    for record in data_store.load_session(FINAL_EXAMS.filename, session):
+        if f"{record['sigle']}-{record['groupe']}" == key:
+            return record
+    return {}
+
+
+def set_final_exam(
+    session: str,
+    course_id: str,
+    exam_date: str | None = None,
+    heure_debut: str | None = None,
+    heure_fin: str | None = None,
+    local: str | None = None,
+) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        if course.get("schedule") is None:
+            raise EditorError(f"Course '{course_id}' has no final exam")
+
+        current = _current_exam(session, course)
+        updates: dict = {}
+        removals: list[str] = []
+
+        if exam_date is not None:
+            if exam_date.strip():
+                updates["dateExamen"] = _validate_date(exam_date.strip())
+            else:
+                removals.append("dateExamen")
+        if local is not None:
+            if local.strip():
+                updates["local"] = local.strip()
+            else:
+                removals.append("local")
+        if heure_debut is not None or heure_fin is not None:
+            if not (heure_debut or "").strip() and not (heure_fin or "").strip():
+                removals.extend(["heureDebut", "heureFin"])
+            else:
+                start = _snap(
+                    _to_min(heure_debut or current.get("heureDebut", "09:00"))
+                )
+                end = _snap(_to_min(heure_fin or current.get("heureFin", "12:00")))
+                start, end = _clamp_range(start, end)
+                updates["heureDebut"] = _to_hhmm(start)
+                updates["heureFin"] = _to_hhmm(end)
+        if not updates and not removals:
+            raise EditorError("Nothing to update on this exam")
+
+        _snapshot(session)
+        exam = course.setdefault("finalExam", {})
+        exam.update(updates)
+        for key in removals:
+            exam.pop(key, None)
+        if not exam:
+            course.pop("finalExam", None)
+        _persist(session)
+    return get_state(session)
+
+
+def reset_final_exam(session: str, course_id: str) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        if not course.get("finalExam"):
+            raise EditorError("This course has no exam override")
+        _snapshot(session)
+        course.pop("finalExam", None)
         _persist(session)
     return get_state(session)
 

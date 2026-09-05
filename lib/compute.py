@@ -72,6 +72,20 @@ def _exam_date(start: date, end: date, rng: random.Random) -> date:
     return rng.choice(candidates) if candidates else start
 
 
+def _pinned_number(evaluation: dict, key: str) -> str:
+    value = evaluation.get(key)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return ""
+    return _format_french(float(value))
+
+
+def _pinned_percentile(evaluation: dict) -> str:
+    value = evaluation.get("rangCentile")
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return ""
+    return str(int(value))
+
+
 def _fill_grades(item: dict, max_score: int, rng: random.Random) -> None:
     student_pct = rng.uniform(*_STUDENT_SCORE_RANGE)
     score = round(student_pct * max_score, 1)
@@ -79,11 +93,16 @@ def _fill_grades(item: dict, max_score: int, rng: random.Random) -> None:
     average = round(avg_pct * max_score, 1)
     std_dev = round(rng.uniform(*_STD_DEV_RANGE) * max_score, 1)
     median = max(0, min(max_score, round(average + rng.uniform(-2, 2), 1)))
-    item["note"] = _format_french(score)
-    item["moyenne"] = _format_french(average)
-    item["ecartType"] = _format_french(std_dev)
-    item["mediane"] = _format_french(median)
-    item["rangCentile"] = str(rng.randint(*_PERCENTILE_RANGE))
+    generated = {
+        "note": _format_french(score),
+        "moyenne": _format_french(average),
+        "ecartType": _format_french(std_dev),
+        "mediane": _format_french(median),
+        "rangCentile": str(rng.randint(*_PERCENTILE_RANGE)),
+    }
+    for key, value in generated.items():
+        if not item[key]:
+            item[key] = value
 
 
 def _weighted_scores(evals: list) -> tuple[float, float]:
@@ -173,7 +192,8 @@ def _build_evaluations(
     target_dates = [
         _nearest_weekday(start + timedelta(days=int(f * duration))) for f in fractions
     ]
-    target_dates[-1] = _parse_date(exam_date_str)
+    if target_dates and not evals[-1].get("dateCible"):
+        target_dates[-1] = _parse_date(exam_date_str)
 
     num_published = max(
         1, int(eval_count * course.get("gradePublishRatio", _DEFAULT_PUBLISH_RATIO))
@@ -181,19 +201,22 @@ def _build_evaluations(
 
     items = []
     for idx, ev in enumerate(evals):
-        published = idx < num_published
+        pinned_publie = ev.get("publie")
+        published = (
+            pinned_publie if isinstance(pinned_publie, bool) else idx < num_published
+        )
         item = {
             "coursGroupe": course_group,
             "nom": ev["nom"],
             "equipe": f"\u00c9quipe {team_num}" if ev["isTeam"] else "",
-            "dateCible": target_dates[idx].isoformat(),
-            "note": "",
+            "dateCible": ev.get("dateCible") or target_dates[idx].isoformat(),
+            "note": _pinned_number(ev, "note"),
             "corrigeSur": str(ev["corrigeSur"]),
             "ponderation": str(ev["ponderation"]),
-            "moyenne": "",
-            "ecartType": "",
-            "mediane": "",
-            "rangCentile": "",
+            "moyenne": _pinned_number(ev, "moyenne"),
+            "ecartType": _pinned_number(ev, "ecartType"),
+            "mediane": _pinned_number(ev, "mediane"),
+            "rangCentile": _pinned_percentile(ev),
             "publie": "Oui" if published else "Non",
             "messageDuProf": "",
             "ignoreDuCalcul": "Non",
@@ -235,15 +258,16 @@ def _build_final_exam(
         exam_start, exam_end = _EXAM_SLOTS["morning"]
     else:
         exam_start, exam_end = _EXAM_SLOTS["afternoon"]
+    override = course.get("finalExam") or {}
     exam_record = {
         "sigle": sigle,
         "groupe": groupe,
-        "dateExamen": exam_date_str,
-        "heureDebut": exam_start,
-        "heureFin": exam_end,
-        "local": course.get("examRoom", "A-1518"),
+        "dateExamen": override.get("dateExamen") or exam_date_str,
+        "heureDebut": override.get("heureDebut") or exam_start,
+        "heureFin": override.get("heureFin") or exam_end,
+        "local": override.get("local") or course.get("examRoom", "A-1518"),
     }
-    return exam_record, exam_date_str
+    return exam_record, exam_record["dateExamen"]
 
 
 def override_target_date(week_date: date, override: dict) -> date:
