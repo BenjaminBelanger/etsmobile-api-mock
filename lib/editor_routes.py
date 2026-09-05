@@ -58,6 +58,42 @@ class OccurrenceBody(BaseModel):
     date: str
 
 
+class EvaluationBody(BaseModel):
+    session: str
+    courseId: str
+    index: int
+
+
+class EvaluationSetBody(BaseModel):
+    session: str
+    courseId: str
+    index: int
+    field: str
+    value: bool | str | None = None
+
+
+class EvaluationMoveBody(BaseModel):
+    session: str
+    courseId: str
+    index: int
+    toIndex: int
+
+
+class ExamBody(BaseModel):
+    session: str
+    courseId: str
+    date: str | None = None
+    heureDebut: str | None = None
+    heureFin: str | None = None
+    local: str | None = None
+
+
+class CoteBody(BaseModel):
+    session: str
+    courseId: str
+    cote: str = ""
+
+
 def _guard(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
@@ -146,6 +182,69 @@ def occurrence_reset(body: OccurrenceBody):
     return _guard(
         schedule_editor.reset_occurrence, body.session, body.blockId, body.date
     )
+
+
+@router.post("/api/evaluation/set")
+def evaluation_set(body: EvaluationSetBody):
+    return _guard(
+        schedule_editor.set_evaluation,
+        body.session,
+        body.courseId,
+        body.index,
+        body.field,
+        body.value,
+    )
+
+
+@router.post("/api/evaluation/add")
+def evaluation_add(body: CourseBody):
+    return _guard(schedule_editor.add_evaluation, body.session, body.courseId)
+
+
+@router.post("/api/evaluation/delete")
+def evaluation_delete(body: EvaluationBody):
+    return _guard(
+        schedule_editor.delete_evaluation, body.session, body.courseId, body.index
+    )
+
+
+@router.post("/api/evaluation/move")
+def evaluation_move(body: EvaluationMoveBody):
+    return _guard(
+        schedule_editor.move_evaluation,
+        body.session,
+        body.courseId,
+        body.index,
+        body.toIndex,
+    )
+
+
+@router.post("/api/grades/reset")
+def grades_reset(body: CourseBody):
+    return _guard(schedule_editor.reset_grades, body.session, body.courseId)
+
+
+@router.post("/api/course/cote")
+def course_cote(body: CoteBody):
+    return _guard(schedule_editor.set_cote, body.session, body.courseId, body.cote)
+
+
+@router.post("/api/exam/set")
+def exam_set(body: ExamBody):
+    return _guard(
+        schedule_editor.set_final_exam,
+        body.session,
+        body.courseId,
+        body.date,
+        body.heureDebut,
+        body.heureFin,
+        body.local,
+    )
+
+
+@router.post("/api/exam/reset")
+def exam_reset(body: CourseBody):
+    return _guard(schedule_editor.reset_final_exam, body.session, body.courseId)
 
 
 @router.post("/api/undo")

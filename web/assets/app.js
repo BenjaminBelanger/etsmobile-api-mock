@@ -2,7 +2,7 @@ import "./vendor/fluent.js";
 import { icon } from "./vendor/fluent-icons.js";
 
 const API = "/editor/api";
-const TINTS = 8;
+const TINTS = 12;
 
 const state = {
   session: null,
@@ -15,6 +15,9 @@ const state = {
   pxPerMin: 1.08,
   busy: false,
   selectedCourseId: null,
+  detailCourseId: null,
+  evalIndex: null,
+  statsOpen: false,
   semester: null,
   weekIndex: null,
   editScope: "series",
@@ -36,6 +39,9 @@ const el = {
   board: document.getElementById("board"),
   week: document.getElementById("week"),
   trashList: document.getElementById("trashList"),
+  detailPanel: document.getElementById("detailPanel"),
+  detailSelect: document.getElementById("detailSelect"),
+  detail: document.getElementById("detail"),
   undoBtn: document.getElementById("undoBtn"),
   redoBtn: document.getElementById("redoBtn"),
   resetBtn: document.getElementById("resetBtn"),
@@ -75,11 +81,32 @@ const totalMin = () => state.dayEndMin - state.dayStartMin;
 const minToPx = (min) => (min - state.dayStartMin) * state.pxPerMin;
 const durToPx = (min) => min * state.pxPerMin;
 
-const tintFor = (sigle) => {
+const tints = new Map();
+
+function assignTints(courses) {
+  const sigles = [...new Set(courses.map((c) => c.sigle))];
+  const live = new Set(sigles);
+  tints.forEach((_, sigle) => {
+    if (!live.has(sigle)) tints.delete(sigle);
+  });
+  const taken = new Set(tints.values());
+  sigles.forEach((sigle) => {
+    if (tints.has(sigle)) return;
+    let t = 0;
+    while (t < TINTS && taken.has(t)) t++;
+    if (t === TINTS) t = hashTint(sigle);
+    taken.add(t);
+    tints.set(sigle, t);
+  });
+}
+
+function hashTint(sigle) {
   let h = 0;
   for (let i = 0; i < sigle.length; i++) h = (h * 31 + sigle.charCodeAt(i)) >>> 0;
   return h % TINTS;
-};
+}
+
+const tintFor = (sigle) => tints.get(sigle) ?? hashTint(sigle);
 
 const MONTHS_FR = [
   "janv.", "févr.", "mars", "avr.", "mai", "juin",
@@ -211,6 +238,7 @@ function applyState(data, opts) {
   state.snap = meta.snapMin;
   state.minDuration = meta.minDuration;
   state.days = meta.days;
+  assignTints(data.courses || []);
   state.semester = meta.semester || null;
   if (
     prevSession !== data.session ||
@@ -219,10 +247,15 @@ function applyState(data, opts) {
   ) {
     state.weekIndex = defaultWeekIndex(state.semester);
   }
+  if (prevSession !== data.session) {
+    state.detailCourseId = null;
+    state.evalIndex = null;
+  }
   renderSessions(data);
   renderWeekPicker();
   renderScaffold();
   renderBlocks(opts && opts.animate);
+  renderDetail();
   renderTrash(data.trash);
   renderCatalog(meta.catalog);
   el.undoBtn.disabled = !data.canUndo;
@@ -451,6 +484,13 @@ function selectCourse(courseId) {
   document.querySelectorAll(".block").forEach((n) =>
     n.classList.toggle("is-selected", n.dataset.courseId === courseId)
   );
+  if (courseId && courseId !== state.detailCourseId) showDetail(courseId);
+}
+
+function showDetail(courseId) {
+  state.detailCourseId = courseId;
+  state.evalIndex = null;
+  renderDetail();
 }
 
 function renderEmpty(isEmpty) {
@@ -492,24 +532,28 @@ function buildBlock(occ, animate, occMode) {
   node.dataset.start = start;
   node.dataset.dur = dur;
 
+  const isExam = occ.kind === "exam";
   const kindLabel =
     occ.kind === "labo" ? `<span class="block__kind">(Labo)</span>` : "";
-  const badge =
-    occ.kind === "exam"
-      ? `<span class="block__badge block__badge--off" title="Examen final">Examen</span>`
-      : canceled
-      ? `<span class="block__badge block__badge--off" title="Séance annulée cette semaine">Annulée</span>`
-      : occ.overridden
-      ? `<span class="block__badge" title="Séance modifiée cette semaine">Modifiée</span>`
-      : "";
+  const badge = isExam
+    ? `<span class="block__badge block__badge--off" title="Examen final">Examen</span>`
+    : canceled
+    ? `<span class="block__badge block__badge--off" title="Séance annulée cette semaine">Annulée</span>`
+    : occ.overridden
+    ? `<span class="block__badge" title="Séance modifiée cette semaine">Modifiée</span>`
+    : "";
   const resetBtn =
-    occMode && editable && occ.overridden
+    editable && occ.overridden && (occMode || isExam)
       ? `<button class="block__reset" title="${
-          canceled ? "Rétablir cette séance" : "Rétablir cette séance au modèle"
+          isExam
+            ? "Rétablir l'examen généré"
+            : canceled
+            ? "Rétablir cette séance"
+            : "Rétablir cette séance au modèle"
         }">${icon("reset", 13)}</button>`
       : "";
   const delBtn =
-    !editable || canceled
+    !editable || canceled || isExam
       ? ""
       : `<button class="block__del" title="${
           occMode ? "Annuler cette séance" : "Supprimer le cours"
@@ -581,6 +625,430 @@ function renderTrash(trash) {
     );
     el.trashList.appendChild(li);
   });
+}
+
+const plain = (value) => String(value ?? "").replace(",", ".");
+const fieldText = (value) => (value == null ? "" : plain(value));
+
+function detailCourses() {
+  return (state.data && state.data.courses) || [];
+}
+
+function currentDetail() {
+  const courses = detailCourses();
+  return (
+    courses.find((c) => c.courseId === state.detailCourseId) || courses[0] || null
+  );
+}
+
+let detailSelectKey = "";
+function fillDetailSelect(courses, selected) {
+  const key = `${courses.map((c) => c.courseId).join(",")}|${selected}`;
+  if (key === detailSelectKey) return;
+  detailSelectKey = key;
+  fillDropdown(
+    el.detailSelect,
+    courses.map((c) => ({ value: c.courseId, text: `${c.sigle}-${c.groupe}` })),
+    selected,
+  );
+}
+
+function iconButton(action, iconName, label, disabled) {
+  return `<fluent-button class="detail__act" data-act="${action}" appearance="subtle"
+      size="small" icon-only${disabled ? " disabled" : ""} title="${label}"
+      aria-label="${label}">${icon(iconName, 16)}</fluent-button>`;
+}
+
+function propInput(key, label, value, type, opts = {}) {
+  const pinned = !!opts.pinned;
+  const classes = `props__input${pinned ? " is-pinned" : ""}${
+    opts.wide ? " props__input--wide" : ""
+  }${opts.narrow ? " props__input--narrow" : ""}`;
+  const title = pinned
+    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
+    : "";
+  return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
+      type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
+}
+
+function checkBox(key, label, checked, pinned) {
+  return `<label class="check${pinned ? " is-pinned" : ""}">
+        <input type="checkbox" data-key="${key}"${checked ? " checked" : ""} />
+        <span>${label}</span>
+      </label>`;
+}
+
+function summaryHtml(summary) {
+  if (!summary || !summary.noteACeJour) {
+    return `<p class="detail__empty">Aucune note publiée.</p>`;
+  }
+  return `<div class="detail__summary">
+        <span>À ce jour <b>${plain(summary.noteACeJour)}</b></span>
+        <span>Moyenne <b>${plain(summary.moyenneClasse)}</b></span>
+        <span>Publié <b>${plain(summary.tauxPublication)} %</b></span>
+      </div>`;
+}
+
+function warningsHtml(evals) {
+  const lines = [];
+  const total = evals.reduce((sum, ev) => sum + ev.ponderation, 0);
+  if (evals.length && total !== 100) lines.push(`Pondération totale ${total} %`);
+  const over = evals.filter((ev) => ev.note != null && ev.note > ev.corrigeSur);
+  if (over.length) {
+    lines.push(`Note hors barème : ${over.map((ev) => ev.nom).join(", ")}`);
+  }
+  if (!lines.length) return "";
+  return `<div class="detail__warn">${lines
+    .map((line) => `<span>${escapeHtml(line)}</span>`)
+    .join("")}</div>`;
+}
+
+const STAT_FIELDS = ["rangCentile", "moyenne", "mediane", "ecartType"];
+
+function propsHtml(ev) {
+  const pinned = ev.pinned || [];
+  const grade = (field, label, type = "text") =>
+    propInput(`ev:${field}`, label, fieldText(ev[field]), type, {
+      pinned: pinned.includes(field),
+    });
+  const open = state.statsOpen;
+  const statsPinned = STAT_FIELDS.some((field) => pinned.includes(field));
+  const statsTitle = statsPinned
+    ? ' title="Contient des valeurs modifiées"'
+    : "";
+  return `<div class="props">
+        <div class="props__grid">
+          ${propInput("ev:nom", "Nom", ev.nom, "text", { wide: true })}
+          ${grade("note", "Note")}
+          ${propInput("ev:corrigeSur", "Corrigé sur", fieldText(ev.corrigeSur), "text")}
+          ${propInput("ev:ponderation", "Pondération", fieldText(ev.ponderation), "text")}
+          ${grade("dateCible", "Date cible", "date")}
+        </div>
+        <div class="props__checks">
+          ${checkBox("ev:publie", "Publié", ev.publie, pinned.includes("publie"))}
+          ${checkBox("ev:isTeam", "Équipe", ev.isTeam, false)}
+        </div>
+        <button type="button" class="stats${open ? " is-open" : ""}${
+          statsPinned ? " is-pinned" : ""
+        }" data-act="toggleStats" aria-expanded="${open}"${statsTitle}>
+          ${icon("chevronRight", 16)}<span>Statistiques</span>
+        </button>
+        ${
+          open
+            ? `<div class="props__grid">
+          ${grade("rangCentile", "Rang centile")}
+          ${grade("moyenne", "Moyenne")}
+          ${grade("mediane", "Médiane")}
+          ${grade("ecartType", "Écart type")}
+        </div>`
+            : ""
+        }
+        <div class="props__actions">
+          <fluent-button class="props__del" data-act="delete" appearance="subtle" size="small">Supprimer</fluent-button>
+        </div>
+      </div>`;
+}
+
+function evalHtml(ev, isOpen) {
+  const hasNote = ev.note != null;
+  const note = hasNote
+    ? `${plain(ev.note)}<span class="evals__sur">/${plain(ev.corrigeSur)}</span>`
+    : "";
+  const warn = hasNote && ev.note > ev.corrigeSur;
+  return `<li class="evals__item${isOpen ? " is-open" : ""}">
+        <button type="button" class="evals__row" data-index="${ev.index}" aria-expanded="${isOpen}">
+          <span class="evals__name">${escapeHtml(ev.nom)}</span>
+          <span class="evals__pond">${ev.ponderation} %</span>
+          <span class="evals__note${warn ? " is-warn" : ""}">${note}</span>
+          <span class="evals__pub${ev.publie ? " is-on" : ""}" title="${
+            ev.publie ? "Publié" : "Non publié"
+          }"></span>
+        </button>
+        ${isOpen ? propsHtml(ev) : ""}
+      </li>`;
+}
+
+function examHtml(exam) {
+  if (!exam) {
+    return `<header class="detail__head"><h3>Examen final</h3></header>
+      <p class="detail__empty">Aucun examen final.</p>`;
+  }
+  const pinned = exam.pinned || [];
+  const field = (source, key, label, type, wide) =>
+    propInput(`exam:${key}`, label, exam[source], type, {
+      pinned: pinned.includes(source),
+      wide,
+    });
+  return `<header class="detail__head">
+        <h3>Examen final</h3>
+        ${pinned.length ? iconButton("examReset", "reset", "Rétablir l'examen généré") : ""}
+      </header>
+      <div class="props__grid">
+        ${field("dateExamen", "date", "Date", "date", true)}
+        ${field("heureDebut", "heureDebut", "Début", "time")}
+        ${field("heureFin", "heureFin", "Fin", "time")}
+        ${field("local", "local", "Local", "text", true)}
+      </div>`;
+}
+
+function detailHtml(course) {
+  const evals = course.evaluations || [];
+  const openIndex = state.evalIndex;
+  const canResetGrades = !!course.canResetGrades;
+  return `<p class="detail__title">${escapeHtml(course.titre)}</p>
+      ${propInput("course:cote", "Cote", course.cote, "text", { narrow: true })}
+      <section class="detail__section">
+        <header class="detail__head">
+          <h3>Évaluations</h3>
+          ${iconButton("addEval", "add", "Ajouter un élément")}
+          ${canResetGrades ? iconButton("resetGrades", "reset", "Régénérer les notes") : ""}
+        </header>
+        ${summaryHtml(course.summary)}
+        <ul class="evals">${evals
+          .map((ev) => evalHtml(ev, ev.index === openIndex))
+          .join("")}</ul>
+        ${evals.length ? "" : `<p class="detail__empty">Aucun élément d'évaluation.</p>`}
+        ${warningsHtml(evals)}
+      </section>
+      <section class="detail__section">${examHtml(course.exam)}</section>`;
+}
+
+function renderDetail() {
+  const courses = detailCourses();
+  const course = currentDetail();
+  el.detailPanel.hidden = !course;
+  if (!course) {
+    el.detail.replaceChildren();
+    return;
+  }
+  state.detailCourseId = course.courseId;
+  const evals = course.evaluations || [];
+  if (state.evalIndex != null && state.evalIndex >= evals.length) {
+    state.evalIndex = evals.length ? evals.length - 1 : null;
+  }
+  fillDetailSelect(courses, course.courseId);
+
+  const active = document.activeElement;
+  const focusKey = el.detail.contains(active) ? active.dataset.key : null;
+  el.detail.innerHTML = detailHtml(course);
+  wireDetail(course);
+  if (focusKey) {
+    const node = el.detail.querySelector(`[data-key="${focusKey}"]`);
+    if (node) node.focus();
+  }
+}
+
+function wireDetail(course) {
+  const list = el.detail.querySelector(".evals");
+  const count = (course.evaluations || []).length;
+  el.detail.querySelectorAll(".evals__row").forEach((row) => {
+    row.addEventListener("click", () => {
+      if (evalClickBlocked) {
+        evalClickBlocked = false;
+        return;
+      }
+      const index = Number(row.dataset.index);
+      state.evalIndex = state.evalIndex === index ? null : index;
+      renderDetail();
+      const next = el.detail.querySelector(`.evals__row[data-index="${index}"]`);
+      if (next) next.focus();
+    });
+    row.addEventListener("pointerdown", (e) => {
+      evalClickBlocked = false;
+      startEvalDrag(e, course, list, row.closest(".evals__item"));
+    });
+    row.addEventListener("keydown", (e) => {
+      const dir = e.altKey && (e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0);
+      if (!dir) return;
+      const from = Number(row.dataset.index);
+      const to = from + dir;
+      if (to < 0 || to >= count) return;
+      e.preventDefault();
+      moveEvaluation(course, from, to).then(() => {
+        const moved = el.detail.querySelector(`.evals__row[data-index="${to}"]`);
+        if (moved) moved.focus();
+      });
+    });
+  });
+  el.detail.querySelectorAll("[data-key]").forEach((node) => {
+    const key = node.dataset.key;
+    if (node.type === "checkbox") {
+      node.addEventListener("change", () => commitField(course, key, node.checked));
+      return;
+    }
+    node.addEventListener("change", () => commitField(course, key, node.value));
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") node.blur();
+    });
+  });
+  el.detail.querySelectorAll("[data-act]").forEach((node) => {
+    node.addEventListener("click", () => runDetailAction(course, node.dataset.act));
+  });
+}
+
+function commitField(course, key, value) {
+  const [scope, field] = key.split(":");
+  const courseId = course.courseId;
+  const revert = () => renderDetail();
+  if (scope === "course") {
+    const body = { session: state.session, courseId, cote: value };
+    apiPost("/course/cote", body).catch(revert);
+    return;
+  }
+  if (scope === "exam") {
+    const body = { session: state.session, courseId };
+    body[field] = value;
+    apiPost("/exam/set", body).catch(revert);
+    return;
+  }
+  apiPost("/evaluation/set", {
+    session: state.session,
+    courseId,
+    index: state.evalIndex,
+    field,
+    value,
+  }).catch(revert);
+}
+
+function runDetailAction(course, action) {
+  const courseId = course.courseId;
+  const body = { session: state.session, courseId };
+  if (action === "addEval") {
+    apiPost("/evaluation/add", body).then((data) => {
+      const next = (data.courses.find((c) => c.courseId === courseId) || {}).evaluations;
+      state.evalIndex = next && next.length ? next.length - 1 : null;
+      renderDetail();
+      toast("Élément ajouté");
+    });
+  } else if (action === "delete") {
+    apiPost("/evaluation/delete", { ...body, index: state.evalIndex }).then(() =>
+      toast("Élément supprimé")
+    );
+  } else if (action === "toggleStats") {
+    state.statsOpen = !state.statsOpen;
+    renderDetail();
+    const next = el.detail.querySelector(".stats");
+    if (next) next.focus();
+  } else if (action === "resetGrades") {
+    apiPost("/grades/reset", body).then(() => toast("Notes régénérées"));
+  } else if (action === "examReset") {
+    apiPost("/exam/reset", body).then(() => toast("Examen final rétabli"));
+  }
+}
+
+const EVAL_DRAG_PX = 4;
+const EVAL_DROP_MS = 150;
+let evalClickBlocked = false;
+
+function shiftIndex(idx, from, to) {
+  if (idx == null) return null;
+  if (idx === from) return to;
+  if (from < idx && idx <= to) return idx - 1;
+  if (to <= idx && idx < from) return idx + 1;
+  return idx;
+}
+
+function moveEvaluation(course, from, to, delay) {
+  const previous = state.evalIndex;
+  state.evalIndex = shiftIndex(previous, from, to);
+  const send = () =>
+    apiPost("/evaluation/move", {
+      session: state.session,
+      courseId: course.courseId,
+      index: from,
+      toIndex: to,
+    }).catch(() => {
+      state.evalIndex = previous;
+      renderDetail();
+    });
+  if (!delay) return send();
+  return new Promise((resolve) => setTimeout(() => resolve(send()), delay));
+}
+
+function startEvalDrag(e, course, list, item) {
+  if (state.busy || e.button !== 0 || !list || !item) return;
+  const items = Array.from(list.children);
+  if (items.length < 2) return;
+
+  const from = items.indexOf(item);
+  const listTop = list.getBoundingClientRect().top;
+  const gap = parseFloat(getComputedStyle(list).rowGap) || 0;
+  const boxes = items.map((node) => {
+    const rect = node.getBoundingClientRect();
+    return { top: rect.top - listTop, height: rect.height };
+  });
+  const own = boxes[from];
+  const middles = boxes.map((box) => box.top + box.height / 2);
+  const step = own.height + gap;
+  const last = boxes[items.length - 1];
+  const minTop = boxes[0].top;
+  const maxTop = last.top + last.height - own.height;
+  const grab = e.clientY - listTop - own.top;
+
+  const rest = [];
+  items.forEach((node, i) => {
+    if (i === from) return;
+    const base = i > from ? -step : 0;
+    rest.push({ node, base, top: boxes[i].top + base, height: boxes[i].height });
+  });
+  const slotTop = (k) =>
+    k === 0 ? boxes[0].top : rest[k - 1].top + rest[k - 1].height + gap;
+
+  let dragging = false;
+  let to = from;
+
+  const openSlot = (k) => {
+    rest.forEach((r, m) => {
+      const offset = r.base + (m >= k ? step : 0);
+      r.node.style.transform = offset ? `translateY(${offset}px)` : "";
+    });
+  };
+
+  const onMove = (ev) => {
+    if (!dragging) {
+      if (Math.abs(ev.clientY - e.clientY) < EVAL_DRAG_PX) return;
+      dragging = true;
+      item.classList.add("is-dragging");
+    }
+    const wanted = ev.clientY - list.getBoundingClientRect().top - grab;
+    const top = Math.max(minTop, Math.min(wanted, maxTop));
+    item.style.transform = `translateY(${top - own.top}px)`;
+
+    const bottom = top + own.height;
+    let k = from;
+    for (let i = from + 1; i < items.length; i += 1) {
+      if (bottom > middles[i]) k += 1;
+    }
+    for (let i = from - 1; i >= 0; i -= 1) {
+      if (top < middles[i]) k -= 1;
+    }
+    if (k !== to) {
+      to = k;
+      openSlot(k);
+    }
+  };
+
+  const finish = () => {
+    window.removeEventListener("pointermove", onMove);
+    window.removeEventListener("pointerup", finish);
+    window.removeEventListener("pointercancel", finish);
+    if (!dragging) return;
+    evalClickBlocked = true;
+    if (!item.isConnected) return;
+    item.classList.remove("is-dragging");
+    item.classList.add("is-settling");
+    item.style.transform = to === from ? "" : `translateY(${slotTop(to) - own.top}px)`;
+    if (to === from) {
+      openSlot(from);
+      setTimeout(() => item.classList.remove("is-settling"), EVAL_DROP_MS);
+      return;
+    }
+    moveEvaluation(course, from, to, EVAL_DROP_MS);
+  };
+
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", finish);
+  window.addEventListener("pointercancel", finish);
 }
 
 let catalogFilled = false;
@@ -708,6 +1176,17 @@ function clearHighlight() {
 }
 
 function commitGesture(mode, occ, cur) {
+  if (occ.kind === "exam") {
+    const week = currentWeek();
+    apiPost("/exam/set", {
+      session: state.session,
+      courseId: occ.courseId,
+      date: (week && week.dates[cur.jour]) || occ.date,
+      heureDebut: toHHMM(cur.start),
+      heureFin: toHHMM(cur.start + cur.dur),
+    }).then(() => toast("Examen final déplacé"));
+    return;
+  }
   if (occurrenceMode()) {
     apiPost("/occurrence/set", {
       session: state.session,
@@ -751,6 +1230,13 @@ function cancelOccurrence(occ) {
 }
 
 function resetOccurrence(occ) {
+  if (occ.kind === "exam") {
+    apiPost("/exam/reset", {
+      session: state.session,
+      courseId: occ.courseId,
+    }).then(() => toast("Examen final rétabli"));
+    return;
+  }
   apiPost("/occurrence/reset", {
     session: state.session,
     blockId: occ.blockId,
@@ -847,6 +1333,9 @@ el.resetConfirm.addEventListener("click", () => {
 
 el.sessionSelect.addEventListener("change", () =>
   loadSession(dropdownValue(el.sessionSelect), true)
+);
+el.detailSelect.addEventListener("change", () =>
+  selectCourse(dropdownValue(el.detailSelect))
 );
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;

@@ -11,6 +11,7 @@ const ICON_DIR = join(HERE, "node_modules", "@fluentui", "svg-icons", "icons");
 
 const ICONS = {
   add: "add_20_regular",
+  book: "book_20_regular",
   calendar: "calendar_ltr_20_regular",
   chevronLeft: "chevron_left_20_regular",
   chevronRight: "chevron_right_20_regular",
