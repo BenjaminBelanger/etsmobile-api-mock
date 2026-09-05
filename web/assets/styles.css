@@ -461,7 +461,7 @@ body {
 }
 .evals__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto 7px;
+  grid-template-columns: minmax(0, 1fr) 36px 54px 7px;
   align-items: center;
   gap: 4px 8px;
   width: 100%;
@@ -484,6 +484,7 @@ body {
   font-weight: var(--fontWeightRegular);
   font-size: var(--fontSizeBase200);
   color: var(--colorNeutralForeground3);
+  text-align: right;
 }
 .evals__note { min-width: 26px; text-align: right; color: var(--colorNeutralForeground2); }
 .evals__note.is-warn { color: var(--colorStatusWarningForeground1); }
