@@ -43,15 +43,15 @@ python start.py
 
 The toolbar switches between two scopes:
 
-- **Toutes les semaines** edits the weekly slot, so the change applies to every
-  occurrence of that block.
-- **Cette séance** edits only the displayed week, including séances relocated by
-  a *journée pédagogique* (`seed/replaced_days.json`).
+- **All weeks** edits the weekly slot, so the change applies to every occurrence
+  of that block.
+- **This occurrence** edits only the displayed week, including occurrences
+  relocated by a replaced day (`seed/replaced_days.json`).
 
-A séance with a week-specific change is marked *Modifiée* and can only be
-dragged in **Cette séance**; use *Rétablir* to put it back on the series slot.
+An occurrence with a week-specific change is marked as modified and can only be
+dragged in **This occurrence**; reset it to put it back on the series slot.
 Moving a series to another weekday keeps its week-specific changes but drops any
-*journée pédagogique* relocation.
+replaced-day relocation.
 
 Run the editor's tests with `python -m pytest tests/`. They never touch
 `seed/schedule_overrides.json`, which holds your live editor state.
