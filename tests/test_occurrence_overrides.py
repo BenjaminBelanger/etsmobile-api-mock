@@ -1,7 +1,7 @@
 import pytest
 
 from conftest import course, overrides, rows, user_overrides
-from lib import compute, data_store, schedule_editor
+from lib import compute, data_store, schedule_editor, sessions
 from lib.resource_specs import COURSE_ACTIVITIES
 from lib.schedule_editor import EditorError
 
@@ -23,7 +23,7 @@ def activity_dates(session, course_group):
 
 def assert_overrides_are_readable(session, course_id):
     entry = course(session, course_id)
-    window = schedule_editor._course_window(session)
+    window = sessions.course_window(session)
     blocks = schedule_editor._blocks_of(entry)
     for override in entry.get("occurrenceOverrides", []):
         schedule = blocks[override["block"]]
@@ -294,6 +294,17 @@ def test_a_series_move_that_keeps_the_weekday_keeps_the_relocation(session):
             rows(state, BLOCK, "2026-02-23", "2026-02-28")] == [
         (PEDAGOGICAL_TARGET, "13:30")
     ]
+
+
+def test_cancelling_the_relocated_seance_keeps_it_tied_to_the_seeded_swap(session):
+    schedule_editor.cancel_occurrence(session, BLOCK, PEDAGOGICAL_TARGET)
+    state = schedule_editor.move_block(session, BLOCK, "3", "09:00")
+
+    assert any("pédagogique" in notice for notice in state.get("notices", []))
+    assert overrides(session, COURSE, block=0) == []
+    assert [(r["date"], r["canceled"]) for r in
+            rows(state, BLOCK, "2026-02-23", "2026-02-28")] == [("2026-02-25", False)]
+    assert_overrides_are_readable(session, COURSE)
 
 
 def test_editing_the_relocated_seance_takes_it_out_of_the_seeded_swap(session):

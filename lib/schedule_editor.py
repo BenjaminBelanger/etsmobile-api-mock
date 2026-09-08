@@ -79,18 +79,6 @@ def _session_dates(session_code: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _course_window(session_code: str) -> tuple[date, date] | None:
-    for entry in sessions.get_raw_sessions():
-        if entry.get("abrege") != session_code:
-            continue
-        start = entry.get("dateDebut")
-        end = entry.get("dateFinCours") or entry.get("dateFin")
-        if not start or not end:
-            return None
-        return date.fromisoformat(start), date.fromisoformat(end)
-    return None
-
-
 def _fr_date_label(iso: str) -> str:
     d = date.fromisoformat(iso)
     return f"{d.day} {MONTHS_FR[d.month - 1]}"
@@ -275,7 +263,7 @@ def _occurrence_list(course: dict) -> list[dict]:
 
 
 def _origin_dates(session: str, schedule: dict) -> list[date]:
-    window = _course_window(session)
+    window = sessions.course_window(session)
     if window is None:
         return []
     return weekly_dates(window[0], window[1], int(schedule["jour"]))
@@ -338,7 +326,11 @@ def _upsert_occurrence(course: dict, index: int, origin: date, **fields) -> dict
     existing = find_override(course.get("occurrenceOverrides", []), index, origin)
     if existing is not None:
         existing.update(fields)
-        existing.pop("source", None)
+        # A bare cancel keeps the seeded tag: the séance is still where the
+        # journée pédagogique put it, so a later series move must recognise it
+        # as a relocation. Anything else means the user has moved or retimed it.
+        if any(key != "canceled" for key in fields):
+            existing.pop("source", None)
         return existing
     override = {"block": index, "date": origin.isoformat(), **fields}
     _occurrence_list(course).append(override)
@@ -409,7 +401,7 @@ def _exam_row(course: dict, key: str, exam: dict) -> dict | None:
 
 
 def _occurrences(session: str, courses: list[dict], exams: dict) -> list[dict]:
-    window = _course_window(session)
+    window = sessions.course_window(session)
     if window is None:
         return []
     rows = []
@@ -587,9 +579,11 @@ def _rekey_occurrences(
         origin = date.fromisoformat(override["date"])
         moved = origin + shift
         if override.get("source") == REPLACED_DAY_SOURCE:
-            if override.get("canceled"):
-                continue
-            lost_relocations.append(_fr_date_label(origin.isoformat()))
+            # Relocations carry a targetDate and are worth a notice; the
+            # companion that blanks the replacement day is bookkeeping, so it
+            # goes quietly.
+            if override.get("targetDate"):
+                lost_relocations.append(_fr_date_label(origin.isoformat()))
             continue
         if moved not in origins:
             lost_edits.append(_fr_date_label(origin.isoformat()))
