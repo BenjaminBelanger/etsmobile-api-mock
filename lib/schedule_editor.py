@@ -326,9 +326,6 @@ def _upsert_occurrence(course: dict, index: int, origin: date, **fields) -> dict
     existing = find_override(course.get("occurrenceOverrides", []), index, origin)
     if existing is not None:
         existing.update(fields)
-        # A bare cancel keeps the seeded tag: the séance is still where the
-        # journée pédagogique put it, so a later series move must recognise it
-        # as a relocation. Anything else means the user has moved or retimed it.
         if any(key != "canceled" for key in fields):
             existing.pop("source", None)
         return existing
@@ -579,9 +576,6 @@ def _rekey_occurrences(
         origin = date.fromisoformat(override["date"])
         moved = origin + shift
         if override.get("source") == REPLACED_DAY_SOURCE:
-            # Relocations carry a targetDate and are worth a notice; the
-            # companion that blanks the replacement day is bookkeeping, so it
-            # goes quietly.
             if override.get("targetDate"):
                 lost_relocations.append(_fr_date_label(origin.isoformat()))
             continue

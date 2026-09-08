@@ -65,7 +65,6 @@ def _get_session_by_code(code: str) -> dict | None:
 
 
 def course_window(session_code: str) -> tuple[date, date] | None:
-    """The first and last teaching day of a session, or None when unknown."""
     entry = _get_session_by_code(session_code)
     if entry is None:
         return None
