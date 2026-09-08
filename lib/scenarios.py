@@ -109,6 +109,9 @@ def _course_window(session_code: str) -> tuple[date, date] | None:
     return None
 
 
+REPLACED_DAY_SOURCE = "replaced-day"
+
+
 def _add_override(course: dict, entry: dict) -> None:
     overrides = course.setdefault("occurrenceOverrides", [])
     if not any(
@@ -167,6 +170,7 @@ def _apply_swaps(
                     "block": index,
                     "date": origin.isoformat(),
                     "targetDate": replacement.isoformat(),
+                    "source": REPLACED_DAY_SOURCE,
                 },
             )
         for course, blocks in scheduled:
@@ -178,6 +182,7 @@ def _apply_swaps(
                             "block": index,
                             "date": replacement.isoformat(),
                             "canceled": True,
+                            "source": REPLACED_DAY_SOURCE,
                         },
                     )
 

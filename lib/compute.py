@@ -1,5 +1,7 @@
 import random
+from collections.abc import Iterator
 from datetime import date, datetime, timedelta
+from typing import NamedTuple
 
 from .resource_specs import (
     COURSE_ACTIVITIES,
@@ -52,7 +54,7 @@ def _nearest_weekday(current_date: date) -> date:
     return current_date
 
 
-def _weekly_dates(start: date, end: date, isoweekday: int) -> list[date]:
+def weekly_dates(start: date, end: date, isoweekday: int) -> list[date]:
     current_date = start
     while current_date.isoweekday() != isoweekday:
         current_date += timedelta(days=1)
@@ -290,6 +292,65 @@ def override_target_date(week_date: date, override: dict) -> date:
     return monday + timedelta(days=int(jour) - 1)
 
 
+def find_override(
+    overrides: list[dict], block_index: int, origin: date | str
+) -> dict | None:
+    origin_iso = origin.isoformat() if isinstance(origin, date) else origin
+    for override in overrides:
+        if override.get("block") == block_index and override.get("date") == origin_iso:
+            return override
+    return None
+
+
+class Occurrence(NamedTuple):
+    block: int
+    schedule: dict
+    origin: date
+    date: date
+    heureDebut: str
+    heureFin: str
+    canceled: bool
+    override: dict | None
+
+
+def block_occurrences(
+    course: dict,
+    blocks: list[dict | None],
+    semester_start: date,
+    semester_courses_end: date,
+) -> Iterator[Occurrence]:
+    overrides = course.get("occurrenceOverrides", [])
+    for index, schedule in enumerate(blocks):
+        if schedule is None:
+            continue
+        for origin in weekly_dates(
+            semester_start, semester_courses_end, int(schedule["jour"])
+        ):
+            override = find_override(overrides, index, origin)
+            if override is None:
+                yield Occurrence(
+                    index,
+                    schedule,
+                    origin,
+                    origin,
+                    schedule["heureDebut"],
+                    schedule["heureFin"],
+                    False,
+                    None,
+                )
+                continue
+            yield Occurrence(
+                index,
+                schedule,
+                origin,
+                override_target_date(origin, override),
+                override.get("heureDebut", schedule["heureDebut"]),
+                override.get("heureFin", schedule["heureFin"]),
+                bool(override.get("canceled")),
+                override,
+            )
+
+
 def _build_activities(
     course: dict,
     course_group: str,
@@ -300,47 +361,26 @@ def _build_activities(
     semester_courses_end: date,
 ) -> list[dict]:
     activities = []
-    overrides = course.get("occurrenceOverrides", [])
-    all_schedules = [sched] + course.get("extraActivities", [])
-    for block_index, activity_schedule in enumerate(all_schedules):
-        iso_weekday = int(activity_schedule["jour"])
-        activity_room = activity_schedule.get("room", room)
-        is_lab = activity_schedule.get("codeActivite", "C") == "L"
-        activity_name = "Labo" if is_lab else "Cours"
-        activity_description = activity_schedule.get("nomActivite", "Activité de cours")
-        for week_date in _weekly_dates(
-            semester_start, semester_courses_end, iso_weekday
-        ):
-            override = next(
-                (
-                    ov
-                    for ov in overrides
-                    if ov.get("block") == block_index
-                    and ov.get("date") == week_date.isoformat()
+    blocks = [sched] + course.get("extraActivities", [])
+    for occ in block_occurrences(
+        course, blocks, semester_start, semester_courses_end
+    ):
+        if occ.canceled:
+            continue
+        is_lab = occ.schedule.get("codeActivite", "C") == "L"
+        activities.append(
+            {
+                "dateDebut": f"{occ.date.isoformat()}T{occ.heureDebut}:00",
+                "dateFin": f"{occ.date.isoformat()}T{occ.heureFin}:00",
+                "coursGroupe": course_group,
+                "nomActivite": "Labo" if is_lab else "Cours",
+                "local": occ.schedule.get("room", room),
+                "descriptionActivite": occ.schedule.get(
+                    "nomActivite", "Activité de cours"
                 ),
-                None,
-            )
-            if override and override.get("canceled"):
-                continue
-            if override:
-                occ_date = override_target_date(week_date, override)
-                start_hhmm = override.get("heureDebut", activity_schedule["heureDebut"])
-                end_hhmm = override.get("heureFin", activity_schedule["heureFin"])
-            else:
-                occ_date = week_date
-                start_hhmm = activity_schedule["heureDebut"]
-                end_hhmm = activity_schedule["heureFin"]
-            activities.append(
-                {
-                    "dateDebut": f"{occ_date.isoformat()}T{start_hhmm}:00",
-                    "dateFin": f"{occ_date.isoformat()}T{end_hhmm}:00",
-                    "coursGroupe": course_group,
-                    "nomActivite": activity_name,
-                    "local": activity_room,
-                    "descriptionActivite": activity_description,
-                    "libelleCours": title,
-                }
-            )
+                "libelleCours": title,
+            }
+        )
     return activities
 
 
