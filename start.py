@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import signal
@@ -7,6 +8,21 @@ import sys
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
+
+DEFAULT_PROFILE = "normal"
+
+TIME_CHOICES = ("morning", "afternoon", "evening")
+
+MANAGED_ENV = (
+    "PROFILE",
+    "SCENARIO",
+    "SEMESTER_WEEK",
+    "COURSE_COUNT",
+    "SCHEDULE_DAYS",
+    "TIME_PREFERENCE",
+)
+
+CONFIG_FLAGS = ("profile", "scenario", "semester_week", "courses", "days", "time")
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -39,6 +55,147 @@ def _load_profiles() -> dict:
 
 def _load_scenarios() -> dict:
     return json.loads((SEED / "scenarios.json").read_text(encoding="utf-8"))
+
+
+def _day_list(raw: str) -> list[str]:
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    invalid = [p for p in parts if p not in DAY_NAMES]
+    if not parts or invalid:
+        codes = ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items())
+        raise argparse.ArgumentTypeError(
+            f"invalid day code(s): {', '.join(invalid) or raw!r}. Valid codes: {codes}"
+        )
+    return parts
+
+
+def _time_list(raw: str) -> str:
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    invalid = [p for p in parts if p not in TIME_CHOICES]
+    if not parts or invalid:
+        raise argparse.ArgumentTypeError(
+            f"invalid time preference(s): {', '.join(invalid) or raw!r}. "
+            f"Valid values: {', '.join(TIME_CHOICES)}"
+        )
+    return ",".join(parts)
+
+
+def _bounded_int(low: int, high: int):
+    def parse(raw: str) -> int:
+        try:
+            val = int(raw)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"expected an integer between {low} and {high}, got {raw!r}"
+            ) from None
+        if val < low or val > high:
+            raise argparse.ArgumentTypeError(
+                f"expected an integer between {low} and {high}, got {val}"
+            )
+        return val
+
+    return parse
+
+
+def _epilog(profiles: dict, scenarios: dict) -> str:
+    lines = ["profils:"]
+    for name in profiles:
+        lines.append(f"  {name:<20}{PROFILE_DESCRIPTIONS.get(name, '')}")
+    lines.append("")
+    lines.append("scénarios:")
+    for name, body in scenarios.items():
+        desc = SCENARIO_DESCRIPTIONS.get(name) or body.get("description", "")
+        lines.append(f"  {name:<20}{desc}")
+    lines.append("")
+    lines.append("codes de jour:")
+    lines.append("  " + ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items()))
+    lines.append("")
+    lines.append("exemples:")
+    lines.append("  python start.py")
+    lines.append("  python start.py --profile semester-off")
+    lines.append("  python start.py --courses 2 --days 1,3,5 --time morning")
+    lines.append("  python start.py --scenario semaine-relache --semester-week 3")
+    return "\n".join(lines)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    profiles = _load_profiles()
+    scenarios = _load_scenarios()
+
+    parser = argparse.ArgumentParser(
+        prog="python start.py",
+        description=(
+            "Démarre le serveur mock ETSMobileAPI. Sans argument, un menu "
+            "interactif s'affiche; avec des options, le serveur démarre "
+            "directement."
+        ),
+        epilog=_epilog(profiles, scenarios),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--profile",
+        choices=list(profiles),
+        help=f"Profil étudiant à charger (défaut: {DEFAULT_PROFILE}).",
+        default=None,
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=list(scenarios),
+        help="Modification du calendrier de la session active.",
+        default=None,
+    )
+    parser.add_argument(
+        "--semester-week",
+        type=_bounded_int(1, 15),
+        metavar="N",
+        help="Décale la session pour qu'aujourd'hui tombe à la semaine N (1-15).",
+        default=None,
+    )
+    parser.add_argument(
+        "--courses",
+        type=_bounded_int(1, 5),
+        metavar="N",
+        help="Nombre de cours générés (1-5).",
+        default=None,
+    )
+    parser.add_argument(
+        "--days",
+        type=_day_list,
+        metavar="1,3,5",
+        help="Jours de cours, codes séparés par des virgules.",
+        default=None,
+    )
+    parser.add_argument(
+        "--time",
+        type=_time_list,
+        metavar="morning,evening",
+        help=f"Plage horaire: {', '.join(TIME_CHOICES)} (séparées par des virgules).",
+        default=None,
+    )
+    return parser
+
+
+def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | None]:
+    overrides: dict[str, str] = {}
+    if args.profile is not None:
+        overrides["PROFILE"] = args.profile
+    if args.scenario is not None and args.scenario != "none":
+        overrides["SCENARIO"] = args.scenario
+    if args.semester_week is not None:
+        overrides["SEMESTER_WEEK"] = str(args.semester_week)
+    if args.courses is not None:
+        overrides["COURSE_COUNT"] = str(args.courses)
+    if args.days is not None:
+        overrides["SCHEDULE_DAYS"] = ",".join(args.days)
+    if args.time is not None:
+        overrides["TIME_PREFERENCE"] = args.time
+
+    generated = any(
+        getattr(args, name) is not None for name in ("courses", "days", "time")
+    )
+    base = args.profile or DEFAULT_PROFILE
+    profile_display = f"{base} (personnalisé)" if generated else base
+
+    return overrides, profile_display, args.scenario or "none", args.semester_week
 
 
 def _validate_menu_choice(raw: str, max_choices: int) -> int | None:
@@ -302,38 +459,50 @@ def _stop_existing_servers() -> None:
             pass
 
 
-def main():
+def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
     profile = _select_profile()
     if profile is None:
         print("Au revoir!")
-        return
+        return None
 
     scenario = _select_scenario()
     semester_week = _prompt_semester_week()
 
-    env = os.environ.copy()
-
+    overrides: dict[str, str] = {}
     if scenario != "none":
-        env["SCENARIO"] = scenario
-
+        overrides["SCENARIO"] = scenario
     if semester_week is not None:
-        env["SEMESTER_WEEK"] = str(semester_week)
+        overrides["SEMESTER_WEEK"] = str(semester_week)
 
     if profile == "__custom__":
         config = _configure_custom()
         if config is None:
             print("Annulé.")
-            return
-        env["PROFILE"] = "normal"
-        env["COURSE_COUNT"] = str(config["count"])
+            return None
+        overrides["PROFILE"] = DEFAULT_PROFILE
+        overrides["COURSE_COUNT"] = str(config["count"])
         if config["allowedDays"]:
-            env["SCHEDULE_DAYS"] = ",".join(config["allowedDays"])
-        env["TIME_PREFERENCE"] = config["timePreference"] or ""
+            overrides["SCHEDULE_DAYS"] = ",".join(config["allowedDays"])
+        overrides["TIME_PREFERENCE"] = config["timePreference"] or ""
         profile_display = "Personnalisé"
     else:
-        env["PROFILE"] = profile
+        overrides["PROFILE"] = profile
         profile_display = profile
 
+    return overrides, profile_display, scenario, semester_week
+
+
+def _build_env(overrides: dict) -> dict:
+    env = os.environ.copy()
+    for name in MANAGED_ENV:
+        env.pop(name, None)
+    env.update(overrides)
+    return env
+
+
+def _start_server(
+    overrides: dict, profile_display: str, scenario: str, semester_week: int | None
+) -> None:
     scenario_display = f" + scénario « {scenario} »" if scenario != "none" else ""
     week_display = f" + semaine {semester_week}" if semester_week is not None else ""
     print(
@@ -357,9 +526,25 @@ def main():
             "--port",
             "8080",
             "--reload",
+            "--reload-include",
+            "*.json",
         ],
-        env=env,
+        env=_build_env(overrides),
     )
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _build_parser().parse_args(argv)
+
+    if any(getattr(args, name) is not None for name in CONFIG_FLAGS):
+        config = _config_from_args(args)
+    else:
+        config = _config_from_menu()
+
+    if config is None:
+        return
+
+    _start_server(*config)
 
 
 if __name__ == "__main__":

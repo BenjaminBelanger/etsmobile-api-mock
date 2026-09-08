@@ -5,6 +5,8 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+  - [Running on Windows](#running-on-windows)
+  - [Environment variables](#environment-variables-and-running-uvicorn-directly)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
@@ -25,6 +27,71 @@ python start.py
 ```
 
 This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
+
+To skip the menu, pass the configuration as flags instead:
+
+```bash
+python start.py --profile semester-off
+python start.py --courses 2 --days 1,3,5 --time morning
+python start.py --scenario semaine-relache --semester-week 3
+```
+
+`python start.py --help` lists every profile, scenario and day code. These
+commands are identical on Windows, macOS and Linux.
+
+### Running on Windows
+
+Shell syntax only matters for the environment variables under
+[Failure Injection](#failure-injection), which have no flag equivalents. The
+`VAR=value command` prefix in those examples is bash syntax; in PowerShell, set
+the variable first:
+
+```powershell
+$env:LATENCY_MS = "200-600"
+python start.py --profile normal
+```
+
+Unlike the bash prefix, `$env:` variables stay set for the rest of the shell
+session. Clear them when you're done, or open a new terminal:
+
+```powershell
+Remove-Item Env:LATENCY_MS
+```
+
+`start.py` clears the variables it owns — `PROFILE`, `SCENARIO`,
+`SEMESTER_WEEK`, `COURSE_COUNT`, `SCHEDULE_DAYS`, `TIME_PREFERENCE` — before
+every launch, so a stale `$env:PROFILE` from an earlier run can never leak into
+a later one. Every other variable is passed through untouched.
+
+In Windows PowerShell 5.1 the `curl` examples need `curl.exe` spelled out, since
+`curl` is an alias for `Invoke-WebRequest` there; PowerShell 7 drops the alias.
+For the `/admin/failures` PATCH body, prefer
+[`manage_failures.py`](#named-presets-via-manage_failurespy) over hand-quoting
+JSON. Git Bash and WSL run every example as written.
+
+### Environment variables and running uvicorn directly
+
+Every flag has an environment-variable equivalent. That is what `start.py` sets
+internally, and what to use from Docker or CI:
+
+| Flag | Env var |
+|------|---------|
+| `--profile` | `PROFILE` |
+| `--scenario` | `SCENARIO` |
+| `--semester-week` | `SEMESTER_WEEK` |
+| `--courses` | `COURSE_COUNT` |
+| `--days` | `SCHEDULE_DAYS` |
+| `--time` | `TIME_PREFERENCE` |
+
+```bash
+PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.json"
+```
+
+Invoking `uvicorn` yourself skips two things `start.py` does for you: it does not
+stop a mock already running on port 8080, and it does not clear
+`seed/schedule_overrides.json`. A leftover overrides file replaces the active
+session's courses wholesale, so a profile set this way can look like it did
+nothing. Delete that file first, or just use `start.py`.
 
 ## Schedule Editor UI
 
@@ -127,10 +194,10 @@ add_course_to_seed(
 
 ## Profiles
 
-The easiest way to pick a profile is `python start.py`. You can also set the `PROFILE` environment variable directly:
+Pick a profile from the `python start.py` menu, or name it directly:
 
 ```bash
-PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --profile semester-off
 ```
 
 | Profile | Description |
@@ -150,34 +217,37 @@ Profiles are defined in `seed/profiles.json`. Add a new profile by adding a JSON
 
 The interactive menu (`python start.py`) offers a "Custom" option that prompts for course count, schedule days, and time preference.
 
-You can also set these values directly with environment variables, from any profile:
+You can set the same values as flags, on top of any profile:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `COURSE_COUNT` | Number of courses (1-5) | `COURSE_COUNT=2` |
-| `SCHEDULE_DAYS` | Comma-separated day codes (1=Mon, 6=Sat) | `SCHEDULE_DAYS=1,3,5` |
-| `TIME_PREFERENCE` | `morning`, `afternoon`, `evening` (comma-separated for multiple) | `TIME_PREFERENCE=morning,evening` |
+| Flag | Env var | Description |
+|------|---------|-------------|
+| `--courses N` | `COURSE_COUNT` | Number of courses (1-5) |
+| `--days 1,3,5` | `SCHEDULE_DAYS` | Comma-separated day codes (1=Mon, 6=Sat) |
+| `--time morning` | `TIME_PREFERENCE` | `morning`, `afternoon`, `evening` (comma-separated for multiple) |
 
 ```bash
-COURSE_COUNT=2 SCHEDULE_DAYS=1,3,5 uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --courses 2 --days 1,3,5
+python start.py --profile generated-busy --time evening
 ```
+
+Invalid values are rejected before the server starts.
 
 ### Semester week (shift the session calendar)
 
 By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. To simulate being at a specific week of the active session, set:
 
 ```bash
-SEMESTER_WEEK=3 uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --semester-week 3
 ```
 
 This shifts the active session's `dateDebut` (and all other date fields) so that today falls at the chosen week. The next session is shifted by the same offset to preserve the gap between them.
 
 ## Scenarios
 
-Scenarios apply calendar modifications to the active session (skipped days, replaced days). Select a scenario from the `start.py` menu, or set the `SCENARIO` environment variable:
+Scenarios apply calendar modifications to the active session (skipped days, replaced days). Select a scenario from the `start.py` menu, or name it directly:
 
 ```bash
-SCENARIO=semaine-relache uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --scenario semaine-relache
 ```
 
 | Scenario | Description |
@@ -206,9 +276,13 @@ The mock can simulate flaky-network and broken-server conditions. Failures are c
 | `MALFORMED` | Truncate every successful 2xx response body in half. | `MALFORMED=true` |
 | `AUTH_REQUIRED` | Return 401 on API requests that lack an `Authorization` header. | `AUTH_REQUIRED=true` |
 
+These have no flag equivalents — set them in the environment before starting:
+
 ```bash
-LATENCY_MS=200-600 ERROR_RATE=0.1 uvicorn main:app --port 8080 --reload
+LATENCY_MS=200-600 ERROR_RATE=0.1 python start.py --profile normal
 ```
+
+On Windows, see [Running on Windows](#running-on-windows).
 
 ### Runtime control via admin endpoint
 
