@@ -45,18 +45,13 @@ The toolbar switches between two scopes:
 
 - **Toutes les semaines** edits the weekly slot, so the change applies to every
   occurrence of that block.
-- **Cette séance** edits only the displayed week. The change is stored against
-  the block's own weekly slot, which is why a séance stays addressable after it
-  has been moved to another day — including the ones a *journée pédagogique*
-  relocates (`seed/replaced_days.json`).
+- **Cette séance** edits only the displayed week, including séances relocated by
+  a *journée pédagogique* (`seed/replaced_days.json`).
 
-A séance carrying a week-specific change is marked *Modifiée* and cannot be
-dragged in **Toutes les semaines**: it is not drawn where the series puts it, so
-the drag would mean something other than it looks like. Move it in **Cette
-séance**, or use *Rétablir* to put it back on the series slot first. Moving a
-series to another weekday carries its week-specific changes along, but drops a
-*journée pédagogique* relocation — that swap only exists because of the weekday
-it moved — and says so in the status bar.
+A séance with a week-specific change is marked *Modifiée* and can only be
+dragged in **Cette séance**; use *Rétablir* to put it back on the series slot.
+Moving a series to another weekday keeps its week-specific changes but drops any
+*journée pédagogique* relocation.
 
 Run the editor's tests with `python -m pytest tests/`. They never touch
 `seed/schedule_overrides.json`, which holds your live editor state.
