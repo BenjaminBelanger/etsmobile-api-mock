@@ -64,6 +64,17 @@ def _get_session_by_code(code: str) -> dict | None:
     return next((s for s in _RAW_SESSIONS if s["abrege"] == code), None)
 
 
+def course_window(session_code: str) -> tuple[date, date] | None:
+    entry = _get_session_by_code(session_code)
+    if entry is None:
+        return None
+    start = entry.get("dateDebut")
+    end = entry.get("dateFinCours") or entry.get("dateFin")
+    if not start or not end:
+        return None
+    return date.fromisoformat(start), date.fromisoformat(end)
+
+
 def _find_source_session(target_code: str) -> str | None:
     """Find the most recent session with the same prefix (H/É/A)."""
     prefix = _session_prefix(target_code)

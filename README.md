@@ -39,6 +39,23 @@ Nothing extra is needed to run it. Start the server and open the page:
 python start.py
 ```
 
+### Editing scopes
+
+The toolbar switches between two scopes:
+
+- **All weeks** edits the weekly slot, so the change applies to every occurrence
+  of that block.
+- **This occurrence** edits only the displayed week, including occurrences
+  relocated by a replaced day (`seed/replaced_days.json`).
+
+An occurrence with a week-specific change is marked as modified and can only be
+dragged in **This occurrence**; reset it to put it back on the series slot.
+Moving a series to another weekday keeps its week-specific changes but drops any
+replaced-day relocation.
+
+Run the editor's tests with `python -m pytest tests/`. They never touch
+`seed/schedule_overrides.json`, which holds your live editor state.
+
 ### Front-end build
 
 The editor's front-end assets are already built and committed, so running the

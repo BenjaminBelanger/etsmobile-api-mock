@@ -97,16 +97,7 @@ def _resolve_and_cache(scenario_name: str) -> tuple[set[date], list[dict]]:
     return _scenario_cache[cache_key]
 
 
-def _course_window(session_code: str) -> tuple[date, date] | None:
-    for entry in sessions.get_raw_sessions():
-        if entry.get("abrege") != session_code:
-            continue
-        start = entry.get("dateDebut")
-        end = entry.get("dateFinCours") or entry.get("dateFin")
-        if not start or not end:
-            return None
-        return date.fromisoformat(start), date.fromisoformat(end)
-    return None
+REPLACED_DAY_SOURCE = "replaced-day"
 
 
 def _add_override(course: dict, entry: dict) -> None:
@@ -141,7 +132,7 @@ def _parse_moves(entries: list[dict]) -> list[tuple[date, date]]:
 def _apply_swaps(
     session_code: str, courses: list[dict], moves: list[tuple[date, date]]
 ) -> None:
-    window = _course_window(session_code)
+    window = sessions.course_window(session_code)
 
     def in_window(day: date) -> bool:
         return window is None or window[0] <= day <= window[1]
@@ -167,6 +158,7 @@ def _apply_swaps(
                     "block": index,
                     "date": origin.isoformat(),
                     "targetDate": replacement.isoformat(),
+                    "source": REPLACED_DAY_SOURCE,
                 },
             )
         for course, blocks in scheduled:
@@ -178,6 +170,7 @@ def _apply_swaps(
                             "block": index,
                             "date": replacement.isoformat(),
                             "canceled": True,
+                            "source": REPLACED_DAY_SOURCE,
                         },
                     )
 
@@ -198,7 +191,7 @@ def seed_occurrence_overrides(
 
     _apply_swaps(active_session, courses, _parse_moves(replaced_days))
 
-    window = _course_window(active_session)
+    window = sessions.course_window(active_session)
     skip_dates = {
         day for day in skip_dates if window is None or window[0] <= day <= window[1]
     }

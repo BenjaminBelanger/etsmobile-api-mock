@@ -235,7 +235,7 @@ body {
   z-index: 20;
   transition: none;
 }
-.block__inner { display: flex; flex-direction: column; height: 100%; }
+.block__inner { display: flex; flex-direction: column; height: 100%; container-type: inline-size; }
 
 .block__sigle {
   flex: none;
@@ -251,7 +251,7 @@ body {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .block__kind { flex-shrink: 10000; }
-.block__badge { flex-shrink: 100; }
+.block__badge { flex-shrink: 100000; }
 .block__code { flex-shrink: 1; }
 .block__code { white-space: nowrap; color: var(--colorNeutralForeground1); }
 .block__kind {
@@ -325,7 +325,25 @@ body {
   color: var(--colorNeutralForeground1);
 }
 
+@container (max-width: 132px) {
+  .block__badge {
+    font-size: 0;
+    padding: 0;
+    flex: none;
+    width: 9px;
+    height: 9px;
+  }
+  .block__sigle { padding-right: 14px; }
+}
+@container (max-width: 78px) {
+  .block__sigle { padding-right: 0; }
+  .block__kind { display: none; }
+}
+
 .block.is-overridden { box-shadow: 0 0 0 1px var(--colorBrandStroke1), var(--shadow4); }
+.board:not(.is-occurrence) .block.is-overridden:not(.is-exam):not(.is-canceled) {
+  cursor: not-allowed;
+}
 
 .block.is-exam { border-style: dashed; }
 

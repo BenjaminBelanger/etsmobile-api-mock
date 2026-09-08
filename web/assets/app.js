@@ -15,6 +15,7 @@ const state = {
   pxPerMin: 1.08,
   busy: false,
   selectedCourseId: null,
+  selectedOccurrence: null,
   detailCourseId: null,
   evalIndex: null,
   statsOpen: false,
@@ -181,10 +182,7 @@ const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek()
 
 function occurrencesForWeek(week) {
   const dates = new Set(Object.values(week.dates));
-  const occMode = occurrenceMode();
-  return (state.data.occurrences || []).filter(
-    (occ) => dates.has(occ.date) && (occMode || !occ.canceled)
-  );
+  return (state.data.occurrences || []).filter((occ) => dates.has(occ.date));
 }
 
 function setStatus(text, busy, isError) {
@@ -219,7 +217,7 @@ async function apiPost(path, body) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
     applyState(data);
-    setStatus("Enregistré.", false);
+    setStatus(data.notices?.length ? data.notices.join(" ") : "Enregistré.", false);
     return data;
   } catch (err) {
     setStatus("Erreur.", false, true);
@@ -296,14 +294,18 @@ function selectWeek(index) {
 }
 
 function renderSessions(data) {
-  if (el.sessionSelect.dataset.filled === "1" && dropdownValue(el.sessionSelect) === data.session)
+  const key = data.sessions.join(",");
+  if (
+    el.sessionSelect.dataset.key === key &&
+    dropdownValue(el.sessionSelect) === data.session
+  )
     return;
   fillDropdown(
     el.sessionSelect,
     data.sessions.map((code) => ({ value: code, text: code })),
     data.session,
   );
-  el.sessionSelect.dataset.filled = "1";
+  el.sessionSelect.dataset.key = key;
 }
 
 function renderScaffold() {
@@ -408,7 +410,7 @@ function renderBlocks(animate) {
     });
   });
 
-  if (!selectionAlive) state.selectedCourseId = null;
+  if (!selectionAlive) selectCourse(null);
   fitBlockTitles();
   renderEmpty(count === 0);
 }
@@ -479,12 +481,23 @@ function clearLaneLayout(node) {
   node.style.right = "";
 }
 
-function selectCourse(courseId) {
+function selectCourse(courseId, occ) {
   state.selectedCourseId = courseId;
+  state.selectedOccurrence = occ ? { blockId: occ.blockId, date: occ.date } : null;
   document.querySelectorAll(".block").forEach((n) =>
     n.classList.toggle("is-selected", n.dataset.courseId === courseId)
   );
   if (courseId && courseId !== state.detailCourseId) showDetail(courseId);
+}
+
+function selectedOccurrence() {
+  const sel = state.selectedOccurrence;
+  if (!sel) return null;
+  return (
+    (state.data.occurrences || []).find(
+      (occ) => occ.blockId === sel.blockId && occ.date === sel.date
+    ) || null
+  );
 }
 
 function showDetail(courseId) {
@@ -497,9 +510,12 @@ function renderEmpty(isEmpty) {
   const existing = el.board.querySelector(".board__empty");
   if (existing) existing.remove();
   if (!isEmpty) return;
+  const hasAny = !!(state.data && (state.data.occurrences || []).length);
   const div = document.createElement("div");
   div.className = "board__empty";
-  div.innerHTML = `<p>Aucun cours cette session.</p>`;
+  div.innerHTML = `<p>${
+    hasAny ? "Aucune séance cette semaine." : "Aucun cours cette session."
+  }</p>`;
   el.board.appendChild(div);
 }
 
@@ -526,6 +542,9 @@ function buildBlock(occ, animate, occMode) {
   node.style.setProperty("--tx", `var(--c${t}-tx)`);
   node.style.top = `${minToPx(start)}px`;
   node.style.height = `${durToPx(dur) - 3}px`;
+  node.title = [`${occ.sigle}${occ.groupe ? "-" + occ.groupe : ""}`, occ.titre]
+    .filter(Boolean)
+    .join(" — ");
   node.dataset.blockId = occ.blockId || "";
   node.dataset.courseId = occ.courseId;
   node.dataset.jour = occ.jour;
@@ -562,7 +581,9 @@ function buildBlock(occ, animate, occMode) {
   node.innerHTML = `
       <div class="block__handle block__handle--top"></div>
       <div class="block__inner">
-        <div class="block__sigle"><span class="block__code">${occ.sigle}${occ.groupe ? "-" + occ.groupe : ""}</span>${kindLabel}${badge}</div>
+        <div class="block__sigle"><span class="block__code">${escapeHtml(
+          occ.sigle
+        )}${occ.groupe ? "-" + escapeHtml(occ.groupe) : ""}</span>${kindLabel}${badge}</div>
         <div class="block__title">${escapeHtml(occ.titre)}</div>
         <div class="block__meta"><span class="block__time">${occ.heureDebut} - ${occ.heureFin}</span>${occ.room ? `<span class="block__room">${escapeHtml(occ.room)}</span>` : ""}</div>
       </div>
@@ -611,13 +632,14 @@ function renderTrash(trash) {
   trash.forEach((c) => {
     const li = document.createElement("li");
     li.className = "trash__item";
+    const label = `${c.sigle}${c.groupe ? "-" + c.groupe : ""}`;
     li.innerHTML = `
         <div class="trash__meta">
-          <div class="trash__sigle">${c.sigle}${c.groupe ? "-" + c.groupe : ""}</div>
+          <div class="trash__sigle">${escapeHtml(label)}</div>
           <div class="trash__title">${escapeHtml(c.titre)}</div>
         </div>
         <fluent-button class="trash__restore" appearance="subtle" size="small" icon-only
-          title="Restaurer" aria-label="Restaurer ${c.sigle}">${icon("restore", 16)}</fluent-button>`;
+          title="Restaurer" aria-label="Restaurer ${escapeHtml(c.sigle)}">${icon("restore", 16)}</fluent-button>`;
     li.querySelector(".trash__restore").addEventListener("click", () =>
       apiPost("/course/restore", { session: state.session, courseId: c.courseId }).then(
         () => toast(`${c.sigle} restauré`)
@@ -1143,9 +1165,13 @@ function startGesture(e, node, occ, resizeEdge) {
   };
 
   const onUp = () => {
-    node.releasePointerCapture(e.pointerId);
+    try {
+      node.releasePointerCapture(e.pointerId);
+    } catch {
+    }
     node.removeEventListener("pointermove", onMove);
     node.removeEventListener("pointerup", onUp);
+    node.removeEventListener("pointercancel", onUp);
     node.classList.remove("is-dragging");
     clearHighlight();
 
@@ -1155,7 +1181,7 @@ function startGesture(e, node, occ, resizeEdge) {
       cur.dur !== dur0;
     if (!moved || !changed) {
       renderBlocks(false);
-      if (!moved) selectCourse(occ.courseId);
+      if (!moved) selectCourse(occ.courseId, occ);
       return;
     }
     commitGesture(mode, occ, cur);
@@ -1196,6 +1222,16 @@ function commitGesture(mode, occ, cur) {
       heureDebut: toHHMM(cur.start),
       heureFin: toHHMM(cur.start + cur.dur),
     }).then(() => toast("Séance modifiée cette semaine"));
+    return;
+  }
+  if (occ.overridden) {
+    renderBlocks(false);
+    setStatus("Prêt.", false);
+    toast(
+      "Cette séance a été modifiée pour cette semaine. Passez à « Cette séance » " +
+        "pour la déplacer, ou rétablissez-la d'abord.",
+      true,
+    );
     return;
   }
   if (mode === "move") {
@@ -1366,7 +1402,7 @@ document.addEventListener("keydown", (e) => {
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||
-    /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName) ||
+    /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || "") ||
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
   const mod = e.ctrlKey || e.metaKey;
   if (mod && e.key.toLowerCase() === "z") {
@@ -1378,7 +1414,13 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     if (!el.redoBtn.disabled) el.redoBtn.click();
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
-    if (state.selectedCourseId) {
+    if (occurrenceMode()) {
+      const occ = selectedOccurrence();
+      if (occ && occ.blockId && occ.kind !== "exam" && !occ.canceled) {
+        e.preventDefault();
+        cancelOccurrence(occ);
+      }
+    } else if (state.selectedCourseId) {
       e.preventDefault();
       deleteCourse(state.selectedCourseId);
     }
