@@ -40,8 +40,9 @@ python start.py --scenario semaine-relache --semester-week 3
 
 ## Language
 
-The CLIs and the editor UI are available in French (default) and English. Pass
-`--lang en` to any CLI, or set `MOCK_LANG=en` to change it everywhere:
+The CLIs and the editor UI are available in French and English. They follow your
+system locale and fall back to French. To override, pass `--lang en` to any CLI,
+or set `MOCK_LANG=en` to change it everywhere:
 
 ```bash
 python start.py --lang en
@@ -50,9 +51,6 @@ python manage_failures.py --lang en list
 ```
 
 The editor UI has a language picker in the toolbar and remembers your choice.
-
-Mock API payloads (course titles, `journee`, error strings) stay French in every
-locale: they mirror what the real ETSMobileAPI returns.
 
 ## Schedule Editor UI
 

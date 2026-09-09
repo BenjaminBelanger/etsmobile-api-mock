@@ -1,5 +1,7 @@
+import ctypes
 import json
 import os
+import sys
 from contextvars import ContextVar
 
 from ._paths import ROOT
@@ -10,6 +12,7 @@ LANG_ENV = "MOCK_LANG"
 LANG_FLAG = "--lang"
 
 _SYSTEM_ENV = ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE")
+_LOCALE_NAME_MAX_LENGTH = 85
 
 _catalogs: dict[str, dict] = {}
 _current: ContextVar[str] = ContextVar("locale", default=DEFAULT_LOCALE)
@@ -27,13 +30,25 @@ def normalize(raw: str | None) -> str | None:
     return tag if tag in available_locales() else None
 
 
+def os_locale() -> str | None:
+    """Locale reported by the OS. Windows sets none of the _SYSTEM_ENV vars."""
+    if sys.platform != "win32":
+        return None
+    buffer = ctypes.create_unicode_buffer(_LOCALE_NAME_MAX_LENGTH)
+    if not ctypes.windll.kernel32.GetUserDefaultLocaleName(
+        buffer, _LOCALE_NAME_MAX_LENGTH
+    ):
+        return None
+    return buffer.value or None
+
+
 def system_locale() -> str | None:
     for name in _SYSTEM_ENV:
         for part in os.environ.get(name, "").split(":"):
             code = normalize(part)
             if code:
                 return code
-    return None
+    return normalize(os_locale())
 
 
 def resolve(explicit: str | None = None) -> str:

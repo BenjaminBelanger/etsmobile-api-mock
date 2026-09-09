@@ -19,6 +19,7 @@ _REAL_OVERRIDES = data_store.overrides_path()
 def default_locale(monkeypatch):
     for name in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE", i18n.LANG_ENV):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(i18n, "os_locale", lambda: None)
     i18n.set_locale(i18n.DEFAULT_LOCALE)
     yield
     i18n.set_locale(i18n.DEFAULT_LOCALE)

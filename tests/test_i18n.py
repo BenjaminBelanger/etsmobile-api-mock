@@ -83,6 +83,22 @@ def test_french_is_the_last_resort(monkeypatch):
     assert i18n.resolve("klingon") == "fr"
 
 
+def test_the_os_locale_is_used_when_no_variable_is_set(monkeypatch):
+    monkeypatch.setattr(i18n, "os_locale", lambda: "en-US")
+    assert i18n.resolve() == "en"
+
+
+def test_a_configured_variable_wins_over_the_os_locale(monkeypatch):
+    monkeypatch.setattr(i18n, "os_locale", lambda: "en-US")
+    monkeypatch.setenv("LANG", "fr_CA.UTF-8")
+    assert i18n.resolve() == "fr"
+
+
+def test_an_unsupported_os_locale_falls_back_to_french(monkeypatch):
+    monkeypatch.setattr(i18n, "os_locale", lambda: "de-DE")
+    assert i18n.resolve() == "fr"
+
+
 def test_unsupported_locales_fall_back_to_the_system_locale(monkeypatch):
     monkeypatch.delenv(i18n.LANG_ENV, raising=False)
     monkeypatch.setenv("LANG", "en_US.UTF-8")
