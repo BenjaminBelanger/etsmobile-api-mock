@@ -231,6 +231,7 @@ def _build_evaluations(
             "publie": "Oui" if published else "Non",
             "messageDuProf": "",
             "ignoreDuCalcul": "Non",
+            "ordre": str(idx + 1),
         }
         if published:
             _fill_grades(item, ev["corrigeSur"], rng)
