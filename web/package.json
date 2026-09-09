@@ -5,7 +5,8 @@
   "description": "Build tooling for the schedule editor UI (Fluent UI Web Components).",
   "type": "module",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "test": "node --test \"tests/**/*.test.mjs\""
   },
   "dependencies": {
     "@fluentui/svg-icons": "^1.1.317",
@@ -15,6 +16,7 @@
     "@microsoft/focusgroup-polyfill": "^1.5.0"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0"
+    "esbuild": "^0.25.0",
+    "jsdom": "^30.0.1"
   }
 }

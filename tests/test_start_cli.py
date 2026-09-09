@@ -250,3 +250,262 @@ def test_boot_presets_produce_the_same_config_as_the_runtime_presets(monkeypatch
         assert booted == runtime, f"preset {name} differs at boot"
 
     failures.reset_config()
+
+
+def test_the_help_epilog_documents_the_choices(capsys):
+    parser = start._build_parser()
+    with pytest.raises(SystemExit):
+        parser.parse_args(["--help"])
+
+    printed = capsys.readouterr().out
+    for name in start._load_profiles():
+        assert name in printed
+    for name in start._load_scenarios():
+        assert name in printed
+    for name in start._load_failure_presets():
+        assert name in printed
+    for code, day in start.DAY_NAMES.items():
+        assert f"{code}={day}" in printed
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [("1", 1), ("3", 3), ("0", None), ("4", None), ("abc", None), ("", None)],
+)
+def test_menu_choices_are_validated(raw, expected):
+    assert start._validate_menu_choice(raw, 3) == expected
+
+
+@pytest.mark.parametrize("raw,expected", [("", 3), ("1", 1), ("5", 5)])
+def test_a_prompted_number_falls_back_to_the_default(monkeypatch, raw, expected):
+    answer(monkeypatch, raw)
+    assert start._prompt_int("? ", 1, 5, 3) == expected
+
+
+def test_a_prompted_number_is_asked_again_when_out_of_range(monkeypatch, capsys):
+    left = answer(monkeypatch, "9", "abc", "2")
+
+    assert start._prompt_int("? ", 1, 5, 3) == 2
+
+    assert left == []
+    assert capsys.readouterr().out.count("Entrée invalide") == 2
+
+
+def test_a_prompted_number_falls_back_at_end_of_input(monkeypatch):
+    def raise_eof(*_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", raise_eof)
+    assert start._prompt_int("? ", 1, 5, 3) == 3
+
+
+def test_prompted_days_keep_only_valid_codes(monkeypatch):
+    answer(monkeypatch, "1,3,5")
+    assert start._prompt_days() == ["1", "3", "5"]
+
+
+def test_an_empty_day_answer_means_every_day(monkeypatch):
+    answer(monkeypatch, "")
+    assert start._prompt_days() is None
+
+
+def test_prompted_days_are_asked_again_when_all_invalid(monkeypatch):
+    left = answer(monkeypatch, "9,x", "2")
+    assert start._prompt_days() == ["2"]
+    assert left == []
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("1", "morning"),
+        ("2", "afternoon"),
+        ("3", "evening"),
+        ("1,3", "morning,evening"),
+        ("", None),
+        ("4", None),
+    ],
+)
+def test_the_prompted_time_range_maps_to_the_generation_value(monkeypatch, raw, expected):
+    answer(monkeypatch, raw)
+    assert start._prompt_time_preference() == expected
+
+
+def test_an_invalid_time_range_is_asked_again(monkeypatch):
+    left = answer(monkeypatch, "9", "2")
+    assert start._prompt_time_preference() == "afternoon"
+    assert left == []
+
+
+@pytest.mark.parametrize("raw,expected", [("", None), ("3", 3), ("15", 15)])
+def test_the_prompted_semester_week_is_optional(monkeypatch, raw, expected):
+    answer(monkeypatch, raw)
+    assert start._prompt_semester_week() == expected
+
+
+@pytest.mark.parametrize("raw", ["0", "16", "abc"])
+def test_an_impossible_semester_week_is_asked_again(monkeypatch, raw):
+    left = answer(monkeypatch, raw, "2")
+    assert start._prompt_semester_week() == 2
+    assert left == []
+
+
+def test_the_custom_menu_summarizes_the_answers(monkeypatch, capsys):
+    answer(monkeypatch, "2", "1,3", "1", "o")
+
+    config = start._configure_custom()
+
+    printed = capsys.readouterr().out
+    assert config == {"count": 2, "allowedDays": ["1", "3"], "timePreference": "morning"}
+    assert "Lundi, Mercredi" in printed
+    assert "Matin" in printed
+
+
+def test_the_custom_menu_can_be_refused(monkeypatch):
+    answer(monkeypatch, "2", "", "4", "n")
+    assert start._configure_custom() is None
+
+
+def test_a_refused_custom_menu_starts_nothing(monkeypatch):
+    answer(monkeypatch, "c", "", "", "3", "", "4", "n")
+    assert start._config_from_menu() is None
+
+
+def test_the_scenario_menu_defaults_to_none(monkeypatch):
+    answer(monkeypatch, "")
+    assert start._select_scenario() == "none"
+
+
+def test_a_scenario_can_be_picked_from_the_menu(monkeypatch):
+    answer(monkeypatch, "1")
+    expected = [n for n in start._load_scenarios() if n != "none"][0]
+    assert start._select_scenario() == expected
+
+
+def test_an_invalid_scenario_choice_is_asked_again(monkeypatch):
+    left = answer(monkeypatch, "99", "0")
+    assert start._select_scenario() == "none"
+    assert left == []
+
+
+def test_the_menu_carries_a_scenario_and_a_week(monkeypatch):
+    answer(monkeypatch, "1", "1", "4")
+
+    overrides, display, scenario, week = start._config_from_menu()
+
+    assert overrides["SCENARIO"] == scenario
+    assert overrides["SEMESTER_WEEK"] == "4"
+    assert display == list(start._load_profiles())[0]
+    assert week == 4
+
+
+def test_an_invalid_profile_choice_is_asked_again(monkeypatch):
+    left = answer(monkeypatch, "99", "2", "", "")
+    overrides, _, _, _ = start._config_from_menu()
+    assert overrides == {"PROFILE": "semester-off"}
+    assert left == []
+
+
+def test_the_overrides_file_is_cleared_before_starting(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    stale = tmp_path / start.OVERRIDES_FILENAME
+    stale.write_text("{}", encoding="utf-8")
+
+    start._clear_overrides()
+
+    assert not stale.exists()
+    assert "réinitialisée" in capsys.readouterr().out
+
+
+def test_clearing_a_missing_overrides_file_is_quiet(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    start._clear_overrides()
+    assert capsys.readouterr().out == ""
+
+
+def test_the_server_is_started_with_the_configured_environment(monkeypatch, tmp_path):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
+    runs = []
+    monkeypatch.setattr(
+        start.subprocess, "run", lambda cmd, env=None: runs.append((cmd, env))
+    )
+
+    start._start_server({"PROFILE": "semester-off"}, "semester-off", "none", None)
+
+    command, env = runs[0]
+    assert command[1:3] == ["-m", "uvicorn"]
+    assert "main:app" in command
+    assert "--port" in command and "8080" in command
+    assert "--reload" in command
+    assert command[command.index("--reload-exclude") + 1] == start.OVERRIDES_FILENAME
+    assert env["PROFILE"] == "semester-off"
+
+
+def test_starting_the_server_announces_the_configuration(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: None)
+
+    start._start_server({}, "normal", "friday-off", 3)
+
+    printed = capsys.readouterr().out
+    assert "normal" in printed
+    assert "friday-off" in printed
+    assert "semaine 3" in printed
+    assert "http://localhost:8080/editor" in printed
+
+
+def test_running_servers_are_stopped_first(monkeypatch):
+    killed = []
+
+    class Result:
+        stdout = "123 456"
+
+    monkeypatch.setattr(start.os, "name", "posix")
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: Result())
+    monkeypatch.setattr(start.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    monkeypatch.setattr(start.os, "getpid", lambda: 456)
+
+    start._stop_existing_servers()
+
+    assert killed == [(123, start.signal.SIGTERM)]
+
+
+def test_no_running_server_means_nothing_to_stop(monkeypatch):
+    class Result:
+        stdout = ""
+
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: Result())
+    monkeypatch.setattr(
+        start.os, "kill", lambda *a: pytest.fail("nothing should be killed")
+    )
+
+    start._stop_existing_servers()
+
+
+def test_a_failing_process_lookup_is_survivable(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise OSError("pgrep missing")
+
+    monkeypatch.setattr(start.subprocess, "run", boom)
+    monkeypatch.setattr(
+        start.os, "kill", lambda *a: pytest.fail("nothing should be killed")
+    )
+
+    start._stop_existing_servers()
+
+
+def test_a_process_that_refuses_to_die_is_survivable(monkeypatch):
+    class Result:
+        stdout = "123"
+
+    def boom(*_args, **_kwargs):
+        raise OSError("no such process")
+
+    monkeypatch.setattr(start.os, "name", "posix")
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: Result())
+    monkeypatch.setattr(start.os, "kill", boom)
+    monkeypatch.setattr(start.os, "getpid", lambda: 999)
+
+    start._stop_existing_servers()
