@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
-from lib import failures
+from lib import failures, i18n
 from lib._paths import ROOT
 from lib.data_store import (
     ACTIVE_SESSION,
@@ -21,6 +21,7 @@ from lib.editor_routes import router as editor_router
 from lib.routes import router
 from lib.schedule_editor import clear_cache as clear_editor_cache
 
+i18n.set_locale()
 failures.load_from_env()
 
 
@@ -29,6 +30,7 @@ async def lifespan(_app: FastAPI):
     logger = logging.getLogger("uvicorn")
     logger.info("Active session: %s (computed from current date)", ACTIVE_SESSION)
     logger.info("Active profile: %s", PROFILE_NAME)
+    logger.info("Interface language: %s", i18n.get_locale())
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         logger.info("Active scenario: %s", SCENARIO_NAME)
     if GENERATION_CONFIG:

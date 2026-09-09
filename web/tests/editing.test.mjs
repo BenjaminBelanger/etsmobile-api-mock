@@ -344,7 +344,7 @@ describe("toolbar", () => {
     await app.click(app.byId("resetBtn"));
 
     assert.equal(app.byId("resetDialog").open, true);
-    assert.equal(app.byId("resetSession").textContent, "H2026");
+    assert.equal(app.query("#resetText b").textContent, "H2026");
     assert.equal(app.server.lastCall("/reset"), null);
 
     await app.click(app.byId("resetConfirm"));

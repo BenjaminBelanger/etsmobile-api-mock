@@ -118,7 +118,7 @@ def test_an_editor_error_is_reported_as_a_400_with_a_message(client, session):
         json={"session": session, "blockId": BLOCK, "jour": "1", "heureDebut": "09:00"},
     )
     assert response.status_code == 400
-    assert "already on Lundi" in response.json()["error"]
+    assert "déjà le Lundi" in response.json()["error"]
 
 
 def test_a_malformed_editor_body_is_rejected(client, session):

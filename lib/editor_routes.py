@@ -1,13 +1,18 @@
-from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from . import schedule_editor
+from . import i18n, schedule_editor
 from ._paths import ROOT
 
 WEB_DIR = ROOT / "web"
 
-router = APIRouter(prefix="/editor")
+
+async def use_locale(lang: str | None = Query(None)) -> str:
+    return i18n.set_locale(lang)
+
+
+router = APIRouter(prefix="/editor", dependencies=[Depends(use_locale)])
 
 
 class MoveBody(BaseModel):
@@ -103,7 +108,8 @@ def _guard(func, *args, **kwargs):
 
 @router.get("")
 def editor_index():
-    return FileResponse(WEB_DIR / "index.html")
+    html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
+    return HTMLResponse(html.replace("{{LOCALE}}", i18n.get_locale()))
 
 
 @router.get("/api/state")

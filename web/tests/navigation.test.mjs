@@ -186,7 +186,7 @@ describe("session switching", () => {
     app.select(app.byId("sessionSelect"), "H2025");
     await flush();
 
-    assert.equal(app.server.lastCall("/state").query, "session=H2025");
+    assert.equal(app.server.lastCall("/state").query, "session=H2025&lang=fr");
     app.close();
   });
 

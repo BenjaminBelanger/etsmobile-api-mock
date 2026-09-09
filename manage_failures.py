@@ -7,6 +7,7 @@ import sys
 import urllib.error
 import urllib.request
 
+from lib import i18n
 from lib._paths import SEED
 
 DEFAULT_URL = "http://localhost:8080"
@@ -46,7 +47,10 @@ def _http(method: str, path: str, payload: dict | None = None) -> tuple[int, obj
 
 def _print_response(status: int, body: object) -> int:
     if status >= 400:
-        print(f"Error {status}: {body}", file=sys.stderr)
+        print(
+            i18n.t("cli.failures.error_status", status=status, body=body),
+            file=sys.stderr,
+        )
         return 1
     if isinstance(body, (dict, list)):
         print(json.dumps(body, indent=2, ensure_ascii=False))
@@ -58,14 +62,14 @@ def _print_response(status: int, body: object) -> int:
 def cmd_list() -> int:
     presets = _load_presets()
     if not presets:
-        print("(no presets defined)")
+        print(i18n.t("cli.failures.no_presets"))
         return 0
-    print("Available presets:\n")
+    print(f"{i18n.t('cli.failures.available_presets')}\n")
     name_width = max(len(n) for n in presets)
     for name, spec in presets.items():
-        desc = spec.get("description", "")
+        desc = i18n.describe("cli.presets", name, spec.get("description", ""))
         print(f"  {name:<{name_width}}  {desc}")
-    print("\nApply with: python manage_failures.py <preset>")
+    print(f"\n{i18n.t('cli.failures.apply_hint')}")
     return 0
 
 
@@ -78,61 +82,56 @@ def cmd_reset() -> int:
     status, body = _http("DELETE", "/admin/failures")
     code = _print_response(status, body)
     if code == 0:
-        print("(reset)", file=sys.stderr)
+        print(i18n.t("cli.failures.reset_done"), file=sys.stderr)
     return code
 
 
 def cmd_apply_preset(name: str) -> int:
     presets = _load_presets()
     if name not in presets:
-        print(f"Error: unknown preset '{name}'.", file=sys.stderr)
-        print(
-            "Run `python manage_failures.py list` to see available presets.",
-            file=sys.stderr,
-        )
+        print(i18n.t("cli.failures.unknown_preset", name=name), file=sys.stderr)
+        print(i18n.t("cli.failures.unknown_preset_hint"), file=sys.stderr)
         return 1
     config = presets[name].get("config", {})
     _http("DELETE", "/admin/failures")
     status, body = _http("PATCH", "/admin/failures", payload=config)
     code = _print_response(status, body)
     if code == 0:
-        print(f"(applied preset: {name})", file=sys.stderr)
+        print(i18n.t("cli.failures.preset_applied", name=name), file=sys.stderr)
     return code
 
 
 def _build_custom_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="manage_failures.py custom",
-        description="Apply a custom failure config (resets first).",
+        description=i18n.t("cli.failures.custom_description"),
+    )
+    parser.add_argument("--latency", help=i18n.t("cli.failures.custom_latency"))
+    parser.add_argument(
+        "--error-rate", type=float, help=i18n.t("cli.failures.custom_error_rate")
     )
     parser.add_argument(
-        "--latency", help="Latency in ms, fixed or range (e.g., '500' or '100-500')"
-    )
-    parser.add_argument("--error-rate", type=float, help="Error rate, 0.0-1.0")
-    parser.add_argument(
-        "--fail",
-        action="append",
-        help="Endpoint name to fail with 503 (repeatable, or '*' for all)",
+        "--fail", action="append", help=i18n.t("cli.failures.custom_fail")
     )
     parser.add_argument(
-        "--timeout",
-        action="append",
-        help="Endpoint name to hang (repeatable, or '*' for all)",
+        "--timeout", action="append", help=i18n.t("cli.failures.custom_timeout")
     )
     parser.add_argument(
-        "--timeout-duration", type=float, help="How long timeout endpoints sleep (s)"
+        "--timeout-duration",
+        type=float,
+        help=i18n.t("cli.failures.custom_timeout_duration"),
     )
     parser.add_argument(
         "--malformed",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Truncate response bodies",
+        help=i18n.t("cli.failures.custom_malformed"),
     )
     parser.add_argument(
         "--auth",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Require Authorization header",
+        help=i18n.t("cli.failures.custom_auth"),
     )
     return parser
 
@@ -161,28 +160,36 @@ def cmd_custom(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     config = _custom_args_to_config(args)
     if not config:
-        parser.error("Provide at least one option (try --help).")
+        parser.error(i18n.t("cli.failures.custom_needs_option"))
     _http("DELETE", "/admin/failures")
     status, body = _http("PATCH", "/admin/failures", payload=config)
     return _print_response(status, body)
 
 
 def _print_usage() -> None:
-    print(
-        "Usage: python manage_failures.py <command>\n\n"
-        "Commands:\n"
-        "  list                  Show available presets\n"
-        "  status                Show current failure config\n"
-        "  reset (or off)        Clear all failure injection\n"
-        "  custom [flags]        Apply a custom config (custom --help for flags)\n"
-        "  <preset-name>         Apply a named preset (see `list`)\n\n"
-        f"Server URL: {_server_url()} (override with MOCK_URL).",
-        file=sys.stderr,
-    )
+    locales = i18n.available_locales()
+    lang_flag = f"--lang {{{','.join(locales)}}}"
+    lang_help = i18n.t("cli.common.lang_help", choices=", ".join(locales))
+    lines = [
+        i18n.t("cli.failures.usage"),
+        "",
+        i18n.t("cli.failures.usage_commands"),
+        f"  {i18n.t('cli.failures.usage_list')}",
+        f"  {i18n.t('cli.failures.usage_status')}",
+        f"  {i18n.t('cli.failures.usage_reset')}",
+        f"  {i18n.t('cli.failures.usage_custom')}",
+        f"  {i18n.t('cli.failures.usage_preset')}",
+        f"  {lang_flag:<22}{lang_help}",
+        "",
+        i18n.t("cli.failures.usage_server", url=_server_url()),
+    ]
+    print("\n".join(lines), file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    argv, lang = i18n.split_lang_arg(argv)
+    i18n.set_locale(lang)
     if not argv or argv[0] in {"-h", "--help", "help"}:
         _print_usage()
         return 0
@@ -199,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_apply_preset(cmd)
     except urllib.error.URLError as exc:
         print(
-            f"Error: cannot reach mock server at {_server_url()}: {exc.reason}",
+            i18n.t("cli.failures.unreachable", url=_server_url(), reason=exc.reason),
             file=sys.stderr,
         )
         return 2

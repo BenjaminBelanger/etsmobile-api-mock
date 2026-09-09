@@ -4,18 +4,39 @@ import { fileURLToPath } from "node:url";
 
 import { JSDOM } from "jsdom";
 
+import en from "../assets/locales/en.js";
+import fr from "../assets/locales/fr.js";
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const WEB = join(HERE, "..");
 
 const HTML = readFileSync(join(WEB, "index.html"), "utf8");
 const APP = readFileSync(join(WEB, "assets", "app.js"), "utf8");
+const I18N = readFileSync(join(WEB, "assets", "i18n.js"), "utf8");
 const FIXTURE = JSON.parse(
   readFileSync(join(HERE, "fixtures", "state.json"), "utf8"),
 );
 
+export const LOCALE = "fr";
+
 const VENDOR_IMPORTS = [
   'import "./vendor/fluent.js";',
   'import { icon } from "./vendor/fluent-icons.js";',
+];
+
+const I18N_IMPORT = `import {
+  applyTranslations,
+  availableLocales,
+  getLocale,
+  localeName,
+  months,
+  setLocale,
+  t,
+} from "./i18n.js";`;
+
+const LOCALE_IMPORTS = [
+  'import fr from "./locales/fr.js";',
+  'import en from "./locales/en.js";',
 ];
 
 export const PX_PER_MIN = 1.08;
@@ -43,15 +64,24 @@ export const toMin = (hhmm) => {
 export const topPx = (hhmm) => (toMin(hhmm) - DAY_START_MIN) * PX_PER_MIN;
 export const heightPx = (start, end) => (toMin(end) - toMin(start)) * PX_PER_MIN;
 
-function appSource() {
-  let source = APP;
-  for (const line of VENDOR_IMPORTS) {
-    if (!source.includes(line)) {
-      throw new Error(`app.js no longer starts with: ${line}`);
+function strip(source, statements, origin) {
+  return statements.reduce((rest, statement) => {
+    if (!rest.includes(statement)) {
+      throw new Error(`${origin} no longer imports with: ${statement}`);
     }
-    source = source.replace(line, "");
-  }
-  return source;
+    return rest.replace(statement, "");
+  }, source);
+}
+
+function i18nSource() {
+  const body = strip(I18N, LOCALE_IMPORTS, "i18n.js").replace(/^export /gm, "");
+  return `const fr = ${JSON.stringify(fr)};
+const en = ${JSON.stringify(en)};
+${body}`;
+}
+
+function appSource() {
+  return strip(APP, [...VENDOR_IMPORTS, I18N_IMPORT], "app.js");
 }
 
 function defineElements(window) {
@@ -247,7 +277,7 @@ export function rect(node, box) {
 export async function mount(options = {}) {
   ignoreRefusedRejections();
   const dom = new JSDOM(HTML, {
-    url: "http://localhost:8080/editor",
+    url: `http://localhost:8080/editor?lang=${LOCALE}`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });
@@ -265,7 +295,8 @@ export async function mount(options = {}) {
 
   if (options.failLoad) server.fail("/state", options.failLoad);
 
-  window.eval(appSource());
+  window.eval(`${i18nSource()}
+${appSource()}`);
   await flush();
 
   const harness = {

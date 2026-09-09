@@ -1,5 +1,14 @@
 import "./vendor/fluent.js";
 import { icon } from "./vendor/fluent-icons.js";
+import {
+  applyTranslations,
+  availableLocales,
+  getLocale,
+  localeName,
+  months,
+  setLocale,
+  t,
+} from "./i18n.js";
 
 const API = "/editor/api";
 const TINTS = 12;
@@ -27,6 +36,7 @@ const state = {
 
 const el = {
   sessionSelect: document.getElementById("sessionSelect"),
+  langSelect: document.getElementById("langSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
   weekPicker: document.getElementById("weekPicker"),
@@ -54,7 +64,7 @@ const el = {
   addForm: document.getElementById("addForm"),
   addSubmit: document.getElementById("addSubmit"),
   resetDialog: document.getElementById("resetDialog"),
-  resetSession: document.getElementById("resetSession"),
+  resetText: document.getElementById("resetText"),
   resetConfirm: document.getElementById("resetConfirm"),
   fJour: document.getElementById("fJour"),
   fKind: document.getElementById("fKind"),
@@ -93,11 +103,11 @@ function assignTints(courses) {
   const taken = new Set(tints.values());
   sigles.forEach((sigle) => {
     if (tints.has(sigle)) return;
-    let t = 0;
-    while (t < TINTS && taken.has(t)) t++;
-    if (t === TINTS) t = hashTint(sigle);
-    taken.add(t);
-    tints.set(sigle, t);
+    let tint = 0;
+    while (tint < TINTS && taken.has(tint)) tint++;
+    if (tint === TINTS) tint = hashTint(sigle);
+    taken.add(tint);
+    tints.set(sigle, tint);
   });
 }
 
@@ -109,10 +119,6 @@ function hashTint(sigle) {
 
 const tintFor = (sigle) => tints.get(sigle) ?? hashTint(sigle);
 
-const MONTHS_FR = [
-  "janv.", "févr.", "mars", "avr.", "mai", "juin",
-  "juil.", "août", "sept.", "oct.", "nov.", "déc.",
-];
 const todayISO = () => {
   const d = new Date();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -121,7 +127,7 @@ const todayISO = () => {
 };
 const fmtDayDate = (iso) => {
   const [y, m, d] = iso.split("-").map(Number);
-  return `${d} ${MONTHS_FR[m - 1]}`;
+  return `${d} ${months()[m - 1]}`;
 };
 
 function paintIcons(root = document) {
@@ -202,14 +208,15 @@ function toast(msg, isError) {
 }
 
 async function apiGet(session) {
-  const res = await fetch(`${API}/state?session=${encodeURIComponent(session)}`);
+  const query = `session=${encodeURIComponent(session)}&lang=${getLocale()}`;
+  const res = await fetch(`${API}/state?${query}`);
   if (!res.ok) throw new Error((await res.json()).error || res.statusText);
   return res.json();
 }
 async function apiPost(path, body) {
-  setStatus("Enregistrement…", true);
+  setStatus(t("status.saving"), true);
   try {
-    const res = await fetch(`${API}${path}`, {
+    const res = await fetch(`${API}${path}?lang=${getLocale()}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -217,11 +224,14 @@ async function apiPost(path, body) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.detail || data.error || res.statusText);
     applyState(data);
-    setStatus(data.notices?.length ? data.notices.join(" ") : "Enregistré.", false);
+    setStatus(
+      data.notices?.length ? data.notices.join(" ") : t("status.saved"),
+      false
+    );
     return data;
   } catch (err) {
-    setStatus("Erreur.", false, true);
-    toast(err.message || "Échec de l'opération", true);
+    setStatus(t("status.error"), false, true);
+    toast(err.message || t("toast.failed"), true);
     throw err;
   }
 }
@@ -272,7 +282,10 @@ function renderWeekPicker() {
   el.weekPicker.hidden = false;
   fillDropdown(
     el.weekSelect,
-    semester.weeks.map((w) => ({ value: String(w.index), text: `S${w.index} (${w.range})` })),
+    semester.weeks.map((w) => ({
+      value: String(w.index),
+      text: t("topbar.weekOption", { index: w.index, range: w.range }),
+    })),
     String(state.weekIndex),
   );
 
@@ -514,7 +527,7 @@ function renderEmpty(isEmpty) {
   const div = document.createElement("div");
   div.className = "board__empty";
   div.innerHTML = `<p>${
-    hasAny ? "Aucune séance cette semaine." : "Aucun cours cette session."
+    hasAny ? t("board.emptyWeek") : t("board.emptySession")
   }</p>`;
   el.board.appendChild(div);
 }
@@ -522,20 +535,20 @@ function renderEmpty(isEmpty) {
 const BLOCK_MARKS = {
   exam: {
     icon: "hatGraduation",
-    label: "Examen",
-    tip: "Examen final",
+    labelKey: "block.exam",
+    tipKey: "block.examTip",
     off: true,
   },
   canceled: {
     icon: "dismissCircle",
-    label: "Annulée",
-    tip: "Séance annulée cette semaine",
+    labelKey: "block.canceled",
+    tipKey: "block.canceledTip",
     off: true,
   },
   overridden: {
     icon: "edit",
-    label: "Modifiée",
-    tip: "Séance modifiée cette semaine",
+    labelKey: "block.modified",
+    tipKey: "block.modifiedTip",
   },
 };
 
@@ -548,10 +561,10 @@ function blockMark(occ) {
 
 function markBadge(mark) {
   const off = mark.off ? " block__badge--off" : "";
-  return `<span class="block__badge${off}" title="${mark.tip}">${icon(
+  return `<span class="block__badge${off}" title="${t(mark.tipKey)}">${icon(
     mark.icon,
     12
-  )}<span class="block__badge-text">${mark.label}</span></span>`;
+  )}<span class="block__badge-text">${t(mark.labelKey)}</span></span>`;
 }
 
 function buildBlock(occ, animate, occMode) {
@@ -571,17 +584,17 @@ function buildBlock(occ, animate, occMode) {
 
   if (durToPx(dur) < 68) node.classList.add("is-tight");
   if (occ.overridden) node.classList.add("is-overridden");
-  const t = tintFor(occ.sigle);
-  node.style.setProperty("--bg", `var(--c${t}-bg)`);
-  node.style.setProperty("--bd", `var(--c${t}-bd)`);
-  node.style.setProperty("--tx", `var(--c${t}-tx)`);
+  const tint = tintFor(occ.sigle);
+  node.style.setProperty("--bg", `var(--c${tint}-bg)`);
+  node.style.setProperty("--bd", `var(--c${tint}-bd)`);
+  node.style.setProperty("--tx", `var(--c${tint}-tx)`);
   node.style.top = `${minToPx(start)}px`;
   node.style.height = `${durToPx(dur) - 3}px`;
   const mark = blockMark(occ);
   node.title = [
     `${occ.sigle}${occ.groupe ? "-" + occ.groupe : ""}`,
     occ.titre,
-    mark && mark.tip,
+    mark && t(mark.tipKey),
   ]
     .filter(Boolean)
     .join(" — ");
@@ -593,23 +606,25 @@ function buildBlock(occ, animate, occMode) {
 
   const isExam = occ.kind === "exam";
   const kindLabel =
-    occ.kind === "labo" ? `<span class="block__kind">(Labo)</span>` : "";
+    occ.kind === "labo"
+      ? `<span class="block__kind">${t("block.lab")}</span>`
+      : "";
   const badge = mark ? markBadge(mark) : "";
   const resetBtn =
     editable && occ.overridden && (occMode || isExam)
       ? `<button class="block__reset" title="${
           isExam
-            ? "Rétablir l'examen généré"
+            ? t("block.resetExam")
             : canceled
-            ? "Rétablir cette séance"
-            : "Rétablir cette séance au modèle"
+            ? t("block.resetOccurrence")
+            : t("block.resetToSeries")
         }">${icon("reset", 13)}</button>`
       : "";
   const delBtn =
     !editable || canceled || isExam
       ? ""
       : `<button class="block__del" title="${
-          occMode ? "Annuler cette séance" : "Supprimer le cours"
+          occMode ? t("block.cancelOccurrence") : t("block.deleteCourse")
         }">${icon("dismiss", 13)}</button>`;
 
   node.innerHTML = `
@@ -659,7 +674,7 @@ function renderTrash(trash) {
   if (!trash.length) {
     const li = document.createElement("li");
     li.className = "trash__empty";
-    li.textContent = "Aucun cours supprimé.";
+    li.textContent = t("trash.empty");
     el.trashList.appendChild(li);
     return;
   }
@@ -673,10 +688,12 @@ function renderTrash(trash) {
           <div class="trash__title">${escapeHtml(c.titre)}</div>
         </div>
         <fluent-button class="trash__restore" appearance="subtle" size="small" icon-only
-          title="Restaurer" aria-label="Restaurer ${escapeHtml(c.sigle)}">${icon("restore", 16)}</fluent-button>`;
+          title="${t("trash.restore")}" aria-label="${t("trash.restoreCourse", {
+            sigle: escapeHtml(c.sigle),
+          })}">${icon("restore", 16)}</fluent-button>`;
     li.querySelector(".trash__restore").addEventListener("click", () =>
       apiPost("/course/restore", { session: state.session, courseId: c.courseId }).then(
-        () => toast(`${c.sigle} restauré`)
+        () => toast(t("toast.restored", { sigle: c.sigle }))
       )
     );
     el.trashList.appendChild(li);
@@ -720,9 +737,7 @@ function propInput(key, label, value, type, opts = {}) {
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
-  const title = pinned
-    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
-    : "";
+  const title = pinned ? ` title="${t("detail.pinnedHint")}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
@@ -736,22 +751,26 @@ function checkBox(key, label, checked, pinned) {
 
 function summaryHtml(summary) {
   if (!summary || !summary.noteACeJour) {
-    return `<p class="detail__empty">Aucune note publiée.</p>`;
+    return `<p class="detail__empty">${t("detail.noGrades")}</p>`;
   }
   return `<div class="detail__summary">
-        <span>À ce jour <b>${plain(summary.noteACeJour)}</b></span>
-        <span>Moyenne <b>${plain(summary.moyenneClasse)}</b></span>
-        <span>Publié <b>${plain(summary.tauxPublication)} %</b></span>
+        <span>${t("detail.toDate")} <b>${plain(summary.noteACeJour)}</b></span>
+        <span>${t("detail.average")} <b>${plain(summary.moyenneClasse)}</b></span>
+        <span>${t("detail.published")} <b>${plain(summary.tauxPublication)} %</b></span>
       </div>`;
 }
 
 function warningsHtml(evals) {
   const lines = [];
   const total = evals.reduce((sum, ev) => sum + ev.ponderation, 0);
-  if (evals.length && total !== 100) lines.push(`Pondération totale ${total} %`);
+  if (evals.length && total !== 100) {
+    lines.push(t("detail.totalWeight", { total }));
+  }
   const over = evals.filter((ev) => ev.note != null && ev.note > ev.corrigeSur);
   if (over.length) {
-    lines.push(`Note hors barème : ${over.map((ev) => ev.nom).join(", ")}`);
+    lines.push(
+      t("detail.gradeOverMax", { names: over.map((ev) => ev.nom).join(", ") })
+    );
   }
   if (!lines.length) return "";
   return `<div class="detail__warn">${lines
@@ -769,38 +788,38 @@ function propsHtml(ev) {
     });
   const open = state.statsOpen;
   const statsPinned = STAT_FIELDS.some((field) => pinned.includes(field));
-  const statsTitle = statsPinned
-    ? ' title="Contient des valeurs modifiées"'
-    : "";
+  const statsTitle = statsPinned ? ` title="${t("detail.statsPinned")}"` : "";
   return `<div class="props">
         <div class="props__grid">
-          ${propInput("ev:nom", "Nom", ev.nom, "text", { wide: true })}
-          ${grade("note", "Note")}
-          ${propInput("ev:corrigeSur", "Corrigé sur", fieldText(ev.corrigeSur), "text")}
-          ${propInput("ev:ponderation", "Pondération", fieldText(ev.ponderation), "text")}
-          ${grade("dateCible", "Date cible", "date")}
+          ${propInput("ev:nom", t("detail.name"), ev.nom, "text", { wide: true })}
+          ${grade("note", t("detail.grade"))}
+          ${propInput("ev:corrigeSur", t("detail.outOf"), fieldText(ev.corrigeSur), "text")}
+          ${propInput("ev:ponderation", t("detail.weight"), fieldText(ev.ponderation), "text")}
+          ${grade("dateCible", t("detail.targetDate"), "date")}
         </div>
         <div class="props__checks">
-          ${checkBox("ev:publie", "Publié", ev.publie, pinned.includes("publie"))}
-          ${checkBox("ev:isTeam", "Équipe", ev.isTeam, false)}
+          ${checkBox("ev:publie", t("detail.published"), ev.publie, pinned.includes("publie"))}
+          ${checkBox("ev:isTeam", t("detail.team"), ev.isTeam, false)}
         </div>
         <button type="button" class="stats${open ? " is-open" : ""}${
           statsPinned ? " is-pinned" : ""
         }" data-act="toggleStats" aria-expanded="${open}"${statsTitle}>
-          ${icon("chevronRight", 16)}<span>Statistiques</span>
+          ${icon("chevronRight", 16)}<span>${t("detail.stats")}</span>
         </button>
         ${
           open
             ? `<div class="props__grid">
-          ${grade("rangCentile", "Rang centile")}
-          ${grade("moyenne", "Moyenne")}
-          ${grade("mediane", "Médiane")}
-          ${grade("ecartType", "Écart type")}
+          ${grade("rangCentile", t("detail.percentile"))}
+          ${grade("moyenne", t("detail.average"))}
+          ${grade("mediane", t("detail.median"))}
+          ${grade("ecartType", t("detail.stdDev"))}
         </div>`
             : ""
         }
         <div class="props__actions">
-          <fluent-button class="props__del" data-act="delete" appearance="subtle" size="small">Supprimer</fluent-button>
+          <fluent-button class="props__del" data-act="delete" appearance="subtle" size="small">${t(
+            "detail.delete"
+          )}</fluent-button>
         </div>
       </div>`;
 }
@@ -817,7 +836,7 @@ function evalHtml(ev, isOpen) {
           <span class="evals__pond">${ev.ponderation} %</span>
           <span class="evals__note${warn ? " is-warn" : ""}">${note}</span>
           <span class="evals__pub${ev.publie ? " is-on" : ""}" title="${
-            ev.publie ? "Publié" : "Non publié"
+            ev.publie ? t("detail.published") : t("detail.notPublished")
           }"></span>
         </button>
         ${isOpen ? propsHtml(ev) : ""}
@@ -826,8 +845,8 @@ function evalHtml(ev, isOpen) {
 
 function examHtml(exam) {
   if (!exam) {
-    return `<header class="detail__head"><h3>Examen final</h3></header>
-      <p class="detail__empty">Aucun examen final.</p>`;
+    return `<header class="detail__head"><h3>${t("detail.finalExam")}</h3></header>
+      <p class="detail__empty">${t("detail.noFinalExam")}</p>`;
   }
   const pinned = exam.pinned || [];
   const field = (source, key, label, type, wide) =>
@@ -836,14 +855,18 @@ function examHtml(exam) {
       wide,
     });
   return `<header class="detail__head">
-        <h3>Examen final</h3>
-        ${pinned.length ? iconButton("examReset", "reset", "Rétablir l'examen généré") : ""}
+        <h3>${t("detail.finalExam")}</h3>
+        ${
+          pinned.length
+            ? iconButton("examReset", "reset", t("detail.resetExam"))
+            : ""
+        }
       </header>
       <div class="props__grid">
-        ${field("dateExamen", "date", "Date", "date", true)}
-        ${field("heureDebut", "heureDebut", "Début", "time")}
-        ${field("heureFin", "heureFin", "Fin", "time")}
-        ${field("local", "local", "Local", "text", true)}
+        ${field("dateExamen", "date", t("detail.date"), "date", true)}
+        ${field("heureDebut", "heureDebut", t("detail.start"), "time")}
+        ${field("heureFin", "heureFin", t("detail.end"), "time")}
+        ${field("local", "local", t("detail.room"), "text", true)}
       </div>`;
 }
 
@@ -852,18 +875,24 @@ function detailHtml(course) {
   const openIndex = state.evalIndex;
   const canResetGrades = !!course.canResetGrades;
   return `<p class="detail__title">${escapeHtml(course.titre)}</p>
-      ${propInput("course:cote", "Cote", course.cote, "text", { narrow: true })}
+      ${propInput("course:cote", t("detail.cote"), course.cote, "text", {
+        narrow: true,
+      })}
       <section class="detail__section">
         <header class="detail__head">
-          <h3>Évaluations</h3>
-          ${iconButton("addEval", "add", "Ajouter un élément")}
-          ${canResetGrades ? iconButton("resetGrades", "reset", "Régénérer les notes") : ""}
+          <h3>${t("detail.evaluations")}</h3>
+          ${iconButton("addEval", "add", t("detail.addItem"))}
+          ${
+            canResetGrades
+              ? iconButton("resetGrades", "reset", t("detail.resetGrades"))
+              : ""
+          }
         </header>
         ${summaryHtml(course.summary)}
         <ul class="evals">${evals
           .map((ev) => evalHtml(ev, ev.index === openIndex))
           .join("")}</ul>
-        ${evals.length ? "" : `<p class="detail__empty">Aucun élément d'évaluation.</p>`}
+        ${evals.length ? "" : `<p class="detail__empty">${t("detail.noItems")}</p>`}
         ${warningsHtml(evals)}
       </section>
       <section class="detail__section">${examHtml(course.exam)}</section>`;
@@ -974,11 +1003,11 @@ function runDetailAction(course, action) {
       const next = (data.courses.find((c) => c.courseId === courseId) || {}).evaluations;
       state.evalIndex = next && next.length ? next.length - 1 : null;
       renderDetail();
-      toast("Élément ajouté");
+      toast(t("toast.itemAdded"));
     });
   } else if (action === "delete") {
     apiPost("/evaluation/delete", { ...body, index: state.evalIndex }).then(() =>
-      toast("Élément supprimé")
+      toast(t("toast.itemRemoved"))
     );
   } else if (action === "toggleStats") {
     state.statsOpen = !state.statsOpen;
@@ -986,9 +1015,9 @@ function runDetailAction(course, action) {
     const next = el.detail.querySelector(".stats");
     if (next) next.focus();
   } else if (action === "resetGrades") {
-    apiPost("/grades/reset", body).then(() => toast("Notes régénérées"));
+    apiPost("/grades/reset", body).then(() => toast(t("toast.gradesReset")));
   } else if (action === "examReset") {
-    apiPost("/exam/reset", body).then(() => toast("Examen final rétabli"));
+    apiPost("/exam/reset", body).then(() => toast(t("toast.examReset")));
   }
 }
 
@@ -1107,6 +1136,22 @@ function startEvalDrag(e, course, list, item) {
   window.addEventListener("pointercancel", finish);
 }
 
+function fillLangSelect() {
+  fillDropdown(
+    el.langSelect,
+    availableLocales().map((code) => ({ value: code, text: localeName(code) })),
+    getLocale(),
+  );
+}
+
+function changeLocale(code) {
+  if (!setLocale(code)) return;
+  applyTranslations();
+  catalogFilled = false;
+  detailSelectKey = "";
+  boot(state.session || "");
+}
+
 let catalogFilled = false;
 function renderCatalog(catalog) {
   state.catalog = catalog;
@@ -1115,6 +1160,14 @@ function renderCatalog(catalog) {
     el.fJour,
     state.days.map((d) => ({ value: d.jour, text: d.name })),
     state.days.length ? state.days[0].jour : undefined,
+  );
+  fillDropdown(
+    el.fKind,
+    [
+      { value: "cours", text: t("dialog.kindCourse") },
+      { value: "labo", text: t("dialog.kindLab") },
+    ],
+    dropdownValue(el.fKind) || "cours",
   );
   catalogFilled = true;
 }
@@ -1244,7 +1297,7 @@ function commitGesture(mode, occ, cur) {
       date: (week && week.dates[cur.jour]) || occ.date,
       heureDebut: toHHMM(cur.start),
       heureFin: toHHMM(cur.start + cur.dur),
-    }).then(() => toast("Examen final déplacé"));
+    }).then(() => toast(t("toast.examMoved")));
     return;
   }
   if (occurrenceMode()) {
@@ -1255,17 +1308,13 @@ function commitGesture(mode, occ, cur) {
       jour: cur.jour,
       heureDebut: toHHMM(cur.start),
       heureFin: toHHMM(cur.start + cur.dur),
-    }).then(() => toast("Séance modifiée cette semaine"));
+    }).then(() => toast(t("toast.occurrenceModified")));
     return;
   }
   if (occ.overridden) {
     renderBlocks(false);
-    setStatus("Prêt.", false);
-    toast(
-      "Cette séance a été modifiée pour cette semaine. Passez à « Cette séance » " +
-        "pour la déplacer, ou rétablissez-la d'abord.",
-      true,
-    );
+    setStatus(t("status.ready"), false);
+    toast(t("toast.occurrenceLocked"), true);
     return;
   }
   if (mode === "move") {
@@ -1287,7 +1336,7 @@ function commitGesture(mode, occ, cur) {
 
 function deleteCourse(courseId) {
   apiPost("/course/delete", { session: state.session, courseId }).then(() =>
-    toast("Cours déplacé vers la corbeille")
+    toast(t("toast.courseTrashed"))
   );
 }
 
@@ -1296,7 +1345,7 @@ function cancelOccurrence(occ) {
     session: state.session,
     blockId: occ.blockId,
     date: occ.date,
-  }).then(() => toast("Séance annulée cette semaine"));
+  }).then(() => toast(t("toast.occurrenceCanceled")));
 }
 
 function resetOccurrence(occ) {
@@ -1304,14 +1353,18 @@ function resetOccurrence(occ) {
     apiPost("/exam/reset", {
       session: state.session,
       courseId: occ.courseId,
-    }).then(() => toast("Examen final rétabli"));
+    }).then(() => toast(t("toast.examReset")));
     return;
   }
   apiPost("/occurrence/reset", {
     session: state.session,
     blockId: occ.blockId,
     date: occ.date,
-  }).then(() => toast(occ.canceled ? "Séance rétablie" : "Séance rétablie au modèle"));
+  }).then(() =>
+    toast(
+      occ.canceled ? t("toast.occurrenceRestored") : t("toast.occurrenceReset")
+    )
+  );
 }
 
 function setScope(scope) {
@@ -1325,13 +1378,13 @@ function setScope(scope) {
 }
 
 async function loadSession(session, animate) {
-  setStatus("Chargement…", true);
+  setStatus(t("status.loading"), true);
   try {
     const data = await apiGet(session);
     applyState(data, { animate });
-    setStatus("Prêt.", false);
+    setStatus(t("status.ready"), false);
   } catch (err) {
-    setStatus("Erreur.", false, true);
+    setStatus(t("status.error"), false, true);
     toast(err.message, true);
   }
 }
@@ -1352,7 +1405,7 @@ function openAddDialog() {
 function submitAddCourse() {
   const sigle = String(dropdownValue(el.fSigle) || "").trim();
   if (!sigle) {
-    toast("Un sigle est requis", true);
+    toast(t("toast.sigleRequired"), true);
     el.fSigle.focus();
     return;
   }
@@ -1366,11 +1419,13 @@ function submitAddCourse() {
     kind: dropdownValue(el.fKind),
   }).then(() => {
     el.addDialog.hide();
-    toast(`${sigle.toUpperCase()} ajouté`);
+    toast(t("toast.courseAdded", { sigle: sigle.toUpperCase() }));
   });
 }
 
 paintIcons();
+applyTranslations();
+fillLangSelect();
 
 el.fSigle.addEventListener("input", () => {
   const typed = String(dropdownValue(el.fSigle) || "").trim().toLowerCase();
@@ -1397,12 +1452,15 @@ el.resetDialog
 el.resetConfirm.addEventListener("click", () => {
   el.resetDialog.hide();
   apiPost("/reset", { session: state.session }).then(() =>
-    toast("Session réinitialisée")
+    toast(t("toast.sessionReset"))
   );
 });
 
 el.sessionSelect.addEventListener("change", () =>
   loadSession(dropdownValue(el.sessionSelect), true)
+);
+el.langSelect.addEventListener("change", () =>
+  changeLocale(dropdownValue(el.langSelect))
 );
 el.detailSelect.addEventListener("change", () =>
   selectCourse(dropdownValue(el.detailSelect))
@@ -1428,7 +1486,9 @@ el.redoBtn.addEventListener("click", () =>
   apiPost("/redo", { session: state.session })
 );
 el.resetBtn.addEventListener("click", () => {
-  el.resetSession.textContent = state.session || "";
+  el.resetText.innerHTML = t("dialog.resetBody", {
+    session: `<b>${escapeHtml(state.session || "")}</b>`,
+  });
   el.resetDialog.show();
 });
 
@@ -1498,17 +1558,19 @@ window.addEventListener("resize", () => {
   }
 });
 
-(async () => {
+async function boot(session) {
   try {
-    const data = await apiGet("");
+    const data = await apiGet(session);
     applyState(data, { animate: true });
     if (!state.data.blocks.length && !data.sessions.length) {
-      setStatus("Aucune session avec des cours.", false);
+      setStatus(t("status.noSession"), false);
     } else {
-      setStatus("Prêt.", false);
+      setStatus(t("status.ready"), false);
     }
   } catch (err) {
-    setStatus("Impossible de contacter le serveur.", false, true);
-    toast(err.message || "Serveur injoignable", true);
+    setStatus(t("status.unreachable"), false, true);
+    toast(err.message || t("toast.unreachable"), true);
   }
-})();
+}
+
+boot("");

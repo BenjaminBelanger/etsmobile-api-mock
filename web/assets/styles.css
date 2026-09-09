@@ -84,6 +84,7 @@ body {
 }
 
 #sessionSelect { min-width: 118px; }
+#langSelect { min-width: 104px; }
 #weekSelect { min-width: 178px; }
 
 .week-picker { display: flex; align-items: center; gap: 4px; }
