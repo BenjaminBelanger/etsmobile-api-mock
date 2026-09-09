@@ -150,8 +150,23 @@ python start.py --profile semester-off
 | `generated-light` | 2 courses + labs, Mon-Fri mornings |
 | `generated-busy` | 5 courses + labs, Mon-Fri |
 | `generated-evening` | 3 courses + labs, Mon-Fri evenings |
+| `edge-cases` | 7 courses of hostile-but-legal data, one edge case each |
 
 Profiles are defined in `seed/profiles.json`. Add a new profile by adding a JSON object.
+
+### Edge cases
+
+`--profile edge-cases` replaces the active session with seven courses, each carrying exactly one piece of data built to break a client UI, so a crash points at a single course:
+
+| Course | Edge case |
+|--------|-----------|
+| `LOG795` | 120-character accented title with a hyphen (truncation, ellipsis, fixed-width layout) |
+| `ATE100` | `nbCredits: 0` (credit-total division) |
+| `MAT350` | Weightings summing to 110 plus a bonus mark above what it is graded out of, so the grade lands over 100 |
+| `GTI619` | No evaluations: empty list, blank grade summary |
+| `GIA400` | No professor |
+| `ENT301` | No schedule, no room, no exam room |
+| `ELE144` | An attendance item marked out of 0, which scores nothing |
 
 ### Custom Generation
 

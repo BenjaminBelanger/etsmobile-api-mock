@@ -161,5 +161,294 @@
         }
       ]
     }
+  },
+  "edge-cases": {
+    "activeSession": {
+      "stripCourses": true,
+      "addCourses": [
+        {
+          "sigle": "LOG795",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Projet de fin d'études en génie logiciel - conception, réalisation et validation d'une solution infonuagique d'entreprise",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last1-first1",
+          "room": "A-1302",
+          "examRoom": "A-1518",
+          "schedule": {
+            "jour": "1",
+            "journee": "Lundi",
+            "heureDebut": "09:00",
+            "heureFin": "12:30",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Rapport d'étape",
+              "ponderation": 30,
+              "corrigeSur": 30,
+              "isTeam": false
+            },
+            {
+              "nom": "Présentation finale",
+              "ponderation": 30,
+              "corrigeSur": 30,
+              "isTeam": false
+            },
+            {
+              "nom": "Rapport final",
+              "ponderation": 40,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 1.0,
+          "gradeSeed": 901
+        },
+        {
+          "sigle": "ATE100",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Intégrité intellectuelle",
+          "nbCredits": 0,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last2-first2",
+          "room": "A-1502",
+          "examRoom": "A-1518",
+          "schedule": {
+            "jour": "1",
+            "journee": "Lundi",
+            "heureDebut": "13:30",
+            "heureFin": "17:00",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Test de connaissances",
+              "ponderation": 100,
+              "corrigeSur": 20,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 1.0,
+          "gradeSeed": 902
+        },
+        {
+          "sigle": "MAT350",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Probabilités et statistiques",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last3-first3",
+          "room": "B-1404",
+          "examRoom": "B-1518",
+          "schedule": {
+            "jour": "2",
+            "journee": "Mardi",
+            "heureDebut": "09:00",
+            "heureFin": "12:30",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Laboratoires",
+              "ponderation": 20,
+              "corrigeSur": 20,
+              "isTeam": false,
+              "note": 20,
+              "moyenne": 16.5,
+              "ecartType": 2.1,
+              "mediane": 17,
+              "rangCentile": 92,
+              "publie": true
+            },
+            {
+              "nom": "Examen intra",
+              "ponderation": 30,
+              "corrigeSur": 50,
+              "isTeam": false,
+              "note": 50,
+              "moyenne": 37.5,
+              "ecartType": 6.4,
+              "mediane": 38,
+              "rangCentile": 95,
+              "publie": true
+            },
+            {
+              "nom": "Projet de session (bonus inclus)",
+              "ponderation": 30,
+              "corrigeSur": 25,
+              "isTeam": false,
+              "note": 28,
+              "moyenne": 19.8,
+              "ecartType": 3.2,
+              "mediane": 20,
+              "rangCentile": 99,
+              "publie": true
+            },
+            {
+              "nom": "Examen final",
+              "ponderation": 30,
+              "corrigeSur": 100,
+              "isTeam": false,
+              "note": 100,
+              "moyenne": 72.4,
+              "ecartType": 11.5,
+              "mediane": 74,
+              "rangCentile": 97,
+              "publie": true
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 1.0,
+          "gradeSeed": 903
+        },
+        {
+          "sigle": "GTI619",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Sécurité des systèmes",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last4-first4",
+          "room": "A-2345",
+          "examRoom": "A-1302",
+          "schedule": {
+            "jour": "3",
+            "journee": "Mercredi",
+            "heureDebut": "09:00",
+            "heureFin": "12:00",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [],
+          "teammates": {},
+          "gradePublishRatio": 0.0,
+          "gradeSeed": 904
+        },
+        {
+          "sigle": "GIA400",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Analyse de rentabilité de projets",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "",
+          "room": "B-2120",
+          "examRoom": "B-1518",
+          "schedule": {
+            "jour": "4",
+            "journee": "Jeudi",
+            "heureDebut": "09:00",
+            "heureFin": "12:30",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Examen intra",
+              "ponderation": 40,
+              "corrigeSur": 50,
+              "isTeam": false
+            },
+            {
+              "nom": "Examen final",
+              "ponderation": 60,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 1.0,
+          "gradeSeed": 905
+        },
+        {
+          "sigle": "ENT301",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Projets spéciaux en entrepreneuriat I",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last5-first5",
+          "room": "",
+          "examRoom": "",
+          "schedule": null,
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Rapport de projet",
+              "ponderation": 100,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 0.0,
+          "gradeSeed": 906
+        },
+        {
+          "sigle": "ELE144",
+          "groupe": "01",
+          "session": "$ACTIVE_SESSION",
+          "titreCours": "Circuits électriques",
+          "nbCredits": 3,
+          "programmeEtudes": "7084",
+          "cote": "",
+          "professorId": "last6-first6",
+          "room": "A-3310",
+          "examRoom": "A-1518",
+          "schedule": {
+            "jour": "5",
+            "journee": "Vendredi",
+            "heureDebut": "09:00",
+            "heureFin": "12:30",
+            "codeActivite": "C",
+            "nomActivite": "Activité de cours"
+          },
+          "extraActivities": [],
+          "evaluations": [
+            {
+              "nom": "Présence aux laboratoires",
+              "ponderation": 0,
+              "corrigeSur": 0,
+              "isTeam": false
+            },
+            {
+              "nom": "Examen intra",
+              "ponderation": 40,
+              "corrigeSur": 50,
+              "isTeam": false
+            },
+            {
+              "nom": "Examen final",
+              "ponderation": 60,
+              "corrigeSur": 100,
+              "isTeam": false
+            }
+          ],
+          "teammates": {},
+          "gradePublishRatio": 1.0,
+          "gradeSeed": 907
+        }
+      ]
+    }
   }
 }

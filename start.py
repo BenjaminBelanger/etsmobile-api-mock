@@ -68,6 +68,7 @@ PROFILE_DESCRIPTIONS = {
     "generated-busy": "5 cours + labos, Lun-Ven",
     "generated-evening": "3 cours + labos, Lun-Ven soirs",
     "new-student": "Nouvel étudiant (aucune session)",
+    "edge-cases": "Données limites pour éprouver l'interface client",
 }
 
 SCENARIO_DESCRIPTIONS = {

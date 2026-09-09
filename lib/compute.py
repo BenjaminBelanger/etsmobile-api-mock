@@ -115,24 +115,23 @@ def _fill_grades(item: dict, max_score: int, rng: random.Random) -> None:
             item[key] = value
 
 
+def _score_ratio(evaluation: dict, key: str) -> float:
+    """A score as a fraction of its total; an item marked out of 0 counts as 0."""
+    max_score = float(evaluation["corrigeSur"])
+    if max_score == 0:
+        return 0.0
+    return _parse_french(evaluation[key]) / max_score
+
+
 def _weighted_scores(evals: list) -> tuple[float, float]:
     total_weighting = sum(int(ev["ponderation"]) for ev in evals)
     if total_weighting == 0:
         return 0.0, 0.0
     pct = (
-        sum(
-            _parse_french(ev["note"])
-            / float(ev["corrigeSur"])
-            * 100
-            * int(ev["ponderation"])
-            for ev in evals
-        )
+        sum(_score_ratio(ev, "note") * 100 * int(ev["ponderation"]) for ev in evals)
         / total_weighting
     )
-    raw = sum(
-        _parse_french(ev["note"]) / float(ev["corrigeSur"]) * int(ev["ponderation"])
-        for ev in evals
-    )
+    raw = sum(_score_ratio(ev, "note") * int(ev["ponderation"]) for ev in evals)
     return pct, raw
 
 
@@ -155,12 +154,10 @@ def _build_grade_summary(evals: list, rng: random.Random) -> dict:
 
     current_score, score_final = _weighted_scores(published)
     class_score = sum(
-        _parse_french(ev["moyenne"]) / float(ev["corrigeSur"]) * int(ev["ponderation"])
-        for ev in published
+        _score_ratio(ev, "moyenne") * int(ev["ponderation"]) for ev in published
     )
     median_score = sum(
-        _parse_french(ev["mediane"]) / float(ev["corrigeSur"]) * int(ev["ponderation"])
-        for ev in published
+        _score_ratio(ev, "mediane") * int(ev["ponderation"]) for ev in published
     )
     individual_evals = [ev for ev in published if ev["equipe"] == ""]
     if individual_evals and sum(int(ev["ponderation"]) for ev in individual_evals) > 0:
@@ -513,7 +510,7 @@ def build_all_course_data(
         sigle = course["sigle"]
         groupe = course["groupe"]
         course_group = build_course_key(sigle, groupe)
-        prof = professors.get(course["professorId"], {})
+        prof = professors.get(course.get("professorId", ""), {})
         room = course["room"]
         title = course["titreCours"]
         sched = course["schedule"]
