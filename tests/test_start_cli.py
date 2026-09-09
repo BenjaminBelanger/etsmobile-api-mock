@@ -86,8 +86,8 @@ def test_stale_managed_env_vars_do_not_leak_into_a_run(monkeypatch):
 
 
 def test_unmanaged_env_vars_are_passed_through(monkeypatch):
-    monkeypatch.setenv("LATENCY_MS", "200-600")
-    assert env_for("--profile", "normal")["LATENCY_MS"] == "200-600"
+    monkeypatch.setenv("MOCK_URL", "http://localhost:9999")
+    assert env_for("--profile", "normal")["MOCK_URL"] == "http://localhost:9999"
 
 
 def test_no_flags_falls_back_to_the_interactive_menu(monkeypatch):
@@ -146,3 +146,107 @@ def test_menu_custom_path_sets_the_generation_vars(monkeypatch):
 def test_menu_quit_starts_nothing(monkeypatch):
     answer(monkeypatch, "0")
     assert start._config_from_menu() is None
+
+
+def failure_env(*argv):
+    overrides, _, _, _ = config(*argv)
+    return {k: v for k, v in overrides.items() if k in start.FAILURE_ENV.values()}
+
+
+def test_failure_preset_maps_to_the_failure_env_vars():
+    assert failure_env("--failures", "flaky") == {
+        "LATENCY_MS": "100-800",
+        "ERROR_RATE": "0.3",
+    }
+
+
+def test_individual_failure_flags_map_to_env_vars():
+    assert failure_env("--latency", "200-600", "--error-rate", "0.1") == {
+        "LATENCY_MS": "200-600",
+        "ERROR_RATE": "0.1",
+    }
+
+
+def test_repeatable_endpoint_flags_are_comma_joined():
+    env = failure_env("--fail", "listeCoequipiers", "--fail", "lireEvaluationCours")
+    assert env == {"FAIL_ENDPOINTS": "listeCoequipiers,lireEvaluationCours"}
+
+
+def test_boolean_failure_flags_render_as_env_booleans():
+    assert failure_env("--malformed") == {"MALFORMED": "true"}
+    assert failure_env("--no-malformed") == {"MALFORMED": "false"}
+    assert failure_env("--auth") == {"AUTH_REQUIRED": "true"}
+
+
+def test_explicit_flags_override_the_preset():
+    env = failure_env("--failures", "flaky", "--error-rate", "0.9")
+    assert env == {"LATENCY_MS": "100-800", "ERROR_RATE": "0.9"}
+
+
+def test_failure_label_appears_in_the_startup_summary():
+    _, display, _, _ = config("--failures", "chaos")
+    assert display == "normal + pannes « chaos »"
+
+    _, display, _, _ = config("--latency", "500")
+    assert display == "normal + pannes « personnalisées »"
+
+    _, display, _, _ = config("--failures", "flaky", "--latency", "500")
+    assert display == "normal + pannes « flaky + ajusté »"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--latency", "abc"),
+        ("--latency", "-5"),
+        ("--latency", "800-100"),
+        ("--error-rate", "1.5"),
+        ("--error-rate", "abc"),
+        ("--timeout-duration", "-1"),
+        ("--failures", "nope"),
+    ],
+)
+def test_invalid_failure_values_are_rejected(argv):
+    with pytest.raises(SystemExit) as exc:
+        start._build_parser().parse_args(list(argv))
+    assert exc.value.code == 2
+
+
+def test_stale_failure_env_vars_do_not_leak_into_a_run(monkeypatch):
+    monkeypatch.setenv("LATENCY_MS", "9999")
+    monkeypatch.setenv("AUTH_REQUIRED", "true")
+
+    env = start._build_env(config("--profile", "normal")[0])
+
+    assert "LATENCY_MS" not in env
+    assert "AUTH_REQUIRED" not in env
+
+
+def test_every_failure_env_name_is_read_by_lib_failures():
+    import pathlib
+
+    source = pathlib.Path("lib/failures.py").read_text(encoding="utf-8")
+    for name in start.FAILURE_ENV.values():
+        assert name in source, f"{name} is not read by lib/failures.py"
+
+
+def test_boot_presets_produce_the_same_config_as_the_runtime_presets(monkeypatch):
+    from lib import failures
+
+    for name, body in start._load_failure_presets().items():
+        for var in start.FAILURE_ENV.values():
+            monkeypatch.delenv(var, raising=False)
+        for var, value in failure_env("--failures", name).items():
+            monkeypatch.setenv(var, value)
+
+        failures.reset_config()
+        booted = failures.load_from_env().to_dict()
+
+        failures.reset_config()
+        runtime = failures.update_config(
+            failures.FailureConfigUpdate(**body["config"])
+        ).to_dict()
+
+        assert booted == runtime, f"preset {name} differs at boot"
+
+    failures.reset_config()

@@ -91,7 +91,7 @@ curl http://localhost:8080/api/Etudiant/infoEtudiant
 curl -H "Accept: application/xml" http://localhost:8080/api/Etudiant/infoEtudiant
 ```
 
-In Windows PowerShell 5.1, spell out `curl.exe` — there, `curl` is an alias for
+In Windows PowerShell 5.1, spell out `curl.exe`. There, `curl` is an alias for
 `Invoke-WebRequest` and rejects these arguments. PowerShell 7 drops the alias.
 
 ## Endpoints
@@ -209,36 +209,34 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 ## Failure Injection
 
-The mock can simulate flaky-network and broken-server conditions. Failures are configured at startup via env vars and can be tweaked at runtime through `/admin/failures`.
+The mock can simulate flaky-network and broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
 
-### Environment variables
+### Startup flags
 
-| Variable | Effect | Example |
-|----------|--------|---------|
-| `LATENCY_MS` | Add latency before every API response. Accepts a fixed int or a `min-max` range. | `LATENCY_MS=500` or `LATENCY_MS=100-800` |
-| `ERROR_RATE` | Probability (0.0-1.0) that any API call returns a 500. | `ERROR_RATE=0.1` |
-| `FAIL_ENDPOINTS` | Comma-separated endpoint names that always return 503. Use `*` for all endpoints. | `FAIL_ENDPOINTS=listeCoequipiers,lireEvaluationCours` |
-| `TIMEOUT_ENDPOINTS` | Endpoints that hang the request. | `TIMEOUT_ENDPOINTS=lireEvaluationCours` |
-| `TIMEOUT_DURATION_S` | How long timeout endpoints sleep before giving up with a 504. | `TIMEOUT_DURATION_S=30` (default 60) |
-| `MALFORMED` | Truncate every successful 2xx response body in half. | `MALFORMED=true` |
-| `AUTH_REQUIRED` | Return 401 on API requests that lack an `Authorization` header. | `AUTH_REQUIRED=true` |
-
-These have no flag equivalents — set them in the environment before starting:
+| Flag | Effect |
+|------|--------|
+| `--failures PRESET` | Apply a named preset ([list](#named-presets-via-manage_failurespy)) |
+| `--latency MS` | Add latency before every API response. Fixed (`500`) or a range (`100-800`) |
+| `--error-rate R` | Probability (0.0-1.0) that any API call returns a 500 |
+| `--fail ENDPOINT` | Endpoint that always returns 503. Repeatable, `*` for all |
+| `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
+| `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
+| `--malformed` | Truncate every successful 2xx response body in half |
+| `--auth` | Return 401 on API requests without an `Authorization` header |
 
 ```bash
-LATENCY_MS=200-600 ERROR_RATE=0.1 python start.py --profile normal
+python start.py --failures flaky
+python start.py --latency 200-600 --error-rate 0.1
+python start.py --profile semester-off --auth
 ```
 
-That `VAR=value command` prefix is bash syntax. In PowerShell, set them first:
+A preset can be adjusted by adding flags after it. `--failures flaky
+--error-rate 0.9` keeps the preset's latency and replaces its error rate.
+`--malformed` and `--auth` each have a `--no-` form.
 
-```powershell
-$env:LATENCY_MS = "200-600"
-$env:ERROR_RATE = "0.1"
-python start.py --profile normal
-```
-
-PowerShell keeps those set for the rest of the session, so clear them with
-`Remove-Item Env:LATENCY_MS` when you're done, or just open a new terminal.
+Starting this way means the mock comes up already broken, which
+`manage_failures.py` cannot do, since it configures a server that is already
+running.
 
 ### Runtime control via admin endpoint
 
