@@ -34,8 +34,7 @@ python start.py --courses 2 --days 1,3,5 --time morning
 python start.py --scenario semaine-relache --semester-week 3
 ```
 
-`python start.py --help` lists every profile, scenario and day code. These
-commands are identical on Windows, macOS and Linux.
+`python start.py --help` lists every profile, scenario and day code.
 
 ## Schedule Editor UI
 
@@ -56,22 +55,17 @@ The toolbar switches between two scopes:
 
 - **All weeks** edits the weekly slot, so the change applies to every occurrence
   of that block.
-- **This occurrence** edits only the displayed week, including occurrences
-  relocated by a replaced day (`seed/replaced_days.json`).
+- **This occurrence** edits only the displayed week.
 
 An occurrence with a week-specific change is marked as modified and can only be
 dragged in **This occurrence**; reset it to put it back on the series slot.
-Moving a series to another weekday keeps its week-specific changes but drops any
-replaced-day relocation.
 
-Run the editor's tests with `python -m pytest tests/`. They never touch
-`seed/schedule_overrides.json`, which holds your live editor state.
+Run the editor's tests with `python -m pytest tests/`.
 
 ### Front-end build
 
 The editor's front-end assets are already built and committed, so running the
-mock only needs Python. Rebuild them only after editing
-`web/src/fluent-entry.js` or the icon list in `web/build.mjs`:
+mock only needs Python. To rebuild:
 
 ```bash
 cd web
@@ -91,8 +85,7 @@ curl http://localhost:8080/api/Etudiant/infoEtudiant
 curl -H "Accept: application/xml" http://localhost:8080/api/Etudiant/infoEtudiant
 ```
 
-In Windows PowerShell 5.1, spell out `curl.exe`. There, `curl` is an alias for
-`Invoke-WebRequest` and rejects these arguments. PowerShell 7 drops the alias.
+In Windows PowerShell 5.1, use `curl.exe`.
 
 ## Endpoints
 
@@ -209,7 +202,7 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 ## Failure Injection
 
-The mock can simulate flaky-network and broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
+The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
 
 ### Startup flags
 
@@ -233,10 +226,6 @@ python start.py --profile semester-off --auth
 A preset can be adjusted by adding flags after it. `--failures flaky
 --error-rate 0.9` keeps the preset's latency and replaces its error rate.
 `--malformed` and `--auth` each have a `--no-` form.
-
-Starting this way means the mock comes up already broken, which
-`manage_failures.py` cannot do, since it configures a server that is already
-running.
 
 ### Runtime control via admin endpoint
 
