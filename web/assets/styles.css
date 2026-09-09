@@ -325,22 +325,21 @@ body {
   border: 1px solid color-mix(in srgb, var(--tx) 24%, transparent);
   background: color-mix(in srgb, var(--tx) 8%, transparent);
   color: var(--dim);
-  margin-left: auto;
   align-self: center;
 }
 .block__badge--off {
   background: none;
 }
 
-/* Too narrow for the word: keep the icon, and leave the label to the tooltip
-   and to screen readers. */
-@container (max-width: 214px) {
+/* Too narrow for the word once the sigle and the kind have their room: keep
+   the icon, and leave the label to the tooltip and to screen readers. */
+@container (max-width: 300px) {
   .block__badge {
     gap: 0; padding: 0;
     border: none;
     background: none;
     /* Leading, so the hover actions never sit on top of it. */
-    order: -1; margin-left: 0;
+    order: -1;
   }
   .block__badge-text {
     position: absolute;
