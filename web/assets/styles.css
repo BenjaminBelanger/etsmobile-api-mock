@@ -208,6 +208,7 @@ body {
 .gridline--half { border-top-style: dotted; opacity: 0.55; }
 
 .block {
+  --actions-w: 24px;
   position: absolute;
   left: 5px; right: 5px;
   border-radius: var(--borderRadiusMedium);
@@ -242,16 +243,15 @@ body {
   font-weight: var(--fontWeightSemibold);
   font-size: var(--fontSizeBase400);
   display: flex; align-items: baseline; flex-wrap: nowrap; gap: 2px 6px;
-  padding-right: 24px;
+  /* Room for the corner actions, so they never sit on top of the badge. */
+  padding-right: var(--sigle-pad, var(--actions-w));
   overflow: hidden;
 }
 .block__code,
-.block__kind,
-.block__badge {
+.block__kind {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .block__kind { flex-shrink: 10000; }
-.block__badge { flex-shrink: 100000; }
 .block__code { flex-shrink: 1; }
 .block__code { white-space: nowrap; color: var(--colorNeutralForeground1); }
 .block__kind {
@@ -305,15 +305,22 @@ body {
 }
 .block__del { right: 4px; }
 .block__reset { right: 28px; z-index: 4; }
+.block:not(:has(.block__del)) .block__reset { right: 4px; }
+.block:has(.block__del):has(.block__reset) { --actions-w: 48px; }
 .block:hover .block__del,
 .block:hover .block__reset { opacity: 1; }
 .block__del:hover { background: var(--colorPaletteRedBackground3); color: #fff; }
 .block__reset:hover { background: var(--colorBrandBackground); color: #fff; }
 
+/* The badge never shrinks: in a narrow block the sigle gives up its room
+   first, so the state stays readable instead of being clipped away. */
 .block__badge {
+  flex: none;
+  display: flex; align-items: center; gap: 4px;
   font-size: var(--fontSizeBase200);
   font-weight: var(--fontWeightSemibold);
-  padding: 0 7px;
+  white-space: nowrap;
+  padding: 1px 8px 1px 6px;
   border-radius: var(--borderRadiusCircular);
   background: var(--colorBrandBackground);
   color: var(--colorNeutralForegroundOnBrand);
@@ -325,22 +332,39 @@ body {
   color: var(--colorNeutralForeground1);
 }
 
-@container (max-width: 132px) {
+/* Too narrow for the word: keep the icon, and leave the label to the tooltip
+   and to screen readers. */
+@container (max-width: 214px) {
   .block__badge {
-    font-size: 0;
-    padding: 0;
-    flex: none;
-    width: 9px;
-    height: 9px;
+    gap: 0; padding: 3px;
+    /* Leading, so the hover actions never sit on top of it. */
+    order: -1; margin-left: 0;
   }
-  .block__sigle { padding-right: 14px; }
+  .block__badge-text {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .block__sigle { --sigle-pad: 14px; }
 }
 @container (max-width: 78px) {
-  .block__sigle { padding-right: 0; }
+  /* Narrower than the badge itself: let it spill into the block padding
+     instead of being cut in half. */
+  .block__sigle { --sigle-pad: 0px; overflow: visible; }
   .block__kind { display: none; }
 }
 
 .block.is-overridden { box-shadow: 0 0 0 1px var(--colorBrandStroke1), var(--shadow4); }
+/* Edge marker: readable even when the block is too narrow for the badge. */
+.block.is-overridden:not(.is-exam):not(.is-canceled)::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--colorBrandStroke1);
+  pointer-events: none;
+}
 .board:not(.is-occurrence) .block.is-overridden:not(.is-exam):not(.is-canceled) {
   cursor: not-allowed;
 }
