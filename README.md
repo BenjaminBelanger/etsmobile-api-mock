@@ -6,7 +6,6 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 
 - [Quick Start](#quick-start)
   - [Running on Windows](#running-on-windows)
-  - [Environment variables](#environment-variables-and-running-uvicorn-directly)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
@@ -58,40 +57,15 @@ session. Clear them when you're done, or open a new terminal:
 Remove-Item Env:LATENCY_MS
 ```
 
-`start.py` clears the variables it owns — `PROFILE`, `SCENARIO`,
-`SEMESTER_WEEK`, `COURSE_COUNT`, `SCHEDULE_DAYS`, `TIME_PREFERENCE` — before
-every launch, so a stale `$env:PROFILE` from an earlier run can never leak into
-a later one. Every other variable is passed through untouched.
+`start.py` owns everything the flags cover, and resets it on every launch, so
+nothing you set in one shell session can leak into a later run. Failure-injection
+variables are passed through untouched.
 
 In Windows PowerShell 5.1 the `curl` examples need `curl.exe` spelled out, since
 `curl` is an alias for `Invoke-WebRequest` there; PowerShell 7 drops the alias.
 For the `/admin/failures` PATCH body, prefer
 [`manage_failures.py`](#named-presets-via-manage_failurespy) over hand-quoting
 JSON. Git Bash and WSL run every example as written.
-
-### Environment variables and running uvicorn directly
-
-Every flag has an environment-variable equivalent. That is what `start.py` sets
-internally, and what to use from Docker or CI:
-
-| Flag | Env var |
-|------|---------|
-| `--profile` | `PROFILE` |
-| `--scenario` | `SCENARIO` |
-| `--semester-week` | `SEMESTER_WEEK` |
-| `--courses` | `COURSE_COUNT` |
-| `--days` | `SCHEDULE_DAYS` |
-| `--time` | `TIME_PREFERENCE` |
-
-```bash
-PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.json"
-```
-
-Invoking `uvicorn` yourself skips two things `start.py` does for you: it does not
-stop a mock already running on port 8080, and it does not clear
-`seed/schedule_overrides.json`. A leftover overrides file replaces the active
-session's courses wholesale, so a profile set this way can look like it did
-nothing. Delete that file first, or just use `start.py`.
 
 ## Schedule Editor UI
 
@@ -219,11 +193,11 @@ The interactive menu (`python start.py`) offers a "Custom" option that prompts f
 
 You can set the same values as flags, on top of any profile:
 
-| Flag | Env var | Description |
-|------|---------|-------------|
-| `--courses N` | `COURSE_COUNT` | Number of courses (1-5) |
-| `--days 1,3,5` | `SCHEDULE_DAYS` | Comma-separated day codes (1=Mon, 6=Sat) |
-| `--time morning` | `TIME_PREFERENCE` | `morning`, `afternoon`, `evening` (comma-separated for multiple) |
+| Flag | Description |
+|------|-------------|
+| `--courses N` | Number of courses (1-5) |
+| `--days 1,3,5` | Comma-separated day codes (1=Mon, 6=Sat) |
+| `--time morning` | `morning`, `afternoon`, `evening` (comma-separated for multiple) |
 
 ```bash
 python start.py --courses 2 --days 1,3,5
