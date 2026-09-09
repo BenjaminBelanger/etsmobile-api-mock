@@ -318,25 +318,27 @@ body {
   flex: none;
   display: flex; align-items: center; gap: 4px;
   font-size: var(--fontSizeBase200);
-  font-weight: var(--fontWeightSemibold);
+  font-weight: var(--fontWeightMedium);
   white-space: nowrap;
-  padding: 1px 8px 1px 6px;
+  padding: 0 7px 0 5px;
   border-radius: var(--borderRadiusCircular);
-  background: var(--colorBrandBackground);
-  color: var(--colorNeutralForegroundOnBrand);
+  border: 1px solid color-mix(in srgb, var(--tx) 24%, transparent);
+  background: color-mix(in srgb, var(--tx) 8%, transparent);
+  color: var(--dim);
   margin-left: auto;
   align-self: center;
 }
 .block__badge--off {
-  background: var(--colorNeutralBackgroundStatic);
-  color: var(--colorNeutralForeground1);
+  background: none;
 }
 
 /* Too narrow for the word: keep the icon, and leave the label to the tooltip
    and to screen readers. */
 @container (max-width: 214px) {
   .block__badge {
-    gap: 0; padding: 3px;
+    gap: 0; padding: 0;
+    border: none;
+    background: none;
     /* Leading, so the hover actions never sit on top of it. */
     order: -1; margin-left: 0;
   }
@@ -355,16 +357,7 @@ body {
   .block__kind { display: none; }
 }
 
-.block.is-overridden { box-shadow: 0 0 0 1px var(--colorBrandStroke1), var(--shadow4); }
-/* Edge marker: readable even when the block is too narrow for the badge. */
-.block.is-overridden:not(.is-exam):not(.is-canceled)::before {
-  content: "";
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  background: var(--colorBrandStroke1);
-  pointer-events: none;
-}
+.block.is-overridden { border-color: color-mix(in srgb, var(--bd) 85%, transparent); }
 .board:not(.is-occurrence) .block.is-overridden:not(.is-exam):not(.is-canceled) {
   cursor: not-allowed;
 }
