@@ -26,6 +26,16 @@ python start.py
 
 This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
 
+To skip the menu, pass the configuration as flags instead:
+
+```bash
+python start.py --profile semester-off
+python start.py --courses 2 --days 1,3,5 --time morning
+python start.py --scenario semaine-relache --semester-week 3
+```
+
+`python start.py --help` lists every profile, scenario and day code.
+
 ## Schedule Editor UI
 
 A visual weekly-schedule editor is served at `http://localhost:8080/editor`
@@ -45,22 +55,17 @@ The toolbar switches between two scopes:
 
 - **All weeks** edits the weekly slot, so the change applies to every occurrence
   of that block.
-- **This occurrence** edits only the displayed week, including occurrences
-  relocated by a replaced day (`seed/replaced_days.json`).
+- **This occurrence** edits only the displayed week.
 
 An occurrence with a week-specific change is marked as modified and can only be
 dragged in **This occurrence**; reset it to put it back on the series slot.
-Moving a series to another weekday keeps its week-specific changes but drops any
-replaced-day relocation.
 
-Run the editor's tests with `python -m pytest tests/`. They never touch
-`seed/schedule_overrides.json`, which holds your live editor state.
+Run the editor's tests with `python -m pytest tests/`.
 
 ### Front-end build
 
 The editor's front-end assets are already built and committed, so running the
-mock only needs Python. Rebuild them only after editing
-`web/src/fluent-entry.js` or the icon list in `web/build.mjs`:
+mock only needs Python. To rebuild:
 
 ```bash
 cd web
@@ -79,6 +84,8 @@ curl http://localhost:8080/api/Etudiant/infoEtudiant
 # XML
 curl -H "Accept: application/xml" http://localhost:8080/api/Etudiant/infoEtudiant
 ```
+
+In Windows PowerShell 5.1, use `curl.exe`.
 
 ## Endpoints
 
@@ -127,10 +134,10 @@ add_course_to_seed(
 
 ## Profiles
 
-The easiest way to pick a profile is `python start.py`. You can also set the `PROFILE` environment variable directly:
+Pick a profile from the `python start.py` menu, or name it directly:
 
 ```bash
-PROFILE=semester-off uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --profile semester-off
 ```
 
 | Profile | Description |
@@ -150,34 +157,37 @@ Profiles are defined in `seed/profiles.json`. Add a new profile by adding a JSON
 
 The interactive menu (`python start.py`) offers a "Custom" option that prompts for course count, schedule days, and time preference.
 
-You can also set these values directly with environment variables, from any profile:
+You can set the same values as flags, on top of any profile:
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `COURSE_COUNT` | Number of courses (1-5) | `COURSE_COUNT=2` |
-| `SCHEDULE_DAYS` | Comma-separated day codes (1=Mon, 6=Sat) | `SCHEDULE_DAYS=1,3,5` |
-| `TIME_PREFERENCE` | `morning`, `afternoon`, `evening` (comma-separated for multiple) | `TIME_PREFERENCE=morning,evening` |
+| Flag | Description |
+|------|-------------|
+| `--courses N` | Number of courses (1-5) |
+| `--days 1,3,5` | Comma-separated day codes (1=Mon, 6=Sat) |
+| `--time morning` | `morning`, `afternoon`, `evening` (comma-separated for multiple) |
 
 ```bash
-COURSE_COUNT=2 SCHEDULE_DAYS=1,3,5 uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --courses 2 --days 1,3,5
+python start.py --profile generated-busy --time evening
 ```
+
+Invalid values are rejected before the server starts.
 
 ### Semester week (shift the session calendar)
 
 By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. To simulate being at a specific week of the active session, set:
 
 ```bash
-SEMESTER_WEEK=3 uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --semester-week 3
 ```
 
 This shifts the active session's `dateDebut` (and all other date fields) so that today falls at the chosen week. The next session is shifted by the same offset to preserve the gap between them.
 
 ## Scenarios
 
-Scenarios apply calendar modifications to the active session (skipped days, replaced days). Select a scenario from the `start.py` menu, or set the `SCENARIO` environment variable:
+Scenarios apply calendar modifications to the active session (skipped days, replaced days). Select a scenario from the `start.py` menu, or name it directly:
 
 ```bash
-SCENARIO=semaine-relache uvicorn main:app --port 8080 --reload --reload-include "*.json"
+python start.py --scenario semaine-relache
 ```
 
 | Scenario | Description |
@@ -192,23 +202,30 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 ## Failure Injection
 
-The mock can simulate flaky-network and broken-server conditions. Failures are configured at startup via env vars and can be tweaked at runtime through `/admin/failures`.
+The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
 
-### Environment variables
+### Startup flags
 
-| Variable | Effect | Example |
-|----------|--------|---------|
-| `LATENCY_MS` | Add latency before every API response. Accepts a fixed int or a `min-max` range. | `LATENCY_MS=500` or `LATENCY_MS=100-800` |
-| `ERROR_RATE` | Probability (0.0-1.0) that any API call returns a 500. | `ERROR_RATE=0.1` |
-| `FAIL_ENDPOINTS` | Comma-separated endpoint names that always return 503. Use `*` for all endpoints. | `FAIL_ENDPOINTS=listeCoequipiers,lireEvaluationCours` |
-| `TIMEOUT_ENDPOINTS` | Endpoints that hang the request. | `TIMEOUT_ENDPOINTS=lireEvaluationCours` |
-| `TIMEOUT_DURATION_S` | How long timeout endpoints sleep before giving up with a 504. | `TIMEOUT_DURATION_S=30` (default 60) |
-| `MALFORMED` | Truncate every successful 2xx response body in half. | `MALFORMED=true` |
-| `AUTH_REQUIRED` | Return 401 on API requests that lack an `Authorization` header. | `AUTH_REQUIRED=true` |
+| Flag | Effect |
+|------|--------|
+| `--failures PRESET` | Apply a named preset ([list](#named-presets-via-manage_failurespy)) |
+| `--latency MS` | Add latency before every API response. Fixed (`500`) or a range (`100-800`) |
+| `--error-rate R` | Probability (0.0-1.0) that any API call returns a 500 |
+| `--fail ENDPOINT` | Endpoint that always returns 503. Repeatable, `*` for all |
+| `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
+| `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
+| `--malformed` | Truncate every successful 2xx response body in half |
+| `--auth` | Return 401 on API requests without an `Authorization` header |
 
 ```bash
-LATENCY_MS=200-600 ERROR_RATE=0.1 uvicorn main:app --port 8080 --reload
+python start.py --failures flaky
+python start.py --latency 200-600 --error-rate 0.1
+python start.py --profile semester-off --auth
 ```
+
+A preset can be adjusted by adding flags after it. `--failures flaky
+--error-rate 0.9` keeps the preset's latency and replaces its error rate.
+`--malformed` and `--auth` each have a `--no-` form.
 
 ### Runtime control via admin endpoint
 

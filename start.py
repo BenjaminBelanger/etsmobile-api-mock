@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 import signal
@@ -7,6 +8,47 @@ import sys
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
+
+DEFAULT_PROFILE = "normal"
+
+TIME_CHOICES = ("morning", "afternoon", "evening")
+
+FAILURE_ENV = {
+    "latencyMs": "LATENCY_MS",
+    "errorRate": "ERROR_RATE",
+    "failEndpoints": "FAIL_ENDPOINTS",
+    "timeoutEndpoints": "TIMEOUT_ENDPOINTS",
+    "timeoutDurationS": "TIMEOUT_DURATION_S",
+    "malformed": "MALFORMED",
+    "authRequired": "AUTH_REQUIRED",
+}
+
+MANAGED_ENV = (
+    "PROFILE",
+    "SCENARIO",
+    "SEMESTER_WEEK",
+    "COURSE_COUNT",
+    "SCHEDULE_DAYS",
+    "TIME_PREFERENCE",
+    *FAILURE_ENV.values(),
+)
+
+CONFIG_FLAGS = (
+    "profile",
+    "scenario",
+    "semester_week",
+    "courses",
+    "days",
+    "time",
+    "failures",
+    "latency",
+    "error_rate",
+    "fail",
+    "timeout",
+    "timeout_duration",
+    "malformed",
+    "auth",
+)
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -39,6 +81,300 @@ def _load_profiles() -> dict:
 
 def _load_scenarios() -> dict:
     return json.loads((SEED / "scenarios.json").read_text(encoding="utf-8"))
+
+
+def _load_failure_presets() -> dict:
+    return json.loads((SEED / "failure_presets.json").read_text(encoding="utf-8"))
+
+
+def _day_list(raw: str) -> list[str]:
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    invalid = [p for p in parts if p not in DAY_NAMES]
+    if not parts or invalid:
+        codes = ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items())
+        raise argparse.ArgumentTypeError(
+            f"invalid day code(s): {', '.join(invalid) or raw!r}. Valid codes: {codes}"
+        )
+    return parts
+
+
+def _time_list(raw: str) -> str:
+    parts = [p.strip() for p in raw.split(",") if p.strip()]
+    invalid = [p for p in parts if p not in TIME_CHOICES]
+    if not parts or invalid:
+        raise argparse.ArgumentTypeError(
+            f"invalid time preference(s): {', '.join(invalid) or raw!r}. "
+            f"Valid values: {', '.join(TIME_CHOICES)}"
+        )
+    return ",".join(parts)
+
+
+def _latency(raw: str) -> str:
+    text = raw.strip()
+    parts = text.split("-", 1) if "-" in text else [text, text]
+    try:
+        lo, hi = int(parts[0]), int(parts[1])
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected milliseconds or a min-max range, got {raw!r}"
+        ) from None
+    if lo < 0 or hi < lo:
+        raise argparse.ArgumentTypeError(f"invalid latency range: {raw!r}")
+    return text
+
+
+def _rate(raw: str) -> float:
+    try:
+        val = float(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a number between 0.0 and 1.0, got {raw!r}"
+        ) from None
+    if not 0.0 <= val <= 1.0:
+        raise argparse.ArgumentTypeError(
+            f"expected a number between 0.0 and 1.0, got {val}"
+        )
+    return val
+
+
+def _seconds(raw: str) -> float:
+    try:
+        val = float(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a number of seconds, got {raw!r}"
+        ) from None
+    if val < 0:
+        raise argparse.ArgumentTypeError(f"expected a number of seconds, got {val}")
+    return val
+
+
+def _bounded_int(low: int, high: int):
+    def parse(raw: str) -> int:
+        try:
+            val = int(raw)
+        except ValueError:
+            raise argparse.ArgumentTypeError(
+                f"expected an integer between {low} and {high}, got {raw!r}"
+            ) from None
+        if val < low or val > high:
+            raise argparse.ArgumentTypeError(
+                f"expected an integer between {low} and {high}, got {val}"
+            )
+        return val
+
+    return parse
+
+
+def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
+    lines = ["profils:"]
+    for name in profiles:
+        lines.append(f"  {name:<20}{PROFILE_DESCRIPTIONS.get(name, '')}")
+    lines.append("")
+    lines.append("scénarios:")
+    for name, body in scenarios.items():
+        desc = SCENARIO_DESCRIPTIONS.get(name) or body.get("description", "")
+        lines.append(f"  {name:<20}{desc}")
+    lines.append("")
+    lines.append("pannes:")
+    for name, body in presets.items():
+        lines.append(f"  {name:<20}{body.get('description', '')}")
+    lines.append("")
+    lines.append("codes de jour:")
+    lines.append("  " + ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items()))
+    lines.append("")
+    lines.append("exemples:")
+    lines.append("  python start.py")
+    lines.append("  python start.py --profile semester-off")
+    lines.append("  python start.py --courses 2 --days 1,3,5 --time morning")
+    lines.append("  python start.py --scenario semaine-relache --semester-week 3")
+    lines.append("  python start.py --failures flaky")
+    lines.append("  python start.py --latency 200-600 --error-rate 0.1")
+    return "\n".join(lines)
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    profiles = _load_profiles()
+    scenarios = _load_scenarios()
+    presets = _load_failure_presets()
+
+    parser = argparse.ArgumentParser(
+        prog="python start.py",
+        description=(
+            "Démarre le serveur mock ETSMobileAPI. Sans argument, un menu "
+            "interactif s'affiche; avec des options, le serveur démarre "
+            "directement."
+        ),
+        epilog=_epilog(profiles, scenarios, presets),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument(
+        "--profile",
+        choices=list(profiles),
+        help=f"Profil étudiant à charger (défaut: {DEFAULT_PROFILE}).",
+        default=None,
+    )
+    parser.add_argument(
+        "--scenario",
+        choices=list(scenarios),
+        help="Modification du calendrier de la session active.",
+        default=None,
+    )
+    parser.add_argument(
+        "--semester-week",
+        type=_bounded_int(1, 15),
+        metavar="N",
+        help="Décale la session pour qu'aujourd'hui tombe à la semaine N (1-15).",
+        default=None,
+    )
+    parser.add_argument(
+        "--courses",
+        type=_bounded_int(1, 5),
+        metavar="N",
+        help="Nombre de cours générés (1-5).",
+        default=None,
+    )
+    parser.add_argument(
+        "--days",
+        type=_day_list,
+        metavar="1,3,5",
+        help="Jours de cours, codes séparés par des virgules.",
+        default=None,
+    )
+    parser.add_argument(
+        "--time",
+        type=_time_list,
+        metavar="morning,evening",
+        help=f"Plage horaire: {', '.join(TIME_CHOICES)} (séparées par des virgules).",
+        default=None,
+    )
+
+    failures = parser.add_argument_group(
+        "pannes",
+        "Injection de pannes au démarrage. Les mêmes options existent à chaud "
+        "avec manage_failures.py.",
+    )
+    failures.add_argument(
+        "--failures",
+        choices=list(presets),
+        metavar="PRESET",
+        help="Applique un préréglage de seed/failure_presets.json.",
+        default=None,
+    )
+    failures.add_argument(
+        "--latency",
+        type=_latency,
+        metavar="MS",
+        help="Latence en ms, fixe ou intervalle (500 ou 100-800).",
+        default=None,
+    )
+    failures.add_argument(
+        "--error-rate",
+        type=_rate,
+        metavar="R",
+        help="Probabilité (0.0-1.0) qu'un appel retourne 500.",
+        default=None,
+    )
+    failures.add_argument(
+        "--fail",
+        action="append",
+        metavar="ENDPOINT",
+        help="Endpoint retournant 503 (répétable, '*' pour tous).",
+        default=None,
+    )
+    failures.add_argument(
+        "--timeout",
+        action="append",
+        metavar="ENDPOINT",
+        help="Endpoint qui fige la requête (répétable, '*' pour tous).",
+        default=None,
+    )
+    failures.add_argument(
+        "--timeout-duration",
+        type=_seconds,
+        metavar="S",
+        help="Secondes avant qu'un endpoint figé retourne 504.",
+        default=None,
+    )
+    failures.add_argument(
+        "--malformed",
+        action=argparse.BooleanOptionalAction,
+        help="Tronque de moitié chaque réponse 2xx.",
+        default=None,
+    )
+    failures.add_argument(
+        "--auth",
+        action=argparse.BooleanOptionalAction,
+        help="Exige un header Authorization.",
+        default=None,
+    )
+    return parser
+
+
+def _failure_value(key: str, value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (list, tuple, set)):
+        return ",".join(str(v) for v in value)
+    return str(value)
+
+
+def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
+    config: dict = {}
+    label = ""
+
+    if args.failures is not None:
+        preset = _load_failure_presets()[args.failures]
+        config.update(preset.get("config", {}))
+        label = args.failures
+
+    explicit = {
+        "latencyMs": args.latency,
+        "errorRate": args.error_rate,
+        "failEndpoints": args.fail,
+        "timeoutEndpoints": args.timeout,
+        "timeoutDurationS": args.timeout_duration,
+        "malformed": args.malformed,
+        "authRequired": args.auth,
+    }
+    overrides = {k: v for k, v in explicit.items() if v is not None}
+    if overrides:
+        config.update(overrides)
+        label = f"{label} + ajusté" if label else "personnalisées"
+
+    return (
+        {FAILURE_ENV[k]: _failure_value(k, v) for k, v in config.items()},
+        label,
+    )
+
+
+def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | None]:
+    overrides: dict[str, str] = {}
+    if args.profile is not None:
+        overrides["PROFILE"] = args.profile
+    if args.scenario is not None and args.scenario != "none":
+        overrides["SCENARIO"] = args.scenario
+    if args.semester_week is not None:
+        overrides["SEMESTER_WEEK"] = str(args.semester_week)
+    if args.courses is not None:
+        overrides["COURSE_COUNT"] = str(args.courses)
+    if args.days is not None:
+        overrides["SCHEDULE_DAYS"] = ",".join(args.days)
+    if args.time is not None:
+        overrides["TIME_PREFERENCE"] = args.time
+
+    failure_env, failure_label = _failure_overrides(args)
+    overrides.update(failure_env)
+
+    generated = any(
+        getattr(args, name) is not None for name in ("courses", "days", "time")
+    )
+    base = args.profile or DEFAULT_PROFILE
+    profile_display = f"{base} (personnalisé)" if generated else base
+    if failure_label:
+        profile_display = f"{profile_display} + pannes « {failure_label} »"
+
+    return overrides, profile_display, args.scenario or "none", args.semester_week
 
 
 def _validate_menu_choice(raw: str, max_choices: int) -> int | None:
@@ -302,38 +638,50 @@ def _stop_existing_servers() -> None:
             pass
 
 
-def main():
+def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
     profile = _select_profile()
     if profile is None:
         print("Au revoir!")
-        return
+        return None
 
     scenario = _select_scenario()
     semester_week = _prompt_semester_week()
 
-    env = os.environ.copy()
-
+    overrides: dict[str, str] = {}
     if scenario != "none":
-        env["SCENARIO"] = scenario
-
+        overrides["SCENARIO"] = scenario
     if semester_week is not None:
-        env["SEMESTER_WEEK"] = str(semester_week)
+        overrides["SEMESTER_WEEK"] = str(semester_week)
 
     if profile == "__custom__":
         config = _configure_custom()
         if config is None:
             print("Annulé.")
-            return
-        env["PROFILE"] = "normal"
-        env["COURSE_COUNT"] = str(config["count"])
+            return None
+        overrides["PROFILE"] = DEFAULT_PROFILE
+        overrides["COURSE_COUNT"] = str(config["count"])
         if config["allowedDays"]:
-            env["SCHEDULE_DAYS"] = ",".join(config["allowedDays"])
-        env["TIME_PREFERENCE"] = config["timePreference"] or ""
+            overrides["SCHEDULE_DAYS"] = ",".join(config["allowedDays"])
+        overrides["TIME_PREFERENCE"] = config["timePreference"] or ""
         profile_display = "Personnalisé"
     else:
-        env["PROFILE"] = profile
+        overrides["PROFILE"] = profile
         profile_display = profile
 
+    return overrides, profile_display, scenario, semester_week
+
+
+def _build_env(overrides: dict) -> dict:
+    env = os.environ.copy()
+    for name in MANAGED_ENV:
+        env.pop(name, None)
+    env.update(overrides)
+    return env
+
+
+def _start_server(
+    overrides: dict, profile_display: str, scenario: str, semester_week: int | None
+) -> None:
     scenario_display = f" + scénario « {scenario} »" if scenario != "none" else ""
     week_display = f" + semaine {semester_week}" if semester_week is not None else ""
     print(
@@ -357,9 +705,25 @@ def main():
             "--port",
             "8080",
             "--reload",
+            "--reload-include",
+            "*.json",
         ],
-        env=env,
+        env=_build_env(overrides),
     )
+
+
+def main(argv: list[str] | None = None) -> None:
+    args = _build_parser().parse_args(argv)
+
+    if any(getattr(args, name) is not None for name in CONFIG_FLAGS):
+        config = _config_from_args(args)
+    else:
+        config = _config_from_menu()
+
+    if config is None:
+        return
+
+    _start_server(*config)
 
 
 if __name__ == "__main__":
