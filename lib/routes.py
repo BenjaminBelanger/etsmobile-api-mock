@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Query, Request
 
+from ._api import API_PREFIX
 from .data_store import empty_evaluation, load, load_session
 from .responses import (
     require,
@@ -37,7 +38,7 @@ from .schedule_activities import (
 )
 from .sessions import session_rank
 
-router = APIRouter(prefix="/api/Etudiant")
+router = APIRouter(prefix=API_PREFIX)
 
 
 def _respond_list_resource(request: Request, spec: ListResponseSpec, items) -> object:
