@@ -5,7 +5,6 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-  - [Running on Windows](#running-on-windows)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
@@ -37,35 +36,6 @@ python start.py --scenario semaine-relache --semester-week 3
 
 `python start.py --help` lists every profile, scenario and day code. These
 commands are identical on Windows, macOS and Linux.
-
-### Running on Windows
-
-Shell syntax only matters for the environment variables under
-[Failure Injection](#failure-injection), which have no flag equivalents. The
-`VAR=value command` prefix in those examples is bash syntax; in PowerShell, set
-the variable first:
-
-```powershell
-$env:LATENCY_MS = "200-600"
-python start.py --profile normal
-```
-
-Unlike the bash prefix, `$env:` variables stay set for the rest of the shell
-session. Clear them when you're done, or open a new terminal:
-
-```powershell
-Remove-Item Env:LATENCY_MS
-```
-
-`start.py` owns everything the flags cover, and resets it on every launch, so
-nothing you set in one shell session can leak into a later run. Failure-injection
-variables are passed through untouched.
-
-In Windows PowerShell 5.1 the `curl` examples need `curl.exe` spelled out, since
-`curl` is an alias for `Invoke-WebRequest` there; PowerShell 7 drops the alias.
-For the `/admin/failures` PATCH body, prefer
-[`manage_failures.py`](#named-presets-via-manage_failurespy) over hand-quoting
-JSON. Git Bash and WSL run every example as written.
 
 ## Schedule Editor UI
 
@@ -120,6 +90,9 @@ curl http://localhost:8080/api/Etudiant/infoEtudiant
 # XML
 curl -H "Accept: application/xml" http://localhost:8080/api/Etudiant/infoEtudiant
 ```
+
+In Windows PowerShell 5.1, spell out `curl.exe` — there, `curl` is an alias for
+`Invoke-WebRequest` and rejects these arguments. PowerShell 7 drops the alias.
 
 ## Endpoints
 
@@ -256,7 +229,16 @@ These have no flag equivalents — set them in the environment before starting:
 LATENCY_MS=200-600 ERROR_RATE=0.1 python start.py --profile normal
 ```
 
-On Windows, see [Running on Windows](#running-on-windows).
+That `VAR=value command` prefix is bash syntax. In PowerShell, set them first:
+
+```powershell
+$env:LATENCY_MS = "200-600"
+$env:ERROR_RATE = "0.1"
+python start.py --profile normal
+```
+
+PowerShell keeps those set for the rest of the session, so clear them with
+`Remove-Item Env:LATENCY_MS` when you're done, or just open a new terminal.
 
 ### Runtime control via admin endpoint
 
