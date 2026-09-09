@@ -707,6 +707,8 @@ def _start_server(
             "--reload",
             "--reload-include",
             "*.json",
+            "--reload-exclude",
+            OVERRIDES_FILENAME,
         ],
         env=_build_env(overrides),
     )
