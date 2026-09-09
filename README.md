@@ -40,8 +40,8 @@ python start.py --scenario semaine-relache --semester-week 3
 
 ## Language
 
-The CLIs and the editor UI ship in French and English. Nothing is required to
-keep the French output you already had.
+The CLIs and the editor UI are available in French (default) and English. Pass
+`--lang en` to any CLI, or set `MOCK_LANG=en` to change it everywhere:
 
 ```bash
 python start.py --lang en
@@ -49,32 +49,10 @@ python manage_seed.py --lang en
 python manage_failures.py --lang en list
 ```
 
-The locale is resolved in this order:
+The editor UI has a language picker in the toolbar and remembers your choice.
 
-1. the `--lang` flag,
-2. the `MOCK_LANG` environment variable,
-3. the system locale (`LC_ALL`, `LC_MESSAGES`, `LANG`, `LANGUAGE`),
-4. French.
-
-`start.py` passes the locale it resolved to the server through `MOCK_LANG`, so
-startup logs and editor messages follow the language you picked.
-
-The editor UI has a language picker in the toolbar; the choice is remembered in
-the browser. It can also be forced with a query string:
-
-```
-http://localhost:8080/editor?lang=en
-```
-
-The page picks its language from the `?lang=` parameter, then the remembered
-choice, then the server locale, then the browser locale, then French.
-
-Translations live in `locales/fr.json` and `locales/en.json` for Python, and in
-`web/assets/locales/fr.js` and `web/assets/locales/en.js` for the editor UI.
-A new language needs a `locales/<code>.json` file plus a
-`web/assets/locales/<code>.js` file registered in `web/assets/i18n.js`. Mock API payloads
-(course titles, `journee`, error strings returned by `/api/Etudiant/...`) stay
-French in every locale: they mirror what the real ETSMobileAPI returns.
+Mock API payloads (course titles, `journee`, error strings) stay French in every
+locale: they mirror what the real ETSMobileAPI returns.
 
 ## Schedule Editor UI
 
