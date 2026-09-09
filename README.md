@@ -6,6 +6,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 
 - [Quick Start](#quick-start)
 - [Schedule Editor UI](#schedule-editor-ui)
+- [Tests](#tests)
 - [Supported Format](#supported-format)
 - [Endpoints](#endpoints)
 - [Managing Courses](#managing-courses)
@@ -60,8 +61,6 @@ The toolbar switches between two scopes:
 An occurrence with a week-specific change is marked as modified and can only be
 dragged in **This occurrence**; reset it to put it back on the series slot.
 
-Run the editor's tests with `python -m pytest tests/`.
-
 ### Front-end build
 
 The editor's front-end assets are already built and committed, so running the
@@ -72,6 +71,24 @@ cd web
 npm install
 npm run build
 ```
+
+## Tests
+
+```bash
+python -m pytest tests/    # server, editor backend, CLIs and the UI suite
+```
+
+The editor UI is covered by a jsdom suite that drives `web/assets/app.js`
+against the real `web/index.html`. It needs the front-end dev dependencies:
+
+```bash
+cd web
+npm install
+npm test
+```
+
+`python -m pytest tests/` runs that suite too when `web/node_modules` is
+present, and skips it otherwise.
 
 ## Supported Format
 

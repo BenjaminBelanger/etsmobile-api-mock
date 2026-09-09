@@ -1,0 +1,607 @@
+{
+  "session": "H2026",
+  "sessions": [
+    "A2026",
+    "H2026",
+    "H2025"
+  ],
+  "courses": [
+    {
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-1302",
+      "cote": "",
+      "hasSchedule": true,
+      "blocks": [
+        {
+          "id": "LOG410-01:0",
+          "courseId": "LOG410-01",
+          "sigle": "LOG410",
+          "groupe": "01",
+          "titre": "Analyse et conception de logiciels",
+          "room": "A-1302",
+          "codeActivite": "C",
+          "kind": "cours",
+          "nomActivite": "Activité de cours",
+          "isPrimary": true,
+          "jour": "2",
+          "journee": "Mardi",
+          "heureDebut": "09:00",
+          "heureFin": "12:30"
+        },
+        {
+          "id": "LOG410-01:1",
+          "courseId": "LOG410-01",
+          "sigle": "LOG410",
+          "groupe": "01",
+          "titre": "Analyse et conception de logiciels",
+          "room": "A-4209",
+          "codeActivite": "L",
+          "kind": "labo",
+          "nomActivite": "Activité de laboratoire",
+          "isPrimary": false,
+          "jour": "3",
+          "journee": "Mercredi",
+          "heureDebut": "13:30",
+          "heureFin": "16:30"
+        }
+      ],
+      "evaluations": [
+        {
+          "index": 0,
+          "nom": "TP1 - Diagrammes UML",
+          "ponderation": 15,
+          "corrigeSur": 20,
+          "isTeam": true,
+          "note": 16.8,
+          "moyenne": 13.7,
+          "mediane": 12.4,
+          "ecartType": 2.1,
+          "rangCentile": 75,
+          "dateCible": "2026-01-30",
+          "publie": true,
+          "equipe": "Équipe 2",
+          "pinned": []
+        },
+        {
+          "index": 1,
+          "nom": "Examen intra",
+          "ponderation": 25,
+          "corrigeSur": 50,
+          "isTeam": false,
+          "note": 37.8,
+          "moyenne": 35.5,
+          "mediane": 35.0,
+          "ecartType": 4.8,
+          "rangCentile": 65,
+          "dateCible": "2026-02-16",
+          "publie": true,
+          "equipe": "",
+          "pinned": []
+        },
+        {
+          "index": 2,
+          "nom": "TP2 - Patrons de conception",
+          "ponderation": 15,
+          "corrigeSur": 20,
+          "isTeam": true,
+          "note": 18.9,
+          "moyenne": 15.6,
+          "mediane": 16.7,
+          "ecartType": 1.3,
+          "rangCentile": 65,
+          "dateCible": "2026-03-03",
+          "publie": true,
+          "equipe": "Équipe 2",
+          "pinned": []
+        }
+      ],
+      "summary": {
+        "noteACeJour": "83,0",
+        "scoreFinalSur100": "45,7",
+        "moyenneClasse": "39,7",
+        "medianeClasse": "39,3",
+        "ecartTypeClasse": "5,3",
+        "rangCentileClasse": "95",
+        "tauxPublication": "55,0"
+      },
+      "canResetGrades": false,
+      "exam": {
+        "dateExamen": "2026-04-22",
+        "heureDebut": "13:30",
+        "heureFin": "16:30",
+        "local": "A-1518",
+        "pinned": []
+      }
+    },
+    {
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1502",
+      "cote": "",
+      "hasSchedule": true,
+      "blocks": [
+        {
+          "id": "LOG430-02:0",
+          "courseId": "LOG430-02",
+          "sigle": "LOG430",
+          "groupe": "02",
+          "titre": "Architecture logicielle",
+          "room": "A-1502",
+          "codeActivite": "C",
+          "kind": "cours",
+          "nomActivite": "Activité de cours",
+          "isPrimary": true,
+          "jour": "1",
+          "journee": "Lundi",
+          "heureDebut": "09:00",
+          "heureFin": "12:00"
+        },
+        {
+          "id": "LOG430-02:1",
+          "courseId": "LOG430-02",
+          "sigle": "LOG430",
+          "groupe": "02",
+          "titre": "Architecture logicielle",
+          "room": "A-4209",
+          "codeActivite": "L",
+          "kind": "labo",
+          "nomActivite": "Activité de laboratoire",
+          "isPrimary": false,
+          "jour": "5",
+          "journee": "Vendredi",
+          "heureDebut": "09:00",
+          "heureFin": "12:00"
+        }
+      ],
+      "evaluations": [
+        {
+          "index": 0,
+          "nom": "Examen intra",
+          "ponderation": 30,
+          "corrigeSur": 50,
+          "isTeam": false,
+          "note": 38.2,
+          "moyenne": 29.7,
+          "mediane": 27.9,
+          "ecartType": 5.7,
+          "rangCentile": 78,
+          "dateCible": "2026-01-30",
+          "publie": true,
+          "equipe": "",
+          "pinned": []
+        },
+        {
+          "index": 1,
+          "nom": "TP1 - Architecture microservices",
+          "ponderation": 20,
+          "corrigeSur": 25,
+          "isTeam": true,
+          "note": null,
+          "moyenne": null,
+          "mediane": null,
+          "ecartType": null,
+          "rangCentile": null,
+          "dateCible": "2026-02-20",
+          "publie": false,
+          "equipe": "Équipe 2",
+          "pinned": []
+        },
+        {
+          "index": 2,
+          "nom": "TP2 - Projet final",
+          "ponderation": 20,
+          "corrigeSur": 25,
+          "isTeam": true,
+          "note": null,
+          "moyenne": null,
+          "mediane": null,
+          "ecartType": null,
+          "rangCentile": null,
+          "dateCible": "2026-03-16",
+          "publie": false,
+          "equipe": "Équipe 2",
+          "pinned": []
+        }
+      ],
+      "summary": {
+        "noteACeJour": "76,4",
+        "scoreFinalSur100": "22,9",
+        "moyenneClasse": "17,8",
+        "medianeClasse": "16,7",
+        "ecartTypeClasse": "3,6",
+        "rangCentileClasse": "65",
+        "tauxPublication": "30,0"
+      },
+      "canResetGrades": false,
+      "exam": {
+        "dateExamen": "2026-01-22",
+        "heureDebut": "13:30",
+        "heureFin": "16:30",
+        "local": "A-1518",
+        "pinned": []
+      }
+    }
+  ],
+  "blocks": [
+    {
+      "id": "LOG410-01:0",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-1302",
+      "codeActivite": "C",
+      "kind": "cours",
+      "nomActivite": "Activité de cours",
+      "isPrimary": true,
+      "jour": "2",
+      "journee": "Mardi",
+      "heureDebut": "09:00",
+      "heureFin": "12:30"
+    },
+    {
+      "id": "LOG410-01:1",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-4209",
+      "codeActivite": "L",
+      "kind": "labo",
+      "nomActivite": "Activité de laboratoire",
+      "isPrimary": false,
+      "jour": "3",
+      "journee": "Mercredi",
+      "heureDebut": "13:30",
+      "heureFin": "16:30"
+    },
+    {
+      "id": "LOG430-02:0",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1502",
+      "codeActivite": "C",
+      "kind": "cours",
+      "nomActivite": "Activité de cours",
+      "isPrimary": true,
+      "jour": "1",
+      "journee": "Lundi",
+      "heureDebut": "09:00",
+      "heureFin": "12:00"
+    },
+    {
+      "id": "LOG430-02:1",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-4209",
+      "codeActivite": "L",
+      "kind": "labo",
+      "nomActivite": "Activité de laboratoire",
+      "isPrimary": false,
+      "jour": "5",
+      "journee": "Vendredi",
+      "heureDebut": "09:00",
+      "heureFin": "12:00"
+    }
+  ],
+  "occurrences": [
+    {
+      "date": "2026-01-05",
+      "jour": "1",
+      "blockId": "LOG430-02:0",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1502",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-06",
+      "jour": "2",
+      "blockId": "LOG410-01:0",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-1302",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-07",
+      "jour": "3",
+      "blockId": "LOG410-01:1",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "13:30",
+      "heureFin": "16:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-09",
+      "jour": "5",
+      "blockId": "LOG430-02:1",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-13",
+      "jour": "2",
+      "blockId": "LOG410-01:0",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-1302",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "overridden": true,
+      "canceled": true
+    },
+    {
+      "date": "2026-01-13",
+      "jour": "2",
+      "blockId": "LOG430-02:0",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1502",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": true,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-14",
+      "jour": "3",
+      "blockId": "LOG410-01:1",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "13:30",
+      "heureFin": "16:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-16",
+      "jour": "5",
+      "blockId": "LOG430-02:1",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-19",
+      "jour": "1",
+      "blockId": "LOG430-02:0",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1502",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-20",
+      "jour": "2",
+      "blockId": "LOG410-01:0",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-1302",
+      "kind": "cours",
+      "heureDebut": "09:00",
+      "heureFin": "12:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-21",
+      "jour": "3",
+      "blockId": "LOG410-01:1",
+      "courseId": "LOG410-01",
+      "sigle": "LOG410",
+      "groupe": "01",
+      "titre": "Analyse et conception de logiciels",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "13:30",
+      "heureFin": "16:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-22",
+      "jour": "4",
+      "blockId": "LOG430-02:exam",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-1518",
+      "kind": "exam",
+      "heureDebut": "13:30",
+      "heureFin": "16:30",
+      "overridden": false,
+      "canceled": false
+    },
+    {
+      "date": "2026-01-23",
+      "jour": "5",
+      "blockId": "LOG430-02:1",
+      "courseId": "LOG430-02",
+      "sigle": "LOG430",
+      "groupe": "02",
+      "titre": "Architecture logicielle",
+      "room": "A-4209",
+      "kind": "labo",
+      "heureDebut": "09:00",
+      "heureFin": "12:00",
+      "overridden": false,
+      "canceled": false
+    }
+  ],
+  "trash": [],
+  "canUndo": false,
+  "canRedo": false,
+  "meta": {
+    "dayStart": "08:00",
+    "dayEnd": "22:00",
+    "snapMin": 15,
+    "minDuration": 30,
+    "days": [
+      {
+        "jour": "1",
+        "name": "Lundi",
+        "short": "LUN"
+      },
+      {
+        "jour": "2",
+        "name": "Mardi",
+        "short": "MAR"
+      },
+      {
+        "jour": "3",
+        "name": "Mercredi",
+        "short": "MER"
+      },
+      {
+        "jour": "4",
+        "name": "Jeudi",
+        "short": "JEU"
+      },
+      {
+        "jour": "5",
+        "name": "Vendredi",
+        "short": "VEN"
+      },
+      {
+        "jour": "6",
+        "name": "Samedi",
+        "short": "SAM"
+      }
+    ],
+    "semester": {
+      "dateDebut": "2026-01-05",
+      "dateFin": "2026-01-24",
+      "weeks": [
+        {
+          "index": 1,
+          "start": "2026-01-05",
+          "end": "2026-01-10",
+          "label": "Semaine 1",
+          "range": "5 janv. - 10 janv.",
+          "dates": {
+            "1": "2026-01-05",
+            "2": "2026-01-06",
+            "3": "2026-01-07",
+            "4": "2026-01-08",
+            "5": "2026-01-09",
+            "6": "2026-01-10"
+          }
+        },
+        {
+          "index": 2,
+          "start": "2026-01-12",
+          "end": "2026-01-17",
+          "label": "Semaine 2",
+          "range": "12 janv. - 17 janv.",
+          "dates": {
+            "1": "2026-01-12",
+            "2": "2026-01-13",
+            "3": "2026-01-14",
+            "4": "2026-01-15",
+            "5": "2026-01-16",
+            "6": "2026-01-17"
+          }
+        },
+        {
+          "index": 3,
+          "start": "2026-01-19",
+          "end": "2026-01-24",
+          "label": "Semaine 3",
+          "range": "19 janv. - 24 janv.",
+          "dates": {
+            "1": "2026-01-19",
+            "2": "2026-01-20",
+            "3": "2026-01-21",
+            "4": "2026-01-22",
+            "5": "2026-01-23",
+            "6": "2026-01-24"
+          }
+        }
+      ]
+    },
+    "catalog": [
+      {
+        "sigle": "ATE100",
+        "titre": "Intégrité intellectuelle"
+      },
+      {
+        "sigle": "COM120",
+        "titre": "Méthodes de communication"
+      },
+      {
+        "sigle": "COM410",
+        "titre": "Rédaction technique et communication en génie logiciel"
+      },
+      {
+        "sigle": "ENT201",
+        "titre": "Gestion financière d'entreprise"
+      },
+      {
+        "sigle": "ENT202",
+        "titre": "Introduction à l'entrepreneurship"
+      }
+    ]
+  }
+}

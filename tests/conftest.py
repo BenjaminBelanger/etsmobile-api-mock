@@ -66,3 +66,42 @@ def week_of(iso):
     day = date.fromisoformat(iso)
     monday = day - timedelta(days=day.isoweekday() - 1)
     return monday.isoformat(), (monday + timedelta(days=5)).isoformat()
+
+
+@pytest.fixture
+def client():
+    from fastapi.testclient import TestClient
+
+    import main
+
+    with TestClient(main.app) as test_client:
+        yield test_client
+
+
+@pytest.fixture(autouse=True)
+def clean_failures():
+    from lib import failures
+
+    failures.reset_config()
+    yield
+    failures.reset_config()
+
+
+@pytest.fixture
+def reconfigure(monkeypatch):
+    def apply(**env):
+        for name, value in env.items():
+            if value is None:
+                monkeypatch.delenv(name, raising=False)
+            else:
+                monkeypatch.setenv(name, str(value))
+        schedule_editor.clear_cache()
+        data_store.reload()
+
+    return apply
+
+
+def xml_root(response):
+    from xml.etree.ElementTree import fromstring
+
+    return fromstring(response.text)
