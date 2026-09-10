@@ -46,7 +46,7 @@ def test_replaced_day_displaces_the_monday_seance_onto_tuesday(session):
 
 
 def test_series_move_to_the_blocks_own_slot_is_refused(session):
-    with pytest.raises(EditorError, match="already on Lundi"):
+    with pytest.raises(EditorError, match="déjà le Lundi"):
         schedule_editor.move_block(session, BLOCK, "1", "09:00")
 
     assert schedule_editor.get_state(session)["canUndo"] is False
@@ -55,7 +55,7 @@ def test_series_move_to_the_blocks_own_slot_is_refused(session):
 def test_series_move_to_the_same_slot_is_refused_after_an_occurrence_move(session):
     schedule_editor.set_occurrence(session, BLOCK, "2026-03-02", "3", "09:00", "12:00")
 
-    with pytest.raises(EditorError, match="already on Lundi"):
+    with pytest.raises(EditorError, match="déjà le Lundi"):
         schedule_editor.move_block(session, BLOCK, "1", "09:00")
 
 
@@ -79,7 +79,7 @@ def test_a_real_series_move_still_goes_through(session):
 
 
 def test_resize_to_the_same_hours_is_refused(session):
-    with pytest.raises(EditorError, match="already spans"):
+    with pytest.raises(EditorError, match="couvre déjà"):
         schedule_editor.resize_block(session, BLOCK, "09:00", "12:00")
 
 
@@ -130,7 +130,7 @@ def test_an_occurrence_dragged_back_onto_its_series_slot_clears_the_override(ses
 
 
 def test_setting_an_occurrence_to_where_it_already_is_is_refused(session):
-    with pytest.raises(EditorError, match="already where the series"):
+    with pytest.raises(EditorError, match="déjà là où la série"):
         schedule_editor.set_occurrence(
             session, BLOCK, "2026-03-02", "1", "09:00", "12:00"
         )
@@ -235,7 +235,7 @@ def test_a_cancelled_seance_follows_its_series(session):
 
 def test_cancelling_twice_is_refused(session):
     schedule_editor.cancel_occurrence(session, BLOCK, "2026-03-09")
-    with pytest.raises(EditorError, match="already cancelled"):
+    with pytest.raises(EditorError, match="déjà annulée"):
         schedule_editor.cancel_occurrence(session, BLOCK, "2026-03-09")
 
 
@@ -260,7 +260,7 @@ def test_no_row_is_marked_overridden_by_an_orphaned_override(session):
 
 
 def test_reset_refuses_a_date_with_nothing_to_reset(session):
-    with pytest.raises(EditorError, match="No override"):
+    with pytest.raises(EditorError, match="Aucune modification"):
         schedule_editor.reset_occurrence(session, BLOCK, "2026-03-09")
 
 

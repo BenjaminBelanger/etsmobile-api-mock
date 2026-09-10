@@ -8,11 +8,21 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lib import data_store, schedule_editor  # noqa: E402
+from lib import data_store, i18n, schedule_editor  # noqa: E402
 
 SESSION = "H2026"
 
 _REAL_OVERRIDES = data_store.overrides_path()
+
+
+@pytest.fixture(autouse=True)
+def default_locale(monkeypatch):
+    for name in ("LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE", i18n.LANG_ENV):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(i18n, "os_locale", lambda: None)
+    i18n.set_locale(i18n.DEFAULT_LOCALE)
+    yield
+    i18n.set_locale(i18n.DEFAULT_LOCALE)
 
 
 @pytest.fixture(autouse=True)

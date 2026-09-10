@@ -231,22 +231,22 @@ def test_moving_a_block_records_an_undo_step(session):
 
 @pytest.mark.parametrize("jour", ["0", "8", "abc", ""])
 def test_a_block_cannot_be_moved_to_a_day_that_is_not_a_day(session, jour):
-    with pytest.raises(EditorError, match="Invalid day"):
+    with pytest.raises(EditorError, match="Jour .+ invalide"):
         schedule_editor.move_block(session, BLOCK, jour, "09:00")
 
 
 def test_an_unknown_course_cannot_be_moved(session):
-    with pytest.raises(EditorError, match="Course 'LOG999-99' not found"):
+    with pytest.raises(EditorError, match="Cours « LOG999-99 » introuvable"):
         schedule_editor.move_block(session, "LOG999-99:0", "2", "09:00")
 
 
 def test_an_unknown_block_index_cannot_be_moved(session):
-    with pytest.raises(EditorError, match="not found"):
+    with pytest.raises(EditorError, match="introuvable"):
         schedule_editor.move_block(session, "LOG430-02:9", "2", "09:00")
 
 
 def test_a_block_id_without_an_index_is_refused(session):
-    with pytest.raises(EditorError, match="Invalid block id"):
+    with pytest.raises(EditorError, match="Identifiant de bloc"):
         schedule_editor.move_block(session, "LOG430-02:x", "2", "09:00")
 
 
@@ -255,7 +255,7 @@ def test_a_course_without_a_schedule_has_no_block_to_move(session):
     entry["schedule"] = None
     schedule_editor._persist(session)
 
-    with pytest.raises(EditorError, match="has no schedule"):
+    with pytest.raises(EditorError, match="n'a pas d'horaire"):
         schedule_editor.move_block(session, BLOCK, "2", "09:00")
 
 
@@ -267,7 +267,7 @@ def test_resizing_a_block_snaps_both_edges(session):
 
 
 def test_a_block_cannot_be_resized_below_the_minimum(session):
-    with pytest.raises(EditorError, match="too short"):
+    with pytest.raises(EditorError, match="trop court"):
         schedule_editor.resize_block(session, BLOCK, "09:00", "09:15")
 
 
@@ -381,7 +381,7 @@ def test_a_course_needs_a_sigle(session):
 
 
 def test_a_course_needs_a_real_day(session):
-    with pytest.raises(EditorError, match="Invalid day"):
+    with pytest.raises(EditorError, match="Jour .+ invalide"):
         schedule_editor.add_course(session, "ZZZ999", "", "9", "09:00", "12:00")
 
 
@@ -402,12 +402,12 @@ def test_a_trashed_course_can_be_restored(session):
 
 
 def test_deleting_an_unknown_course_is_refused(session):
-    with pytest.raises(EditorError, match="not found"):
+    with pytest.raises(EditorError, match="introuvable"):
         schedule_editor.delete_course(session, "LOG999-99")
 
 
 def test_restoring_a_course_that_was_never_deleted_is_refused(session):
-    with pytest.raises(EditorError, match="not in trash"):
+    with pytest.raises(EditorError, match="corbeille"):
         schedule_editor.restore_course(session, COURSE)
 
 
@@ -437,13 +437,13 @@ def test_renaming_an_evaluation_renames_its_team(session):
 
 
 def test_an_evaluation_name_cannot_be_empty(session):
-    with pytest.raises(EditorError, match="name is required"):
+    with pytest.raises(EditorError, match="nom d'élément d'évaluation est requis"):
         schedule_editor.set_evaluation(session, COURSE, 0, "nom", "   ")
 
 
 def test_two_evaluations_cannot_share_a_name(session):
     second = evals_of(schedule_editor.get_state(session), COURSE)[1]["nom"]
-    with pytest.raises(EditorError, match="already exists"):
+    with pytest.raises(EditorError, match="existe déjà"):
         schedule_editor.set_evaluation(session, COURSE, 0, "nom", second)
 
 
@@ -510,7 +510,7 @@ def test_a_percentile_is_clamped_to_a_hundred(session):
 
 
 def test_a_target_date_must_be_a_date(session):
-    with pytest.raises(EditorError, match="Invalid date"):
+    with pytest.raises(EditorError, match="Date .+ invalide"):
         schedule_editor.set_evaluation(session, COURSE, 0, "dateCible", "32 mars")
 
 
@@ -538,13 +538,13 @@ def test_publishing_an_evaluation_fills_its_summary(session):
 
 
 def test_an_unknown_evaluation_field_is_refused(session):
-    with pytest.raises(EditorError, match="Unknown field"):
+    with pytest.raises(EditorError, match="Champ .+ inconnu"):
         schedule_editor.set_evaluation(session, COURSE, 0, "inconnu", "x")
 
 
 @pytest.mark.parametrize("index", [-1, 99])
 def test_an_evaluation_index_out_of_range_is_refused(session, index):
-    with pytest.raises(EditorError, match="not found"):
+    with pytest.raises(EditorError, match="introuvable"):
         schedule_editor.set_evaluation(session, COURSE, index, "note", "10")
 
 
@@ -588,7 +588,7 @@ def test_deleting_an_evaluation_drops_its_team(session):
 
 
 def test_deleting_an_unknown_evaluation_is_refused(session):
-    with pytest.raises(EditorError, match="not found"):
+    with pytest.raises(EditorError, match="introuvable"):
         schedule_editor.delete_evaluation(session, COURSE, 99)
 
 
@@ -629,7 +629,7 @@ def test_reordering_to_the_same_place_changes_nothing(session):
 
 @pytest.mark.parametrize("to_index", [-1, 99])
 def test_reordering_outside_the_list_is_refused(session, to_index):
-    with pytest.raises(EditorError, match="not found"):
+    with pytest.raises(EditorError, match="introuvable"):
         schedule_editor.move_evaluation(session, COURSE, 0, to_index)
 
 
@@ -646,7 +646,7 @@ def test_grades_can_be_regenerated(session):
 
 
 def test_regenerating_untouched_grades_is_refused(session):
-    with pytest.raises(EditorError, match="no stored grades"):
+    with pytest.raises(EditorError, match="aucune note enregistrée"):
         schedule_editor.reset_grades(session, COURSE)
 
 
@@ -730,7 +730,7 @@ def test_clearing_every_exam_field_drops_the_override(session):
 
 
 def test_an_exam_update_with_nothing_in_it_is_refused(session):
-    with pytest.raises(EditorError, match="Nothing to update"):
+    with pytest.raises(EditorError, match="Rien à modifier"):
         schedule_editor.set_final_exam(session, COURSE)
 
 
@@ -739,7 +739,7 @@ def test_a_course_without_a_schedule_has_no_exam_to_set(session):
     entry["schedule"] = None
     schedule_editor._persist(session)
 
-    with pytest.raises(EditorError, match="no final exam"):
+    with pytest.raises(EditorError, match="n'a pas d'examen final"):
         schedule_editor.set_final_exam(session, COURSE, exam_date="2026-04-22")
 
 
@@ -753,7 +753,7 @@ def test_an_exam_override_can_be_reset(session):
 
 
 def test_resetting_an_untouched_exam_is_refused(session):
-    with pytest.raises(EditorError, match="no exam override"):
+    with pytest.raises(EditorError, match="aucune modification d'examen"):
         schedule_editor.reset_final_exam(session, COURSE)
 
 
@@ -814,13 +814,13 @@ def test_a_new_edit_drops_the_redo_stack(session):
 
 def test_undo_without_history_is_refused(session):
     schedule_editor.get_state(session)
-    with pytest.raises(EditorError, match="Nothing to undo"):
+    with pytest.raises(EditorError, match="Rien à annuler"):
         schedule_editor.undo(session)
 
 
 def test_redo_without_history_is_refused(session):
     schedule_editor.get_state(session)
-    with pytest.raises(EditorError, match="Nothing to redo"):
+    with pytest.raises(EditorError, match="Rien à rétablir"):
         schedule_editor.redo(session)
 
 
@@ -928,13 +928,13 @@ def test_an_occurrence_edit_lands_in_the_overrides_file(session, sandbox_overrid
 
 
 def test_an_occurrence_can_only_be_addressed_on_a_day_it_is_drawn(session):
-    with pytest.raises(EditorError, match="no occurrence on"):
+    with pytest.raises(EditorError, match="aucune séance le"):
         schedule_editor.cancel_occurrence(session, BLOCK, "2026-03-03")
 
 
 @pytest.mark.parametrize("day", ["pas-une-date", "2026-13-01", ""])
 def test_an_occurrence_needs_a_real_date(session, day):
-    with pytest.raises(EditorError, match="Invalid date"):
+    with pytest.raises(EditorError, match="Date .+ invalide"):
         schedule_editor.cancel_occurrence(session, BLOCK, day)
 
 

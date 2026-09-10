@@ -4,7 +4,7 @@ import random
 import threading
 from datetime import date, timedelta
 
-from . import data_store, sessions
+from . import data_store, i18n, sessions
 from .compute import (
     Occurrence,
     block_occurrences,
@@ -20,6 +20,7 @@ DAY_END_MIN = 22 * 60
 SNAP_MIN = 15
 MIN_DURATION_MIN = 30
 MAX_HISTORY = 100
+_NEW_EVAL_NAME = "Nouvel élément"
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -63,13 +64,15 @@ _SUMMARY_FIELDS = (
     "rangCentileClasse",
     "tauxPublication",
 )
-_NEW_EVAL_NAME = "Nouvel élément"
 _REMOVE = object()
 
-MONTHS_FR = [
-    "janv.", "févr.", "mars", "avr.", "mai", "juin",
-    "juil.", "août", "sept.", "oct.", "nov.", "déc.",
-]
+
+def _day_label(jour: str) -> str:
+    return i18n.t(f"editor.days.{jour}")
+
+
+def _day_short(jour: str) -> str:
+    return i18n.t(f"editor.days_short.{jour}")
 
 
 def _session_dates(session_code: str) -> tuple[str | None, str | None]:
@@ -79,9 +82,9 @@ def _session_dates(session_code: str) -> tuple[str | None, str | None]:
     return None, None
 
 
-def _fr_date_label(iso: str) -> str:
+def _date_label(iso: str) -> str:
     d = date.fromisoformat(iso)
-    return f"{d.day} {MONTHS_FR[d.month - 1]}"
+    return f"{d.day} {i18n.values('editor.months')[d.month - 1]}"
 
 
 def _build_semester(session_code: str) -> dict | None:
@@ -109,9 +112,9 @@ def _build_semester(session_code: str) -> dict | None:
                 "index": index,
                 "start": cursor.isoformat(),
                 "end": week_end.isoformat(),
-                "label": f"Semaine {index}",
-                "range": f"{_fr_date_label(cursor.isoformat())} - "
-                f"{_fr_date_label(week_end.isoformat())}",
+                "label": i18n.t("editor.week_label", index=index),
+                "range": f"{_date_label(cursor.isoformat())} - "
+                f"{_date_label(week_end.isoformat())}",
                 "dates": dates,
             }
         )
@@ -218,7 +221,7 @@ def _find_course(doc: dict, course_id: str) -> dict:
     for course in doc["courses"]:
         if _course_key(course) == course_id:
             return course
-    raise EditorError(f"Course '{course_id}' not found")
+    raise EditorError(i18n.t("editor.errors.course_not_found", course=course_id))
 
 
 def _blocks_of(course: dict) -> list[dict]:
@@ -237,17 +240,21 @@ def _resolve_block(doc: dict, block_id: str) -> tuple[dict, int, dict]:
     try:
         index = int(raw_index)
     except ValueError as exc:
-        raise EditorError(f"Invalid block id '{block_id}'") from exc
+        raise EditorError(
+            i18n.t("editor.errors.invalid_block", block=block_id)
+        ) from exc
 
     if index == 0:
         schedule = course.get("schedule")
         if schedule is None:
-            raise EditorError(f"Block '{block_id}' has no schedule")
+            raise EditorError(
+                i18n.t("editor.errors.block_without_schedule", block=block_id)
+            )
         return course, index, schedule
 
     extras = course.get("extraActivities", [])
     if index - 1 >= len(extras):
-        raise EditorError(f"Block '{block_id}' not found")
+        raise EditorError(i18n.t("editor.errors.block_not_found", block=block_id))
     return course, index, extras[index - 1]
 
 
@@ -255,7 +262,7 @@ def _validate_date(value: str) -> str:
     try:
         return date.fromisoformat(value).isoformat()
     except (ValueError, TypeError) as exc:
-        raise EditorError(f"Invalid date '{value}'") from exc
+        raise EditorError(i18n.t("editor.errors.invalid_date", value=value)) from exc
 
 
 def _occurrence_list(course: dict) -> list[dict]:
@@ -293,7 +300,7 @@ def _occurrence_origin(
         if origin in origins and override_target_date(origin, override) == shown:
             return origin
 
-    raise EditorError(f"This block has no occurrence on {day}")
+    raise EditorError(i18n.t("editor.errors.no_occurrence_on", date=day))
 
 
 def _has_edits(override: dict) -> bool:
@@ -529,7 +536,7 @@ def get_state(session: str) -> dict:
                 "snapMin": SNAP_MIN,
                 "minDuration": MIN_DURATION_MIN,
                 "days": [
-                    {"jour": d, "name": DAY_NAMES[d], "short": DAY_SHORT[d]}
+                    {"jour": d, "name": _day_label(d), "short": _day_short(d)}
                     for d in EDITABLE_DAYS
                 ],
                 "semester": _build_semester(session),
@@ -577,10 +584,10 @@ def _rekey_occurrences(
         moved = origin + shift
         if override.get("source") == REPLACED_DAY_SOURCE:
             if override.get("targetDate"):
-                lost_relocations.append(_fr_date_label(origin.isoformat()))
+                lost_relocations.append(_date_label(origin.isoformat()))
             continue
         if moved not in origins:
-            lost_edits.append(_fr_date_label(origin.isoformat()))
+            lost_edits.append(_date_label(origin.isoformat()))
             continue
         rekeyed = {**override, "date": moved.isoformat()}
         occurrence = Occurrence(
@@ -604,13 +611,15 @@ def _rekey_occurrences(
     notices = []
     if lost_relocations:
         notices.append(
-            f"Journée pédagogique ({', '.join(lost_relocations)}) no longer applies "
-            f"to this block: it is now on {DAY_NAMES[jour]}."
+            i18n.t(
+                "editor.notices.relocation_dropped",
+                dates=", ".join(lost_relocations),
+                day=_day_label(jour),
+            )
         )
     if lost_edits:
         notices.append(
-            f"Dropped week-specific edits that fall outside the session: "
-            f"{', '.join(lost_edits)}."
+            i18n.t("editor.notices.edits_dropped", dates=", ".join(lost_edits))
         )
     return notices
 
@@ -621,7 +630,7 @@ def move_block(session: str, block_id: str, jour: str, heure_debut: str) -> dict
         course, index, schedule = _resolve_block(doc, block_id)
         jour = str(jour)
         if jour not in DAY_NAMES:
-            raise EditorError(f"Invalid day '{jour}'")
+            raise EditorError(i18n.t("editor.errors.invalid_day", day=jour))
         duration = _to_min(schedule["heureFin"]) - _to_min(schedule["heureDebut"])
         start, _ = _clamp_range(
             _snap(_to_min(heure_debut)), _snap(_to_min(heure_debut)) + duration
@@ -629,7 +638,11 @@ def move_block(session: str, block_id: str, jour: str, heure_debut: str) -> dict
         previous_jour = str(schedule.get("jour", "1"))
         if jour == previous_jour and _to_hhmm(start) == schedule["heureDebut"]:
             raise EditorError(
-                f"This block is already on {DAY_NAMES[jour]} at {schedule['heureDebut']}"
+                i18n.t(
+                    "editor.errors.block_already_there",
+                    day=_day_label(jour),
+                    time=schedule["heureDebut"],
+                )
             )
         _snapshot(session)
         _apply_time(schedule, jour, start, start + duration)
@@ -645,13 +658,13 @@ def resize_block(session: str, block_id: str, heure_debut: str, heure_fin: str) 
         start = _snap(_to_min(heure_debut))
         end = _snap(_to_min(heure_fin))
         if end - start < MIN_DURATION_MIN:
-            raise EditorError("Block is too short")
+            raise EditorError(i18n.t("editor.errors.block_too_short"))
         start, end = _clamp_range(start, end)
         if (
             _to_hhmm(start) == schedule["heureDebut"]
             and _to_hhmm(end) == schedule["heureFin"]
         ):
-            raise EditorError("This block already spans those hours")
+            raise EditorError(i18n.t("editor.errors.block_same_hours"))
         _snapshot(session)
         _apply_time(schedule, schedule.get("jour", "1"), start, end)
         _persist(session)
@@ -672,10 +685,10 @@ def set_occurrence(
         day = _validate_date(day)
         jour = str(jour)
         if jour not in DAY_NAMES:
-            raise EditorError(f"Invalid day '{jour}'")
+            raise EditorError(i18n.t("editor.errors.invalid_day", day=jour))
         start, end = _clamp_range(_snap(_to_min(heure_debut)), _snap(_to_min(heure_fin)))
         if end - start < MIN_DURATION_MIN:
-            raise EditorError("Occurrence is too short")
+            raise EditorError(i18n.t("editor.errors.occurrence_too_short"))
         origin = _occurrence_origin(session, course, index, schedule, day)
         shown = date.fromisoformat(day)
         monday = shown - timedelta(days=shown.isoweekday() - 1)
@@ -689,7 +702,7 @@ def set_occurrence(
             and _to_hhmm(end) == schedule["heureFin"]
         )
         if back_in_place and existing is None:
-            raise EditorError("This séance is already where the series puts it")
+            raise EditorError(i18n.t("editor.errors.occurrence_already_there"))
         _snapshot(session)
         if back_in_place:
             _drop_override(course, existing)
@@ -717,7 +730,7 @@ def cancel_occurrence(session: str, block_id: str, day: str) -> dict:
         origin = _occurrence_origin(session, course, index, schedule, day)
         existing = find_override(course.get("occurrenceOverrides", []), index, origin)
         if existing is not None and existing.get("canceled"):
-            raise EditorError("This séance is already cancelled")
+            raise EditorError(i18n.t("editor.errors.occurrence_already_cancelled"))
         _snapshot(session)
         _upsert_occurrence(course, index, origin, canceled=True)
         _persist(session)
@@ -732,7 +745,7 @@ def reset_occurrence(session: str, block_id: str, day: str) -> dict:
         origin = _occurrence_origin(session, course, index, schedule, day)
         override = find_override(course.get("occurrenceOverrides", []), index, origin)
         if override is None:
-            raise EditorError("No override for this occurrence")
+            raise EditorError(i18n.t("editor.errors.no_override"))
         _snapshot(session)
         if override.get("canceled") and _has_edits(override):
             override.pop("canceled")
@@ -760,7 +773,9 @@ def restore_course(session: str, course_id: str) -> dict:
             (c for c in doc["trash"] if _course_key(c) == course_id), None
         )
         if course is None:
-            raise EditorError(f"Course '{course_id}' not in trash")
+            raise EditorError(
+                i18n.t("editor.errors.course_not_in_trash", course=course_id)
+            )
         _snapshot(session)
         doc["trash"].remove(course)
         doc["courses"].append(course)
@@ -790,9 +805,9 @@ def add_course(
         doc = _load_doc(session)
         sigle = (sigle or "").strip().upper()
         if not sigle:
-            raise EditorError("A course code (sigle) is required")
+            raise EditorError(i18n.t("editor.errors.sigle_required"))
         if str(jour) not in DAY_NAMES:
-            raise EditorError(f"Invalid day '{jour}'")
+            raise EditorError(i18n.t("editor.errors.invalid_day", day=jour))
 
         pools = data_store.get_pools()
         professors = data_store.get_professors()
@@ -853,23 +868,24 @@ def _evaluations_of(course: dict) -> list[dict]:
 def _resolve_evaluation(course: dict, index: int) -> dict:
     evals = _evaluations_of(course)
     if index < 0 or index >= len(evals):
-        raise EditorError(f"Evaluation {index} not found")
+        raise EditorError(i18n.t("editor.errors.evaluation_not_found", index=index))
     return evals[index]
 
 
 def _check_name(evals: list[dict], name: str, current: dict) -> None:
     if any(ev is not current and ev["nom"] == name for ev in evals):
-        raise EditorError(f"An evaluation named '{name}' already exists")
+        raise EditorError(i18n.t("editor.errors.evaluation_name_taken", name=name))
 
 
 def _new_eval_name(evals: list[dict]) -> str:
     used = {ev["nom"] for ev in evals}
-    if _NEW_EVAL_NAME not in used:
-        return _NEW_EVAL_NAME
+    base = _NEW_EVAL_NAME
+    if base not in used:
+        return base
     suffix = 2
-    while f"{_NEW_EVAL_NAME} {suffix}" in used:
+    while f"{base} {suffix}" in used:
         suffix += 1
-    return f"{_NEW_EVAL_NAME} {suffix}"
+    return f"{base} {suffix}"
 
 
 def _rename_teammates(course: dict, old: str, new: str) -> None:
@@ -929,20 +945,22 @@ def _parse_amount(value, field: str) -> float:
     try:
         return float(str(value).strip().replace(",", "."))
     except ValueError as exc:
-        raise EditorError(f"Invalid value for '{field}'") from exc
+        raise EditorError(
+            i18n.t("editor.errors.invalid_field_value", field=field)
+        ) from exc
 
 
 def _normalize_eval_value(evals: list[dict], item: dict, field: str, value):
     if field == "nom":
         name = str(value or "").strip()
         if not name:
-            raise EditorError("An evaluation name is required")
+            raise EditorError(i18n.t("editor.errors.evaluation_name_required"))
         _check_name(evals, name, item)
         return name
     if field in ("ponderation", "corrigeSur"):
         amount = int(round(_parse_amount(value, field)))
         if amount < (1 if field == "corrigeSur" else 0):
-            raise EditorError(f"'{field}' is out of range")
+            raise EditorError(i18n.t("editor.errors.field_out_of_range", field=field))
         return amount
     if field == "isTeam":
         return bool(value)
@@ -959,7 +977,7 @@ def _normalize_eval_value(evals: list[dict], item: dict, field: str, value):
 
 def set_evaluation(session: str, course_id: str, index: int, field: str, value) -> dict:
     if field not in _EVAL_FIELDS:
-        raise EditorError(f"Unknown field '{field}'")
+        raise EditorError(i18n.t("editor.errors.unknown_field", field=field))
     with _lock:
         doc = _load_doc(session)
         course = _find_course(doc, course_id)
@@ -1021,7 +1039,9 @@ def move_evaluation(session: str, course_id: str, index: int, to_index: int) -> 
         evals = _evaluations_of(course)
         item = _resolve_evaluation(course, index)
         if to_index < 0 or to_index >= len(evals):
-            raise EditorError(f"Evaluation {to_index} not found")
+            raise EditorError(
+                i18n.t("editor.errors.evaluation_not_found", index=to_index)
+            )
         if to_index != index:
             _snapshot(session)
             _freeze_grades(session, course)
@@ -1037,7 +1057,7 @@ def reset_grades(session: str, course_id: str) -> dict:
         course = _find_course(doc, course_id)
         evals = _evaluations_of(course)
         if not _has_grade_state(course):
-            raise EditorError("This course has no stored grades")
+            raise EditorError(i18n.t("editor.errors.no_stored_grades"))
         _snapshot(session)
         for item in evals:
             item.pop("generated", None)
@@ -1077,7 +1097,7 @@ def set_final_exam(
         doc = _load_doc(session)
         course = _find_course(doc, course_id)
         if course.get("schedule") is None:
-            raise EditorError(f"Course '{course_id}' has no final exam")
+            raise EditorError(i18n.t("editor.errors.no_final_exam", course=course_id))
 
         current = _current_exam(session, course)
         updates: dict = {}
@@ -1105,7 +1125,7 @@ def set_final_exam(
                 updates["heureDebut"] = _to_hhmm(start)
                 updates["heureFin"] = _to_hhmm(end)
         if not updates and not removals:
-            raise EditorError("Nothing to update on this exam")
+            raise EditorError(i18n.t("editor.errors.nothing_to_update"))
 
         _snapshot(session)
         exam = course.setdefault("finalExam", {})
@@ -1123,7 +1143,7 @@ def reset_final_exam(session: str, course_id: str) -> dict:
         doc = _load_doc(session)
         course = _find_course(doc, course_id)
         if not course.get("finalExam"):
-            raise EditorError("This course has no exam override")
+            raise EditorError(i18n.t("editor.errors.no_exam_override"))
         _snapshot(session)
         course.pop("finalExam", None)
         _persist(session)
@@ -1134,7 +1154,7 @@ def undo(session: str) -> dict:
     with _lock:
         stack = _undo.get(session, [])
         if not stack:
-            raise EditorError("Nothing to undo")
+            raise EditorError(i18n.t("editor.errors.nothing_to_undo"))
         _redo.setdefault(session, []).append(copy.deepcopy(_docs[session]))
         _docs[session] = stack.pop()
         _persist(session)
@@ -1145,7 +1165,7 @@ def redo(session: str) -> dict:
     with _lock:
         stack = _redo.get(session, [])
         if not stack:
-            raise EditorError("Nothing to redo")
+            raise EditorError(i18n.t("editor.errors.nothing_to_redo"))
         _undo.setdefault(session, []).append(copy.deepcopy(_docs[session]))
         _docs[session] = stack.pop()
         _persist(session)

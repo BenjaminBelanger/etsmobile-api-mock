@@ -9,51 +9,57 @@
     <link rel="stylesheet" href="/editor/assets/styles.css" />
     <script type="module" src="/editor/assets/app.js"></script>
   </head>
-  <body>
+  <body data-locale="{{LOCALE}}">
     <div class="app" id="app">
       <header class="topbar">
         <div class="topbar__center">
           <div class="picker">
-            <span class="picker__label">Session</span>
-            <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
+            <span class="picker__label" data-i18n="topbar.session">Session</span>
+            <fluent-dropdown id="sessionSelect" appearance="filled-darker" data-i18n-label="topbar.session" aria-label="Session">
               <fluent-listbox></fluent-listbox>
             </fluent-dropdown>
           </div>
 
           <div class="week-picker" id="weekPicker" hidden>
-            <fluent-button id="weekPrev" appearance="subtle" icon-only data-icon="chevronLeft" aria-label="Semaine précédente"></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekPrev">Semaine précédente</fluent-tooltip>
+            <fluent-button id="weekPrev" appearance="subtle" icon-only data-icon="chevronLeft" data-i18n-label="topbar.weekPrev" aria-label="Semaine précédente"></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekPrev" data-i18n="topbar.weekPrev">Semaine précédente</fluent-tooltip>
 
-            <fluent-dropdown id="weekSelect" appearance="filled-darker" aria-label="Semaine"><fluent-listbox></fluent-listbox></fluent-dropdown>
+            <fluent-dropdown id="weekSelect" appearance="filled-darker" data-i18n-label="topbar.week" aria-label="Semaine"><fluent-listbox></fluent-listbox></fluent-dropdown>
 
-            <fluent-button id="weekNext" appearance="subtle" icon-only data-icon="chevronRight" aria-label="Semaine suivante"></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekNext">Semaine suivante</fluent-tooltip>
+            <fluent-button id="weekNext" appearance="subtle" icon-only data-icon="chevronRight" data-i18n-label="topbar.weekNext" aria-label="Semaine suivante"></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekNext" data-i18n="topbar.weekNext">Semaine suivante</fluent-tooltip>
 
-            <fluent-button id="weekToday" appearance="subtle" icon-only data-icon="today" aria-label="Semaine courante" hidden></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekToday">Aller à la semaine courante</fluent-tooltip>
+            <fluent-button id="weekToday" appearance="subtle" icon-only data-icon="today" data-i18n-label="topbar.weekToday" aria-label="Semaine courante" hidden></fluent-button>
+            <fluent-tooltip positioning="below" anchor="weekToday" data-i18n="topbar.weekTodayTip">Aller à la semaine courante</fluent-tooltip>
           </div>
         </div>
 
         <div class="toolbar">
-          <fluent-tablist id="scopeToggle" appearance="subtle" size="small" activeid="scopeSeries" aria-label="Portée des modifications">
-            <fluent-tab id="scopeSeries" data-scope="series">Toutes les semaines</fluent-tab>
-            <fluent-tab id="scopeOccurrence" data-scope="occurrence">Cette séance</fluent-tab>
+          <fluent-dropdown id="langSelect" appearance="subtle" size="small" data-i18n-label="topbar.language" aria-label="Langue">
+            <fluent-listbox></fluent-listbox>
+          </fluent-dropdown>
+
+          <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
+
+          <fluent-tablist id="scopeToggle" appearance="subtle" size="small" activeid="scopeSeries" data-i18n-label="toolbar.scope" aria-label="Portée des modifications">
+            <fluent-tab id="scopeSeries" data-scope="series" data-i18n="toolbar.scopeSeries">Toutes les semaines</fluent-tab>
+            <fluent-tab id="scopeOccurrence" data-scope="occurrence" data-i18n="toolbar.scopeOccurrence">Cette séance</fluent-tab>
           </fluent-tablist>
 
           <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
 
-          <fluent-button id="undoBtn" appearance="subtle" icon-only data-icon="undo" aria-label="Annuler"></fluent-button>
-          <fluent-tooltip positioning="below" anchor="undoBtn">Annuler (Ctrl+Z)</fluent-tooltip>
+          <fluent-button id="undoBtn" appearance="subtle" icon-only data-icon="undo" data-i18n-label="toolbar.undo" aria-label="Annuler"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="undoBtn" data-i18n="toolbar.undoTip">Annuler (Ctrl+Z)</fluent-tooltip>
 
-          <fluent-button id="redoBtn" appearance="subtle" icon-only data-icon="redo" aria-label="Rétablir"></fluent-button>
-          <fluent-tooltip positioning="below" anchor="redoBtn">Rétablir (Ctrl+Y)</fluent-tooltip>
+          <fluent-button id="redoBtn" appearance="subtle" icon-only data-icon="redo" data-i18n-label="toolbar.redo" aria-label="Rétablir"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="redoBtn" data-i18n="toolbar.redoTip">Rétablir (Ctrl+Y)</fluent-tooltip>
 
-          <fluent-button id="resetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Réinitialiser la session"></fluent-button>
-          <fluent-tooltip positioning="below" anchor="resetBtn">Réinitialiser la session</fluent-tooltip>
+          <fluent-button id="resetBtn" appearance="subtle" icon-only data-icon="reset" data-i18n-label="toolbar.reset" aria-label="Réinitialiser la session"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="resetBtn" data-i18n="toolbar.reset">Réinitialiser la session</fluent-tooltip>
 
           <fluent-button id="addBtn" appearance="primary">
             <span slot="start" data-icon="add" data-icon-size="16"></span>
-            Ajouter un cours
+            <span data-i18n="toolbar.add">Ajouter un cours</span>
           </fluent-button>
         </div>
       </header>
@@ -72,9 +78,9 @@
           <section class="panel" id="detailPanel" hidden>
             <header class="panel__head">
               <span class="panel__icon" data-icon="book" data-icon-size="16"></span>
-              <h2>Cours</h2>
+              <h2 data-i18n="panel.course">Cours</h2>
             </header>
-            <fluent-dropdown id="detailSelect" appearance="filled-darker" aria-label="Cours">
+            <fluent-dropdown id="detailSelect" appearance="filled-darker" data-i18n-label="panel.course" aria-label="Cours">
               <fluent-listbox></fluent-listbox>
             </fluent-dropdown>
             <div class="detail" id="detail"></div>
@@ -83,7 +89,7 @@
           <section class="panel">
             <header class="panel__head">
               <span class="panel__icon" data-icon="delete" data-icon-size="16"></span>
-              <h2>Corbeille</h2>
+              <h2 data-i18n="panel.trash">Corbeille</h2>
             </header>
             <ul class="trash" id="trashList"></ul>
           </section>
@@ -93,70 +99,64 @@
       <footer class="statusbar">
         <fluent-progress-bar id="statusProgress" thickness="medium" hidden></fluent-progress-bar>
         <span class="statusbar__dot" id="statusDot"></span>
-        <fluent-text size="300" id="statusText">Prêt.</fluent-text>
+        <fluent-text size="300" id="statusText" data-i18n="status.ready">Prêt.</fluent-text>
       </footer>
     </div>
 
-    <fluent-dialog id="addDialog" type="modal" aria-label="Ajouter un cours">
+    <fluent-dialog id="addDialog" type="modal" data-i18n-label="dialog.addTitle" aria-label="Ajouter un cours">
       <fluent-dialog-body>
-        <span slot="title">Ajouter un cours</span>
-        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close></fluent-button>
+        <span slot="title" data-i18n="dialog.addTitle">Ajouter un cours</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" data-i18n-label="dialog.close" aria-label="Fermer" data-close></fluent-button>
 
         <form id="addForm" class="form" novalidate>
           <fluent-field label-position="above">
-            <fluent-label slot="label" required>Sigle</fluent-label>
-            <fluent-dropdown slot="input" id="fSigle" type="combobox" appearance="filled-darker" placeholder="LOG430" aria-label="Sigle"><fluent-listbox></fluent-listbox></fluent-dropdown>
+            <fluent-label slot="label" required data-i18n="dialog.sigle">Sigle</fluent-label>
+            <fluent-dropdown slot="input" id="fSigle" type="combobox" appearance="filled-darker" placeholder="LOG430" data-i18n-label="dialog.sigle" aria-label="Sigle"><fluent-listbox></fluent-listbox></fluent-dropdown>
           </fluent-field>
 
           <fluent-field label-position="above">
-            <fluent-label slot="label">Titre</fluent-label>
-            <fluent-text-input slot="input" id="fTitre" appearance="filled-darker" placeholder="Rempli automatiquement si connu" aria-label="Titre"></fluent-text-input>
+            <fluent-label slot="label" data-i18n="dialog.titre">Titre</fluent-label>
+            <fluent-text-input slot="input" id="fTitre" appearance="filled-darker" data-i18n-placeholder="dialog.titrePlaceholder" placeholder="Rempli automatiquement si connu" data-i18n-label="dialog.titre" aria-label="Titre"></fluent-text-input>
           </fluent-field>
 
           <div class="form__row">
             <fluent-field label-position="above">
-              <fluent-label slot="label">Jour</fluent-label>
-              <fluent-dropdown slot="input" id="fJour" appearance="filled-darker" aria-label="Jour"><fluent-listbox></fluent-listbox></fluent-dropdown>
+              <fluent-label slot="label" data-i18n="dialog.day">Jour</fluent-label>
+              <fluent-dropdown slot="input" id="fJour" appearance="filled-darker" data-i18n-label="dialog.day" aria-label="Jour"><fluent-listbox></fluent-listbox></fluent-dropdown>
             </fluent-field>
 
             <fluent-field label-position="above">
-              <fluent-label slot="label">Type</fluent-label>
-              <fluent-dropdown slot="input" id="fKind" appearance="filled-darker" aria-label="Type">
-                <fluent-listbox>
-                  <fluent-option value="cours" selected>Cours</fluent-option>
-                  <fluent-option value="labo">Laboratoire</fluent-option>
-                </fluent-listbox>
+              <fluent-label slot="label" data-i18n="dialog.kind">Type</fluent-label>
+              <fluent-dropdown slot="input" id="fKind" appearance="filled-darker" data-i18n-label="dialog.kind" aria-label="Type">
+                <fluent-listbox></fluent-listbox>
               </fluent-dropdown>
             </fluent-field>
           </div>
 
           <div class="form__row">
             <fluent-field label-position="above">
-              <fluent-label slot="label">Début</fluent-label>
-              <input slot="input" class="time-input" id="fStart" type="time" value="09:00" step="900" aria-label="Heure de début" />
+              <fluent-label slot="label" data-i18n="dialog.start">Début</fluent-label>
+              <input slot="input" class="time-input" id="fStart" type="time" value="09:00" step="900" data-i18n-label="dialog.startTime" aria-label="Heure de début" />
             </fluent-field>
 
             <fluent-field label-position="above">
-              <fluent-label slot="label">Fin</fluent-label>
-              <input slot="input" class="time-input" id="fEnd" type="time" value="12:30" step="900" aria-label="Heure de fin" />
+              <fluent-label slot="label" data-i18n="dialog.end">Fin</fluent-label>
+              <input slot="input" class="time-input" id="fEnd" type="time" value="12:30" step="900" data-i18n-label="dialog.endTime" aria-label="Heure de fin" />
             </fluent-field>
           </div>
         </form>
 
-        <fluent-button slot="action" appearance="secondary" data-close>Annuler</fluent-button>
-        <fluent-button slot="action" appearance="primary" id="addSubmit">Ajouter</fluent-button>
+        <fluent-button slot="action" appearance="secondary" data-close data-i18n="dialog.cancel">Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="addSubmit" data-i18n="dialog.add">Ajouter</fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 
-    <fluent-dialog id="resetDialog" type="alert" aria-label="Réinitialiser la session">
+    <fluent-dialog id="resetDialog" type="alert" data-i18n-label="dialog.resetTitle" aria-label="Réinitialiser la session">
       <fluent-dialog-body>
-        <span slot="title">Réinitialiser la session ?</span>
-        <p class="dialog__text">
-          L’horaire de <b id="resetSession"></b> reviendra à sa version d’origine.
-          Les cours ajoutés, déplacés ou supprimés seront perdus.
-        </p>
-        <fluent-button slot="action" appearance="secondary" data-close-reset>Annuler</fluent-button>
-        <fluent-button slot="action" appearance="primary" id="resetConfirm">Réinitialiser</fluent-button>
+        <span slot="title" data-i18n="dialog.resetQuestion">Réinitialiser la session ?</span>
+        <p class="dialog__text" id="resetText"></p>
+        <fluent-button slot="action" appearance="secondary" data-close-reset data-i18n="dialog.cancel">Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="resetConfirm" data-i18n="dialog.resetConfirm">Réinitialiser</fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 

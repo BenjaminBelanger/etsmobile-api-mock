@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Language](#language)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Tests](#tests)
 - [Supported Format](#supported-format)
@@ -36,6 +37,20 @@ python start.py --scenario semaine-relache --semester-week 3
 ```
 
 `python start.py --help` lists every profile, scenario and day code.
+
+## Language
+
+The CLIs and the editor UI are available in French and English. They follow your
+system locale and fall back to French. To override, pass `--lang en` to any CLI,
+or set `MOCK_LANG=en` to change it everywhere:
+
+```bash
+python start.py --lang en
+python manage_seed.py --lang en
+python manage_failures.py --lang en list
+```
+
+The editor UI has a language picker in the toolbar and remembers your choice.
 
 ## Schedule Editor UI
 

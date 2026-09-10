@@ -3,10 +3,12 @@
 import json
 import os
 import random
+import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
 
+from lib import i18n
 from lib._paths import SEED
 
 
@@ -15,7 +17,7 @@ def _notify_server():
         req = urllib.request.Request("http://localhost:8080/reload", method="POST")
         urllib.request.urlopen(req, timeout=2)
     except (urllib.error.URLError, OSError):
-        print("  Server not running -- changes will apply on next start.")
+        print(f"  {i18n.t('cli.seed.server_offline')}")
 
 
 def _load_json(path: Path):
@@ -170,18 +172,18 @@ def list_seed_courses(session: str | None = None) -> list[dict]:
 
 def _select_session() -> dict | None:
     sessions = _load_sessions()
-    print("\nSessions disponibles:")
+    print(f"\n{i18n.t('cli.seed.sessions_available')}")
     for i, s in enumerate(sessions, 1):
         print(f"{i}) {s['abrege']} ({s['auLong']})")
-    print("0) Annuler")
+    print(i18n.t("cli.seed.cancel_entry"))
     try:
-        idx = int(input("Choisir une session: ").strip())
+        idx = int(input(i18n.t("cli.seed.session_prompt")).strip())
     except ValueError:
         return None
     if idx == 0:
         return None
     if idx < 1 or idx > len(sessions):
-        print("Choix invalide.")
+        print(i18n.t("cli.common.invalid_choice"))
         return None
     return sessions[idx - 1]
 
@@ -190,32 +192,33 @@ def _interactive_add(session_code: str) -> str:
     pools = _load_pools()
     slots = pools["scheduleSlots"]
 
-    sigle = input("Code du cours (ex: LOG410): ").strip().upper()
+    sigle = input(i18n.t("cli.seed.sigle_prompt")).strip().upper()
     if not sigle:
-        return "Annulé."
-    title = input("Nom du cours: ").strip()
+        return i18n.t("cli.common.cancelled")
+    title = input(i18n.t("cli.seed.title_prompt")).strip()
     if not title:
-        return "Annulé."
+        return i18n.t("cli.common.cancelled")
 
     day_pairs = list(dict.fromkeys((s["jour"], s["journee"]) for s in slots))
-    print("\nJour de la semaine:")
-    for i, (_, day_name) in enumerate(day_pairs, 1):
-        print(f"{i}) {day_name}")
+    print(f"\n{i18n.t('cli.seed.weekday_title')}")
+    for i, (day_code, _) in enumerate(day_pairs, 1):
+        print(f"{i}) {i18n.t(f'cli.days.{day_code}')}")
     try:
-        day_idx = int(input("Choisir un jour: ").strip()) - 1
-        chosen_day_code, chosen_day_name = day_pairs[day_idx]
+        day_idx = int(input(i18n.t("cli.seed.weekday_prompt")).strip()) - 1
+        chosen_day_code, _ = day_pairs[day_idx]
     except (ValueError, IndexError):
-        return "Choix invalide. Annulé."
+        return i18n.t("cli.seed.invalid_cancelled")
+    chosen_day_name = i18n.t(f"cli.days.{chosen_day_code}")
 
     day_slots = [s for s in slots if s["jour"] == chosen_day_code]
-    print(f"\nHoraires disponibles ({chosen_day_name}):")
+    print(f"\n{i18n.t('cli.seed.slots_title', day=chosen_day_name)}")
     for i, s in enumerate(day_slots, 1):
         print(f"{i}) {s['heureDebut']}-{s['heureFin']}")
     try:
-        slot_idx = int(input("Choisir un horaire: ").strip()) - 1
+        slot_idx = int(input(i18n.t("cli.seed.slot_prompt")).strip()) - 1
         slot = day_slots[slot_idx]
     except (ValueError, IndexError):
-        return "Choix invalide. Annulé."
+        return i18n.t("cli.seed.invalid_cancelled")
 
     schedule = {
         "jour": slot["jour"],
@@ -227,64 +230,86 @@ def _interactive_add(session_code: str) -> str:
     }
 
     record = add_course_to_seed(session_code, sigle, title, schedule)
-    return (
-        f"Cours ajouté: {record['sigle']}-{record['groupe']} - {title}\n"
-        f"Session: {session_code} | Horaire: {slot['journee']} {slot['heureDebut']}-{slot['heureFin']}"
+    return "\n".join(
+        [
+            i18n.t(
+                "cli.seed.added",
+                sigle=record["sigle"],
+                groupe=record["groupe"],
+                titre=title,
+            ),
+            i18n.t(
+                "cli.seed.added_details",
+                session=session_code,
+                day=chosen_day_name,
+                start=slot["heureDebut"],
+                end=slot["heureFin"],
+            ),
+        ]
     )
 
 
 def _interactive_remove(session_code: str) -> str:
     courses = list_seed_courses(session_code)
     if not courses:
-        return "Aucun cours dans cette session."
+        return i18n.t("cli.seed.empty_session")
 
-    print(f"\nCours dans {session_code}:")
+    print(f"\n{i18n.t('cli.seed.courses_in', session=session_code)}")
     for i, c in enumerate(courses, 1):
         print(f"{i}) {c['sigle']}-{c['groupe']} - {c['titreCours']}")
-    print("0) Annuler")
+    print(i18n.t("cli.seed.cancel_entry"))
 
     try:
-        idx = int(input("Retirer le cours #: ").strip())
+        idx = int(input(i18n.t("cli.seed.remove_prompt")).strip())
     except ValueError:
-        return "Annulé."
+        return i18n.t("cli.common.cancelled")
     if idx == 0:
         return ""
     if idx < 1 or idx > len(courses):
-        return "Choix invalide."
+        return i18n.t("cli.common.invalid_choice")
 
     target = courses[idx - 1]
     removed = remove_course_from_seed(session_code, target["sigle"], target["groupe"])
     if removed:
-        return f"Cours retiré: {target['sigle']}-{target['groupe']} - {target['titreCours']}"
-    return "Cours non trouvé."
+        return i18n.t(
+            "cli.seed.removed",
+            sigle=target["sigle"],
+            groupe=target["groupe"],
+            titre=target["titreCours"],
+        )
+    return i18n.t("cli.seed.not_found")
 
 
 def _interactive_list(session_code: str) -> str:
     courses = list_seed_courses(session_code)
     if not courses:
-        return "Aucun cours dans cette session."
+        return i18n.t("cli.seed.empty_session")
 
-    lines = [f"Cours dans {session_code}:"]
+    lines = [i18n.t("cli.seed.courses_in", session=session_code)]
     for c in courses:
         lines.append(f"{c['sigle']}-{c['groupe']} - {c['titreCours']}")
     return "\n".join(lines)
 
 
-def main():
+def main(argv: list[str] | None = None):
+    argv = list(sys.argv[1:] if argv is None else argv)
+    _, lang = i18n.split_lang_arg(argv)
+    i18n.set_locale(lang)
+
     last_message = ""
     while True:
         os.system("cls" if os.name == "nt" else "clear")
         if last_message:
             print(last_message)
-        print("\n=== Gestion des cours (Signets Mock) ===")
-        print("1) Ajouter un cours")
-        print("2) Retirer un cours")
-        print("3) Lister les cours")
-        print("4) Quitter")
-        choice = input("Choix: ").strip()
+        print(f"\n{i18n.t('cli.seed.menu_title')}")
+        print(i18n.t("cli.seed.menu_add"))
+        print(i18n.t("cli.seed.menu_remove"))
+        print(i18n.t("cli.seed.menu_list"))
+        print(i18n.t("cli.seed.menu_quit"))
+        choice = input(i18n.t("cli.common.choice_prompt")).strip()
 
         if choice == "4":
-            print("Au revoir!")
+            print(i18n.t("cli.common.goodbye"))
             break
 
         if choice in ("1", "2", "3"):
@@ -299,7 +324,7 @@ def main():
             else:
                 last_message = _interactive_list(session["abrege"])
         else:
-            last_message = "Choix invalide."
+            last_message = i18n.t("cli.common.invalid_choice")
 
 
 if __name__ == "__main__":

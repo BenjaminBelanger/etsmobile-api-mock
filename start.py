@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 
+from lib import i18n
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
@@ -50,29 +51,15 @@ CONFIG_FLAGS = (
     "auth",
 )
 
-DAY_NAMES = {
-    "1": "Lundi",
-    "2": "Mardi",
-    "3": "Mercredi",
-    "4": "Jeudi",
-    "5": "Vendredi",
-    "6": "Samedi",
-}
+DAY_CODES = ("1", "2", "3", "4", "5", "6")
 
-PROFILE_DESCRIPTIONS = {
-    "normal": "4 cours + labos, Lun-Ven jour seulement",
-    "semester-off": "Aucun cours (session libre)",
-    "internship-only": "Stage coopératif seulement",
-    "internship-courses": "Stage coopératif + 2 cours du soir",
-    "generated-light": "2 cours + labos, Lun-Ven matins",
-    "generated-busy": "5 cours + labos, Lun-Ven",
-    "generated-evening": "3 cours + labos, Lun-Ven soirs",
-    "new-student": "Nouvel étudiant (aucune session)",
-}
 
-SCENARIO_DESCRIPTIONS = {
-    "none": "Aucune modification au calendrier",
-}
+def _day_name(code: str) -> str:
+    return i18n.t(f"cli.days.{code}")
+
+
+def _day_names() -> dict[str, str]:
+    return {code: _day_name(code) for code in DAY_CODES}
 
 
 def _load_profiles() -> dict:
@@ -89,11 +76,15 @@ def _load_failure_presets() -> dict:
 
 def _day_list(raw: str) -> list[str]:
     parts = [p.strip() for p in raw.split(",") if p.strip()]
-    invalid = [p for p in parts if p not in DAY_NAMES]
+    invalid = [p for p in parts if p not in DAY_CODES]
     if not parts or invalid:
-        codes = ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items())
+        codes = ", ".join(f"{c}={n}" for c, n in _day_names().items())
         raise argparse.ArgumentTypeError(
-            f"invalid day code(s): {', '.join(invalid) or raw!r}. Valid codes: {codes}"
+            i18n.t(
+                "cli.start.errors.invalid_days",
+                value=", ".join(invalid) or repr(raw),
+                codes=codes,
+            )
         )
     return parts
 
@@ -103,8 +94,11 @@ def _time_list(raw: str) -> str:
     invalid = [p for p in parts if p not in TIME_CHOICES]
     if not parts or invalid:
         raise argparse.ArgumentTypeError(
-            f"invalid time preference(s): {', '.join(invalid) or raw!r}. "
-            f"Valid values: {', '.join(TIME_CHOICES)}"
+            i18n.t(
+                "cli.start.errors.invalid_times",
+                value=", ".join(invalid) or repr(raw),
+                choices=", ".join(TIME_CHOICES),
+            )
         )
     return ",".join(parts)
 
@@ -116,10 +110,12 @@ def _latency(raw: str) -> str:
         lo, hi = int(parts[0]), int(parts[1])
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"expected milliseconds or a min-max range, got {raw!r}"
+            i18n.t("cli.start.errors.latency_format", value=repr(raw))
         ) from None
     if lo < 0 or hi < lo:
-        raise argparse.ArgumentTypeError(f"invalid latency range: {raw!r}")
+        raise argparse.ArgumentTypeError(
+            i18n.t("cli.start.errors.latency_range", value=repr(raw))
+        )
     return text
 
 
@@ -128,12 +124,10 @@ def _rate(raw: str) -> float:
         val = float(raw)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"expected a number between 0.0 and 1.0, got {raw!r}"
+            i18n.t("cli.start.errors.rate", value=repr(raw))
         ) from None
     if not 0.0 <= val <= 1.0:
-        raise argparse.ArgumentTypeError(
-            f"expected a number between 0.0 and 1.0, got {val}"
-        )
+        raise argparse.ArgumentTypeError(i18n.t("cli.start.errors.rate", value=val))
     return val
 
 
@@ -142,10 +136,10 @@ def _seconds(raw: str) -> float:
         val = float(raw)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"expected a number of seconds, got {raw!r}"
+            i18n.t("cli.start.errors.seconds", value=repr(raw))
         ) from None
     if val < 0:
-        raise argparse.ArgumentTypeError(f"expected a number of seconds, got {val}")
+        raise argparse.ArgumentTypeError(i18n.t("cli.start.errors.seconds", value=val))
     return val
 
 
@@ -155,11 +149,16 @@ def _bounded_int(low: int, high: int):
             val = int(raw)
         except ValueError:
             raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {raw!r}"
+                i18n.t(
+                    "cli.start.errors.bounded_int",
+                    low=low,
+                    high=high,
+                    value=repr(raw),
+                )
             ) from None
         if val < low or val > high:
             raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {val}"
+                i18n.t("cli.start.errors.bounded_int", low=low, high=high, value=val)
             )
         return val
 
@@ -167,29 +166,31 @@ def _bounded_int(low: int, high: int):
 
 
 def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
-    lines = ["profils:"]
+    lines = [i18n.t("cli.start.epilog.profiles")]
     for name in profiles:
-        lines.append(f"  {name:<20}{PROFILE_DESCRIPTIONS.get(name, '')}")
+        lines.append(f"  {name:<20}{i18n.describe('cli.profiles', name)}")
     lines.append("")
-    lines.append("scénarios:")
+    lines.append(i18n.t("cli.start.epilog.scenarios"))
     for name, body in scenarios.items():
-        desc = SCENARIO_DESCRIPTIONS.get(name) or body.get("description", "")
+        desc = i18n.describe("cli.scenarios", name, body.get("description", ""))
         lines.append(f"  {name:<20}{desc}")
     lines.append("")
-    lines.append("pannes:")
+    lines.append(i18n.t("cli.start.epilog.failures"))
     for name, body in presets.items():
-        lines.append(f"  {name:<20}{body.get('description', '')}")
+        desc = i18n.describe("cli.presets", name, body.get("description", ""))
+        lines.append(f"  {name:<20}{desc}")
     lines.append("")
-    lines.append("codes de jour:")
-    lines.append("  " + ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items()))
+    lines.append(i18n.t("cli.start.epilog.day_codes"))
+    lines.append("  " + ", ".join(f"{c}={n}" for c, n in _day_names().items()))
     lines.append("")
-    lines.append("exemples:")
+    lines.append(i18n.t("cli.start.epilog.examples"))
     lines.append("  python start.py")
     lines.append("  python start.py --profile semester-off")
     lines.append("  python start.py --courses 2 --days 1,3,5 --time morning")
     lines.append("  python start.py --scenario semaine-relache --semester-week 3")
     lines.append("  python start.py --failures flaky")
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
+    lines.append("  python start.py --lang en")
     return "\n".join(lines)
 
 
@@ -200,112 +201,115 @@ def _build_parser() -> argparse.ArgumentParser:
 
     parser = argparse.ArgumentParser(
         prog="python start.py",
-        description=(
-            "Démarre le serveur mock ETSMobileAPI. Sans argument, un menu "
-            "interactif s'affiche; avec des options, le serveur démarre "
-            "directement."
-        ),
+        description=i18n.t("cli.start.description"),
         epilog=_epilog(profiles, scenarios, presets),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
+        "--lang",
+        choices=i18n.available_locales(),
+        help=i18n.t(
+            "cli.common.lang_help", choices=", ".join(i18n.available_locales())
+        ),
+        default=None,
+    )
+    parser.add_argument(
         "--profile",
         choices=list(profiles),
-        help=f"Profil étudiant à charger (défaut: {DEFAULT_PROFILE}).",
+        help=i18n.t("cli.start.flags.profile", default=DEFAULT_PROFILE),
         default=None,
     )
     parser.add_argument(
         "--scenario",
         choices=list(scenarios),
-        help="Modification du calendrier de la session active.",
+        help=i18n.t("cli.start.flags.scenario"),
         default=None,
     )
     parser.add_argument(
         "--semester-week",
         type=_bounded_int(1, 15),
         metavar="N",
-        help="Décale la session pour qu'aujourd'hui tombe à la semaine N (1-15).",
+        help=i18n.t("cli.start.flags.semester_week"),
         default=None,
     )
     parser.add_argument(
         "--courses",
         type=_bounded_int(1, 5),
         metavar="N",
-        help="Nombre de cours générés (1-5).",
+        help=i18n.t("cli.start.flags.courses"),
         default=None,
     )
     parser.add_argument(
         "--days",
         type=_day_list,
         metavar="1,3,5",
-        help="Jours de cours, codes séparés par des virgules.",
+        help=i18n.t("cli.start.flags.days"),
         default=None,
     )
     parser.add_argument(
         "--time",
         type=_time_list,
         metavar="morning,evening",
-        help=f"Plage horaire: {', '.join(TIME_CHOICES)} (séparées par des virgules).",
+        help=i18n.t("cli.start.flags.time", choices=", ".join(TIME_CHOICES)),
         default=None,
     )
 
     failures = parser.add_argument_group(
-        "pannes",
-        "Injection de pannes au démarrage. Les mêmes options existent à chaud "
-        "avec manage_failures.py.",
+        i18n.t("cli.start.flags.group_title"),
+        i18n.t("cli.start.flags.group_description"),
     )
     failures.add_argument(
         "--failures",
         choices=list(presets),
         metavar="PRESET",
-        help="Applique un préréglage de seed/failure_presets.json.",
+        help=i18n.t("cli.start.flags.failures"),
         default=None,
     )
     failures.add_argument(
         "--latency",
         type=_latency,
         metavar="MS",
-        help="Latence en ms, fixe ou intervalle (500 ou 100-800).",
+        help=i18n.t("cli.start.flags.latency"),
         default=None,
     )
     failures.add_argument(
         "--error-rate",
         type=_rate,
         metavar="R",
-        help="Probabilité (0.0-1.0) qu'un appel retourne 500.",
+        help=i18n.t("cli.start.flags.error_rate"),
         default=None,
     )
     failures.add_argument(
         "--fail",
         action="append",
         metavar="ENDPOINT",
-        help="Endpoint retournant 503 (répétable, '*' pour tous).",
+        help=i18n.t("cli.start.flags.fail"),
         default=None,
     )
     failures.add_argument(
         "--timeout",
         action="append",
         metavar="ENDPOINT",
-        help="Endpoint qui fige la requête (répétable, '*' pour tous).",
+        help=i18n.t("cli.start.flags.timeout"),
         default=None,
     )
     failures.add_argument(
         "--timeout-duration",
         type=_seconds,
         metavar="S",
-        help="Secondes avant qu'un endpoint figé retourne 504.",
+        help=i18n.t("cli.start.flags.timeout_duration"),
         default=None,
     )
     failures.add_argument(
         "--malformed",
         action=argparse.BooleanOptionalAction,
-        help="Tronque de moitié chaque réponse 2xx.",
+        help=i18n.t("cli.start.flags.malformed"),
         default=None,
     )
     failures.add_argument(
         "--auth",
         action=argparse.BooleanOptionalAction,
-        help="Exige un header Authorization.",
+        help=i18n.t("cli.start.flags.auth"),
         default=None,
     )
     return parser
@@ -340,7 +344,11 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
     overrides = {k: v for k, v in explicit.items() if v is not None}
     if overrides:
         config.update(overrides)
-        label = f"{label} + ajusté" if label else "personnalisées"
+        label = (
+            i18n.t("cli.start.run.failure_adjusted", preset=label)
+            if label
+            else i18n.t("cli.start.run.failure_custom")
+        )
 
     return (
         {FAILURE_ENV[k]: _failure_value(k, v) for k, v in config.items()},
@@ -370,9 +378,15 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | N
         getattr(args, name) is not None for name in ("courses", "days", "time")
     )
     base = args.profile or DEFAULT_PROFILE
-    profile_display = f"{base} (personnalisé)" if generated else base
+    profile_display = (
+        i18n.t("cli.start.run.custom_profile", profile=base) if generated else base
+    )
     if failure_label:
-        profile_display = f"{profile_display} + pannes « {failure_label} »"
+        profile_display = i18n.t(
+            "cli.start.run.profile_with_failures",
+            profile=profile_display,
+            label=failure_label,
+        )
 
     return overrides, profile_display, args.scenario or "none", args.semester_week
 
@@ -391,17 +405,17 @@ def _select_profile() -> str | None:
     profiles = _load_profiles()
     names = list(profiles.keys())
 
-    print("\n=== Sélection du profil (Signets Mock) ===\n")
+    print(f"\n{i18n.t('cli.start.menu.profile_title')}\n")
     for i, name in enumerate(names, 1):
-        desc = PROFILE_DESCRIPTIONS.get(name, "")
+        desc = i18n.describe("cli.profiles", name)
         label = f"{name}: {desc}" if desc else name
         print(f"  {i}) {label}")
-    print("\n  C) Personnalisé (choisir nombre de cours, jours, etc.)")
-    print("  0) Quitter")
+    print(f"\n  {i18n.t('cli.start.menu.custom_entry')}")
+    print(f"  {i18n.t('cli.start.menu.quit_entry')}")
 
     while True:
         try:
-            raw = input("\nChoix: ").strip()
+            raw = input(f"\n{i18n.t('cli.common.choice_prompt')}").strip()
         except (ValueError, EOFError):
             return None
 
@@ -411,7 +425,7 @@ def _select_profile() -> str | None:
             return None
         idx = _validate_menu_choice(raw, len(names))
         if idx is None:
-            print("  Choix invalide, réessayez.")
+            print(f"  {i18n.t('cli.common.invalid_choice_retry')}")
             continue
         return names[idx - 1]
 
@@ -423,16 +437,18 @@ def _select_scenario() -> str:
     if not names:
         return "none"
 
-    print("\n=== Scénario calendrier (optionnel) ===\n")
+    print(f"\n{i18n.t('cli.start.menu.scenario_title')}\n")
     for i, name in enumerate(names, 1):
-        desc = SCENARIO_DESCRIPTIONS.get(name) or scenarios[name].get("description", "")
+        desc = i18n.describe(
+            "cli.scenarios", name, scenarios[name].get("description", "")
+        )
         label = f"{name}: {desc}" if desc else name
         print(f"  {i}) {label}")
-    print("\n  0) Aucun (par défaut)")
+    print(f"\n  {i18n.t('cli.start.menu.scenario_none')}")
 
     while True:
         try:
-            raw = input("\nChoix [0]: ").strip()
+            raw = input(f"\n{i18n.t('cli.start.menu.scenario_prompt')}").strip()
         except (ValueError, EOFError):
             return "none"
 
@@ -440,7 +456,7 @@ def _select_scenario() -> str:
             return "none"
         idx = _validate_menu_choice(raw, len(names))
         if idx is None:
-            print("  Choix invalide, réessayez.")
+            print(f"  {i18n.t('cli.common.invalid_choice_retry')}")
             continue
         return names[idx - 1]
 
@@ -456,45 +472,41 @@ def _prompt_int(prompt: str, low: int, high: int, default: int) -> int:
         try:
             val = int(raw)
         except ValueError:
-            print(
-                f"  Entrée invalide, veuillez entrer un nombre entre {low} et {high}."
-            )
+            print(f"  {i18n.t('cli.start.custom.number_invalid', low=low, high=high)}")
             continue
         if val < low or val > high:
-            print(
-                f"  Entrée invalide, veuillez entrer un nombre entre {low} et {high}."
-            )
+            print(f"  {i18n.t('cli.start.custom.number_invalid', low=low, high=high)}")
             continue
         return val
 
 
 def _prompt_days() -> list[str] | None:
-    print("\n  Jours disponibles:")
-    for code, name in DAY_NAMES.items():
+    print(f"\n  {i18n.t('cli.start.custom.days_available')}")
+    for code, name in _day_names().items():
         print(f"    {code} = {name}")
     print()
     while True:
         try:
-            raw = input("  Jours (ex: 1,3,5 pour Lun/Mer/Ven, vide = tous): ").strip()
+            raw = input(f"  {i18n.t('cli.start.custom.days_prompt')}").strip()
         except EOFError:
             return None
         if not raw:
             return None
         parts = [p.strip() for p in raw.split(",")]
-        valid = [p for p in parts if p in DAY_NAMES]
+        valid = [p for p in parts if p in DAY_CODES]
         if valid:
             return valid
-        print("  Entrée invalide, utilisez les codes 1-6 séparés par des virgules.")
+        print(f"  {i18n.t('cli.start.custom.days_invalid')}")
 
 
 def _prompt_semester_week() -> int | None:
-    print("\n=== Semaine de la session (optionnel) ===\n")
-    print("  À quelle semaine de la session active voulez-vous être?")
-    print("  Utile si la session réelle est presque terminée.")
-    print("  (Vide = utiliser les dates réelles)")
+    print(f"\n{i18n.t('cli.start.week.title')}\n")
+    print(f"  {i18n.t('cli.start.week.question')}")
+    print(f"  {i18n.t('cli.start.week.hint')}")
+    print(f"  {i18n.t('cli.start.week.default_hint')}")
     while True:
         try:
-            raw = input("\n  Semaine (1-15, vide = réelle): ").strip()
+            raw = input(f"\n  {i18n.t('cli.start.week.prompt')}").strip()
         except EOFError:
             return None
         if not raw:
@@ -502,24 +514,24 @@ def _prompt_semester_week() -> int | None:
         try:
             week = int(raw)
         except ValueError:
-            print("  Entrée invalide, entrez un nombre entre 1 et 15.")
+            print(f"  {i18n.t('cli.start.week.invalid')}")
             continue
         if week < 1 or week > 15:
-            print("  Entrée invalide, entrez un nombre entre 1 et 15.")
+            print(f"  {i18n.t('cli.start.week.invalid')}")
             continue
         return week
 
 
 def _prompt_time_preference() -> str | None:
-    print("\n  Plage horaire (plusieurs possibles, ex: 1,3):")
-    print("    1) Matin (09:00-12:30)")
-    print("    2) Après-midi (13:30-17:00)")
-    print("    3) Soir (18:00-21:30)")
-    print("    4) Aucune préférence")
+    print(f"\n  {i18n.t('cli.start.time_preference.title')}")
+    print(f"    1) {i18n.t('cli.start.time_preference.morning')}")
+    print(f"    2) {i18n.t('cli.start.time_preference.afternoon')}")
+    print(f"    3) {i18n.t('cli.start.time_preference.evening')}")
+    print(f"    4) {i18n.t('cli.start.time_preference.none')}")
     mapping = {"1": "morning", "2": "afternoon", "3": "evening"}
     while True:
         try:
-            raw = input("  Choix [4]: ").strip()
+            raw = input(f"  {i18n.t('cli.start.time_preference.prompt')}").strip()
         except EOFError:
             return None
         if not raw or raw == "4":
@@ -528,36 +540,42 @@ def _prompt_time_preference() -> str | None:
         prefs = [mapping[p] for p in parts if p in mapping]
         if prefs:
             return ",".join(prefs)
-        print("  Entrée invalide, utilisez les choix 1-4 séparés par des virgules.")
+        print(f"  {i18n.t('cli.start.time_preference.invalid')}")
 
 
 def _configure_custom() -> dict | None:
-    print("\n=== Configuration personnalisée ===")
+    print(f"\n{i18n.t('cli.start.custom.title')}")
 
-    count = _prompt_int("\n  Nombre de cours (1-5) [3]: ", 1, 5, 3)
+    count = _prompt_int(f"\n  {i18n.t('cli.start.custom.count_prompt')}", 1, 5, 3)
     allowed_days = _prompt_days()
     time_pref = _prompt_time_preference()
 
     days_display = (
-        ", ".join(DAY_NAMES[d] for d in allowed_days) if allowed_days else "Tous"
+        ", ".join(_day_name(d) for d in allowed_days)
+        if allowed_days
+        else i18n.t("cli.start.custom.all_days")
     )
-    time_labels = {"morning": "Matin", "afternoon": "Après-midi", "evening": "Soir"}
+    time_labels = {
+        "morning": i18n.t("cli.start.time_preference.label_morning"),
+        "afternoon": i18n.t("cli.start.time_preference.label_afternoon"),
+        "evening": i18n.t("cli.start.time_preference.label_evening"),
+    }
     time_display = (
         ", ".join(time_labels[t] for t in time_pref.split(","))
         if time_pref
-        else "Aucune"
+        else i18n.t("cli.start.custom.no_time")
     )
 
-    print("\n  Résumé:")
-    print(f"    Cours:    {count}")
-    print(f"    Jours:    {days_display}")
-    print(f"    Plage:    {time_display}")
+    print(f"\n  {i18n.t('cli.start.custom.summary')}")
+    print(f"    {i18n.t('cli.start.custom.summary_courses'):<10}{count}")
+    print(f"    {i18n.t('cli.start.custom.summary_days'):<10}{days_display}")
+    print(f"    {i18n.t('cli.start.custom.summary_time'):<10}{time_display}")
 
     try:
-        confirm = input("\n  Confirmer? (O/n): ").strip().lower()
+        confirm = input(f"\n  {i18n.t('cli.start.custom.confirm')}").strip().lower()
     except EOFError:
-        confirm = "o"
-    if confirm == "n":
+        confirm = ""
+    if confirm == i18n.t("cli.start.custom.confirm_no"):
         return None
 
     return {
@@ -572,7 +590,7 @@ def _clear_overrides() -> None:
     try:
         if path.exists():
             path.unlink()
-            print("Configuration précédente réinitialisée (overrides supprimés).")
+            print(i18n.t("cli.start.run.overrides_cleared"))
     except OSError:
         pass
 
@@ -623,7 +641,7 @@ def _stop_existing_servers() -> None:
     if not pids:
         return
 
-    print(f"Arrêt de {len(pids)} serveur(s) déjà en cours...")
+    print(i18n.t("cli.start.run.stopping_servers", count=len(pids)))
     for pid in pids:
         try:
             if os.name == "nt":
@@ -641,7 +659,7 @@ def _stop_existing_servers() -> None:
 def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
     profile = _select_profile()
     if profile is None:
-        print("Au revoir!")
+        print(i18n.t("cli.common.goodbye"))
         return None
 
     scenario = _select_scenario()
@@ -656,14 +674,14 @@ def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
     if profile == "__custom__":
         config = _configure_custom()
         if config is None:
-            print("Annulé.")
+            print(i18n.t("cli.common.cancelled"))
             return None
         overrides["PROFILE"] = DEFAULT_PROFILE
         overrides["COURSE_COUNT"] = str(config["count"])
         if config["allowedDays"]:
             overrides["SCHEDULE_DAYS"] = ",".join(config["allowedDays"])
         overrides["TIME_PREFERENCE"] = config["timePreference"] or ""
-        profile_display = "Personnalisé"
+        profile_display = i18n.t("cli.start.run.custom_profile_menu")
     else:
         overrides["PROFILE"] = profile
         profile_display = profile
@@ -675,6 +693,7 @@ def _build_env(overrides: dict) -> dict:
     env = os.environ.copy()
     for name in MANAGED_ENV:
         env.pop(name, None)
+    env[i18n.LANG_ENV] = i18n.get_locale()
     env.update(overrides)
     return env
 
@@ -682,14 +701,30 @@ def _build_env(overrides: dict) -> dict:
 def _start_server(
     overrides: dict, profile_display: str, scenario: str, semester_week: int | None
 ) -> None:
-    scenario_display = f" + scénario « {scenario} »" if scenario != "none" else ""
-    week_display = f" + semaine {semester_week}" if semester_week is not None else ""
-    print(
-        f"\nDémarrage du serveur avec le profil « {profile_display} »"
-        f"{scenario_display}{week_display}...\n"
+    scenario_display = (
+        i18n.t("cli.start.run.with_scenario", scenario=scenario)
+        if scenario != "none"
+        else ""
     )
-    print("  API   : http://localhost:8080/docs")
-    print("  Horaire (éditeur visuel) : http://localhost:8080/editor\n")
+    week_display = (
+        i18n.t("cli.start.run.with_week", week=semester_week)
+        if semester_week is not None
+        else ""
+    )
+    print(
+        "\n"
+        + i18n.t(
+            "cli.start.run.starting",
+            profile=profile_display,
+            scenario=scenario_display,
+            week=week_display,
+        )
+        + "\n"
+    )
+    api_url = i18n.t("cli.start.run.api_url", url="http://localhost:8080/docs")
+    editor_url = i18n.t("cli.start.run.editor_url", url="http://localhost:8080/editor")
+    print(f"  {api_url}")
+    print(f"  {editor_url}\n")
 
     _stop_existing_servers()
     _clear_overrides()
@@ -715,7 +750,12 @@ def _start_server(
 
 
 def main(argv: list[str] | None = None) -> None:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    _, lang = i18n.split_lang_arg(argv)
+    i18n.set_locale(lang)
+
     args = _build_parser().parse_args(argv)
+    i18n.set_locale(args.lang)
 
     if any(getattr(args, name) is not None for name in CONFIG_FLAGS):
         config = _config_from_args(args)

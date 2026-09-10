@@ -264,7 +264,7 @@ def test_the_help_epilog_documents_the_choices(capsys):
         assert name in printed
     for name in start._load_failure_presets():
         assert name in printed
-    for code, day in start.DAY_NAMES.items():
+    for code, day in start._day_names().items():
         assert f"{code}={day}" in printed
 
 
@@ -509,3 +509,46 @@ def test_a_process_that_refuses_to_die_is_survivable(monkeypatch):
     monkeypatch.setattr(start.os, "getpid", lambda: 999)
 
     start._stop_existing_servers()
+
+
+def test_the_lang_flag_switches_the_cli_language():
+    start.i18n.set_locale("en")
+    _, display, _, _ = config("--profile", "generated-busy", "--courses", "2")
+    assert display == "generated-busy (custom)"
+
+    _, display, _, _ = config("--failures", "chaos")
+    assert display == 'normal + failures "chaos"'
+
+
+def test_the_lang_flag_is_read_before_the_parser_is_built(monkeypatch):
+    monkeypatch.setattr(start, "_config_from_menu", lambda: None)
+    start.main(["--lang", "en"])
+    assert start.i18n.get_locale() == "en"
+
+
+def test_the_lang_flag_alone_still_opens_the_menu(monkeypatch):
+    calls = []
+    monkeypatch.setattr(start, "_config_from_menu", lambda: calls.append("menu") or None)
+    monkeypatch.setattr(start, "_start_server", lambda *a: calls.append("start"))
+
+    start.main(["--lang", "en"])
+
+    assert calls == ["menu"]
+
+
+def test_an_unsupported_lang_is_rejected():
+    with pytest.raises(SystemExit) as exc:
+        start._build_parser().parse_args(["--lang", "de"])
+    assert exc.value.code == 2
+
+
+def test_the_chosen_locale_reaches_the_server_process():
+    start.i18n.set_locale("en")
+    assert env_for("--profile", "normal")[start.i18n.LANG_ENV] == "en"
+
+
+def test_day_codes_are_listed_in_the_chosen_language():
+    start.i18n.set_locale("en")
+    assert start._day_names()["1"] == "Monday"
+    start.i18n.set_locale("fr")
+    assert start._day_names()["1"] == "Lundi"

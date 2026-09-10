@@ -49,7 +49,7 @@ def test_listing_presets_prints_every_name(capsys):
 def test_listing_survives_an_empty_preset_file(monkeypatch, capsys):
     monkeypatch.setattr(manage_failures, "_load_presets", lambda: {})
     assert manage_failures.cmd_list() == 0
-    assert "no presets defined" in capsys.readouterr().out
+    assert "aucun préréglage défini" in capsys.readouterr().out
 
 
 def test_status_asks_the_server(http, capsys):
@@ -65,7 +65,7 @@ def test_reset_clears_the_config(http, capsys):
     assert manage_failures.cmd_reset() == 0
 
     assert http.calls == [("DELETE", "/admin/failures", None)]
-    assert "(reset)" in capsys.readouterr().err
+    assert "(réinitialisé)" in capsys.readouterr().err
 
 
 def test_a_preset_is_applied_on_a_clean_slate(http):
@@ -81,7 +81,7 @@ def test_an_unknown_preset_is_refused(http, capsys):
     assert manage_failures.cmd_apply_preset("inconnu") == 1
 
     assert http.calls == []
-    assert "unknown preset" in capsys.readouterr().err
+    assert "préréglage inconnu" in capsys.readouterr().err
 
 
 def test_a_custom_config_is_built_from_the_flags(http):
@@ -147,7 +147,7 @@ def test_an_error_from_the_server_is_reported(http, capsys):
     http.replies[("GET", "/admin/failures")] = (500, "boom")
 
     assert manage_failures.cmd_status() == 1
-    assert "Error 500" in capsys.readouterr().err
+    assert "Erreur 500" in capsys.readouterr().err
 
 
 def test_a_plain_text_body_is_printed_as_is(capsys):
@@ -191,7 +191,7 @@ def test_an_unreachable_server_is_reported(monkeypatch, capsys):
     monkeypatch.setattr(manage_failures, "_http", boom)
 
     assert manage_failures.main(["status"]) == 2
-    assert "cannot reach mock server" in capsys.readouterr().err
+    assert "serveur mock injoignable" in capsys.readouterr().err
 
 
 def test_every_preset_is_a_valid_runtime_patch():

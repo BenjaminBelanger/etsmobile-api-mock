@@ -21,7 +21,7 @@ describe("initial render", () => {
   test("asks the server for the default session", async () => {
     const app = await ui();
     assert.deepEqual(app.server.calls, [
-      { path: "/state", query: "session=", method: "GET", body: null },
+      { path: "/state", query: "session=&lang=fr", method: "GET", body: null },
     ]);
     assert.equal(app.status(), "Prêt.");
     app.close();
