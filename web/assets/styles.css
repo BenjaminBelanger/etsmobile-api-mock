@@ -331,8 +331,8 @@ body {
   background: none;
 }
 
-/* Too narrow for the word once the sigle and the kind have their room: keep
-   the icon, and leave the label to the tooltip and to screen readers. */
+/* Too narrow for the word: keep the icon, and leave the label to the tooltip
+   and to screen readers. */
 @container (max-width: 300px) {
   .block__badge {
     gap: 0; padding: 0;
