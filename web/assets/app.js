@@ -519,6 +519,41 @@ function renderEmpty(isEmpty) {
   el.board.appendChild(div);
 }
 
+const BLOCK_MARKS = {
+  exam: {
+    icon: "hatGraduation",
+    label: "Examen",
+    tip: "Examen final",
+    off: true,
+  },
+  canceled: {
+    icon: "dismissCircle",
+    label: "Annulée",
+    tip: "Séance annulée cette semaine",
+    off: true,
+  },
+  overridden: {
+    icon: "edit",
+    label: "Modifiée",
+    tip: "Séance modifiée cette semaine",
+  },
+};
+
+function blockMark(occ) {
+  if (occ.kind === "exam") return BLOCK_MARKS.exam;
+  if (occ.canceled) return BLOCK_MARKS.canceled;
+  if (occ.overridden) return BLOCK_MARKS.overridden;
+  return null;
+}
+
+function markBadge(mark) {
+  const off = mark.off ? " block__badge--off" : "";
+  return `<span class="block__badge${off}" title="${mark.tip}">${icon(
+    mark.icon,
+    12
+  )}<span class="block__badge-text">${mark.label}</span></span>`;
+}
+
 function buildBlock(occ, animate, occMode) {
   const start = toMin(occ.heureDebut);
   const end = toMin(occ.heureFin);
@@ -542,7 +577,12 @@ function buildBlock(occ, animate, occMode) {
   node.style.setProperty("--tx", `var(--c${t}-tx)`);
   node.style.top = `${minToPx(start)}px`;
   node.style.height = `${durToPx(dur) - 3}px`;
-  node.title = [`${occ.sigle}${occ.groupe ? "-" + occ.groupe : ""}`, occ.titre]
+  const mark = blockMark(occ);
+  node.title = [
+    `${occ.sigle}${occ.groupe ? "-" + occ.groupe : ""}`,
+    occ.titre,
+    mark && mark.tip,
+  ]
     .filter(Boolean)
     .join(" — ");
   node.dataset.blockId = occ.blockId || "";
@@ -554,13 +594,7 @@ function buildBlock(occ, animate, occMode) {
   const isExam = occ.kind === "exam";
   const kindLabel =
     occ.kind === "labo" ? `<span class="block__kind">(Labo)</span>` : "";
-  const badge = isExam
-    ? `<span class="block__badge block__badge--off" title="Examen final">Examen</span>`
-    : canceled
-    ? `<span class="block__badge block__badge--off" title="Séance annulée cette semaine">Annulée</span>`
-    : occ.overridden
-    ? `<span class="block__badge" title="Séance modifiée cette semaine">Modifiée</span>`
-    : "";
+  const badge = mark ? markBadge(mark) : "";
   const resetBtn =
     editable && occ.overridden && (occMode || isExam)
       ? `<button class="block__reset" title="${
