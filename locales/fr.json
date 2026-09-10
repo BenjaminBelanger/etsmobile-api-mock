@@ -141,7 +141,7 @@
       }
     },
     "seed": {
-      "server_offline": "Server not running -- changes will apply on next start.",
+      "server_offline": "Serveur non démarré -- les changements s'appliqueront au prochain démarrage.",
       "sessions_available": "Sessions disponibles:",
       "cancel_entry": "0) Annuler",
       "session_prompt": "Choisir une session: ",
@@ -218,7 +218,6 @@
       "juil.", "août", "sept.", "oct.", "nov.", "déc."
     ],
     "week_label": "Semaine {index}",
-    "new_evaluation": "Nouvel élément",
     "notices": {
       "relocation_dropped": "Journée pédagogique ({dates}) ne s'applique plus à ce bloc: il est maintenant le {day}.",
       "edits_dropped": "Modifications hebdomadaires hors session retirées: {dates}."

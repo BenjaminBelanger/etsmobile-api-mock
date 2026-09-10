@@ -218,7 +218,6 @@
       "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
     ],
     "week_label": "Week {index}",
-    "new_evaluation": "New item",
     "notices": {
       "relocation_dropped": "Pedagogical day ({dates}) no longer applies to this block: it is now on {day}.",
       "edits_dropped": "Dropped week-specific edits that fall outside the semester: {dates}."

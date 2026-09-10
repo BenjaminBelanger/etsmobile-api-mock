@@ -168,6 +168,17 @@ def test_the_mock_api_payload_stays_french_in_every_locale(session):
     assert all(b["journee"] in schedule_editor.DAY_NAMES.values() for b in blocks)
 
 
+def test_new_evaluations_are_named_in_french_in_every_locale(session):
+    i18n.set_locale("en")
+    state = schedule_editor.get_state(session)
+    course_id = state["courses"][0]["courseId"]
+
+    state = schedule_editor.add_evaluation(session, course_id)
+
+    added = state["courses"][0]["evaluations"][-1]
+    assert added["nom"] == "Nouvel élément"
+
+
 def test_the_cli_help_is_translated():
     i18n.set_locale("en")
     assert "day codes:" in start._epilog(

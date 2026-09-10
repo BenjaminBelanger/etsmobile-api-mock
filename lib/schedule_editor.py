@@ -20,6 +20,7 @@ DAY_END_MIN = 22 * 60
 SNAP_MIN = 15
 MIN_DURATION_MIN = 30
 MAX_HISTORY = 100
+_NEW_EVAL_NAME = "Nouvel élément"
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -878,7 +879,7 @@ def _check_name(evals: list[dict], name: str, current: dict) -> None:
 
 def _new_eval_name(evals: list[dict]) -> str:
     used = {ev["nom"] for ev in evals}
-    base = i18n.t("editor.new_evaluation")
+    base = _NEW_EVAL_NAME
     if base not in used:
         return base
     suffix = 2

@@ -3,6 +3,7 @@ import json
 import os
 import sys
 from contextvars import ContextVar
+from functools import cache
 
 from ._paths import ROOT
 
@@ -18,9 +19,10 @@ _catalogs: dict[str, dict] = {}
 _current: ContextVar[str] = ContextVar("locale", default=DEFAULT_LOCALE)
 
 
-def available_locales() -> list[str]:
+@cache
+def available_locales() -> tuple[str, ...]:
     found = sorted(path.stem for path in LOCALES.glob("*.json"))
-    return [DEFAULT_LOCALE] + [code for code in found if code != DEFAULT_LOCALE]
+    return (DEFAULT_LOCALE, *(code for code in found if code != DEFAULT_LOCALE))
 
 
 def normalize(raw: str | None) -> str | None:

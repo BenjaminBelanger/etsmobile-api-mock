@@ -5,6 +5,7 @@ import urllib.error
 import pytest
 
 import manage_seed
+from lib import i18n
 from lib._paths import SEED as REAL_SEED
 
 REAL_NOTIFY = manage_seed._notify_server
@@ -311,4 +312,4 @@ def test_an_unreachable_server_is_only_a_warning(monkeypatch, capsys):
 
     manage_seed._notify_server()
 
-    assert "Server not running" in capsys.readouterr().out
+    assert i18n.t("cli.seed.server_offline") in capsys.readouterr().out
