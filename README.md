@@ -39,7 +39,7 @@ python start.py --scenario semaine-relache --semester-week 3
 
 ## Schedule Editor UI
 
-<img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/3efc80ec-41c3-4743-ace5-e77ed056a4c7" />
+<img width="2559" height="1237" alt="Screenshot 2026-09-09 222637" src="https://github.com/user-attachments/assets/d68d5ab0-b1c4-4845-baae-5af1affc3fba" />
 
 A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 (the root `/` redirects there). It shows the active session's courses in a week
