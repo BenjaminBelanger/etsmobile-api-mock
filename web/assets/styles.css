@@ -243,7 +243,6 @@ body {
   font-weight: var(--fontWeightSemibold);
   font-size: var(--fontSizeBase400);
   display: flex; align-items: baseline; flex-wrap: nowrap; gap: 2px 6px;
-  /* Room for the corner actions, so they never sit on top of the badge. */
   padding-right: var(--sigle-pad, var(--actions-w));
   overflow: hidden;
 }
@@ -312,8 +311,6 @@ body {
 .block__del:hover { background: var(--colorPaletteRedBackground3); color: #fff; }
 .block__reset:hover { background: var(--colorBrandBackground); color: #fff; }
 
-/* The badge never shrinks: in a narrow block the sigle gives up its room
-   first, so the state stays readable instead of being clipped away. */
 .block__badge {
   flex: none;
   display: flex; align-items: center; gap: 4px;
@@ -331,14 +328,11 @@ body {
   background: none;
 }
 
-/* Too narrow for the word: keep the icon, and leave the label to the tooltip
-   and to screen readers. */
 @container (max-width: 300px) {
   .block__badge {
     gap: 0; padding: 0;
     border: none;
     background: none;
-    /* Leading, so the hover actions never sit on top of it. */
     order: -1;
   }
   .block__badge-text {
@@ -350,8 +344,6 @@ body {
   .block__sigle { --sigle-pad: 14px; }
 }
 @container (max-width: 78px) {
-  /* Narrower than the badge itself: let it spill into the block padding
-     instead of being cut in half. */
   .block__sigle { --sigle-pad: 0px; overflow: visible; }
   .block__kind { display: none; }
 }
