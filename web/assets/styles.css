@@ -29,6 +29,11 @@
   --c11-bg: var(--colorPaletteLavenderBackground2);        --c11-bd: var(--colorPaletteLavenderBorderActive);       --c11-tx: var(--colorPaletteLavenderForeground2);
 }
 
+:root[data-modality="pointer"] {
+  --colorStrokeFocus1: transparent;
+  --colorStrokeFocus2: transparent;
+}
+
 * { box-sizing: border-box; }
 
 html, body {

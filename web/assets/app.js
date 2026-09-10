@@ -1432,6 +1432,20 @@ el.resetBtn.addEventListener("click", () => {
   el.resetDialog.show();
 });
 
+const setInputModality = (modality) => {
+  document.documentElement.dataset.modality = modality;
+};
+
+document.addEventListener("pointerdown", () => setInputModality("pointer"), true);
+
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (!e.ctrlKey && !e.altKey && !e.metaKey) setInputModality("keyboard");
+  },
+  true
+);
+
 document.addEventListener("keydown", (e) => {
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
