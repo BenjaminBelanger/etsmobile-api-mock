@@ -10,4 +10,5 @@ env/
 .venv/
 
 seed/schedule_overrides.json
+.flutter_app_path
 node_modules/

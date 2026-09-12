@@ -5,6 +5,8 @@ import signal
 import subprocess
 import sys
 
+from lib import flutter_app
+from lib._api import SERVER_HOST, SERVER_PORT
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
@@ -190,6 +192,9 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --scenario semaine-relache --semester-week 3")
     lines.append("  python start.py --failures flaky")
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
+    lines.append("  python start.py --app ../Notre-Dame")
+    lines.append("  python start.py --app ../Notre-Dame --platform ios")
+    lines.append("  python start.py --revert-app")
     return "\n".join(lines)
 
 
@@ -307,6 +312,41 @@ def _build_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         help="Exige un header Authorization.",
         default=None,
+    )
+
+    app = parser.add_argument_group(
+        "app flutter",
+        "Pointe l'app ÉTSMobile vers le mock au démarrage, puis la remet à son "
+        "état d'origine (git checkout) à l'arrêt du serveur.",
+    )
+    app.add_argument(
+        "--app",
+        metavar="CHEMIN",
+        help="Dépôt de l'app Flutter (défaut: le chemin mémorisé).",
+        default=None,
+    )
+    app.add_argument(
+        "--platform",
+        choices=sorted(flutter_app.PLATFORM_HOSTS),
+        help=(
+            "Plateforme visée, détermine l'hôte du mock "
+            f"(défaut: {flutter_app.DEFAULT_PLATFORM})."
+        ),
+        default=None,
+    )
+    app.add_argument(
+        "--host",
+        metavar="HÔTE",
+        help=(
+            "Hôte à écrire dans l'app pour un appareil physique "
+            f"(port {SERVER_PORT} si absent)."
+        ),
+        default=None,
+    )
+    app.add_argument(
+        "--revert-app",
+        action="store_true",
+        help="Remet l'app à son état d'origine et quitte.",
     )
     return parser
 
@@ -671,6 +711,78 @@ def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
     return overrides, profile_display, scenario, semester_week
 
 
+def _ask_app_path() -> str | None:
+    try:
+        raw = input("\n  Chemin de l'app (vide = annuler): ").strip()
+    except EOFError:
+        return None
+    return raw or None
+
+
+def _prompt_app_path() -> str | None:
+    saved = flutter_app.saved_path()
+
+    print("\n=== App Flutter (optionnel) ===\n")
+    print("  L'app est pointée vers le mock au démarrage, puis remise à son")
+    print("  état d'origine à l'arrêt du serveur.\n")
+    if saved is not None:
+        print(f"  1) Configurer « {saved} » (mémorisé)")
+        print("  2) Configurer une autre app")
+    else:
+        print("  1) Configurer une app")
+    print("\n  0) Serveur seulement (par défaut)")
+
+    choices = 2 if saved is not None else 1
+    while True:
+        try:
+            raw = input("\nChoix [0]: ").strip()
+        except EOFError:
+            return None
+        if not raw or raw == "0":
+            return None
+        idx = _validate_menu_choice(raw, choices)
+        if idx is None:
+            print("  Choix invalide, réessayez.")
+            continue
+        if idx == 1 and saved is not None:
+            return saved
+        return _ask_app_path()
+
+
+def _setup_app(args: argparse.Namespace, interactive: bool) -> str | None:
+    raw = args.app or (_prompt_app_path() if interactive else None)
+    if not raw:
+        return None
+
+    path = flutter_app.resolve_path(raw)
+    host = flutter_app.resolve_host(args.platform, args.host)
+    patched = flutter_app.configure(path, host)
+    flutter_app.save_path(path)
+
+    print(f"\nApp Flutter configurée: {path}")
+    print(f"  Hôte     : {host}")
+    print(f"  Base URL : {flutter_app.base_url(host)}")
+    if patched:
+        print(f"  Modifiés : {', '.join(patched)}")
+    return str(path)
+
+
+def _revert_app(raw: str | None) -> None:
+    target = raw or flutter_app.saved_path()
+    if target is None:
+        print("Aucun chemin d'app mémorisé; utilisez --app CHEMIN.")
+        return
+    try:
+        reverted = flutter_app.revert(flutter_app.resolve_path(target))
+    except flutter_app.AppError as exc:
+        print(f"App Flutter: {exc}")
+        return
+    if reverted:
+        print(f"App Flutter remise à son état d'origine: {', '.join(reverted)}")
+    else:
+        print("App Flutter déjà à son état d'origine.")
+
+
 def _build_env(overrides: dict) -> dict:
     env = os.environ.copy()
     for name in MANAGED_ENV:
@@ -688,8 +800,8 @@ def _start_server(
         f"\nDémarrage du serveur avec le profil « {profile_display} »"
         f"{scenario_display}{week_display}...\n"
     )
-    print("  API   : http://localhost:8080/docs")
-    print("  Horaire (éditeur visuel) : http://localhost:8080/editor\n")
+    print(f"  API   : http://localhost:{SERVER_PORT}/docs")
+    print(f"  Horaire (éditeur visuel) : http://localhost:{SERVER_PORT}/editor\n")
 
     _stop_existing_servers()
     _clear_overrides()
@@ -701,9 +813,9 @@ def _start_server(
             "uvicorn",
             "main:app",
             "--host",
-            "0.0.0.0",
+            SERVER_HOST,
             "--port",
-            "8080",
+            str(SERVER_PORT),
             "--reload",
             "--reload-include",
             "*.json",
@@ -717,15 +829,29 @@ def _start_server(
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
 
-    if any(getattr(args, name) is not None for name in CONFIG_FLAGS):
-        config = _config_from_args(args)
-    else:
-        config = _config_from_menu()
+    if args.revert_app:
+        _revert_app(args.app)
+        return
+
+    interactive = all(getattr(args, name) is None for name in CONFIG_FLAGS)
+    config = _config_from_menu() if interactive else _config_from_args(args)
 
     if config is None:
         return
 
-    _start_server(*config)
+    try:
+        app_path = _setup_app(args, interactive)
+    except flutter_app.AppError as exc:
+        print(f"\nApp Flutter: {exc}")
+        return
+
+    try:
+        _start_server(*config)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if app_path is not None:
+            _revert_app(app_path)
 
 
 if __name__ == "__main__":

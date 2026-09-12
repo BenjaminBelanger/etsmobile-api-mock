@@ -37,6 +37,10 @@ python start.py --scenario semaine-relache --semester-week 3
 
 `python start.py --help` lists every profile, scenario and day code.
 
+The server runs on its own: nothing else has to be configured to use it. To also
+point the Flutter app at the mock while it runs, see
+[Connecting the Flutter App](#connecting-the-flutter-app).
+
 ## Schedule Editor UI
 
 <img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/2da27859-d13a-4df2-87f5-cb596055f1f6" />
@@ -372,3 +376,37 @@ The mock server requires no authentication, so you can skip past or stub out the
 |----------|-------------|
 | Android emulator | `10.0.2.2:8080` |
 | iOS emulator | `localhost:8080` |
+| Physical device | Your machine's LAN address, e.g. `192.168.1.10:8080` |
+
+### Doing it automatically
+
+`start.py --app` applies steps 2-4 for you, then puts the app back the way it
+was when the server stops:
+
+```bash
+python start.py --app ../Notre-Dame                      # configure, run, revert on exit
+python start.py --app ../Notre-Dame --platform ios
+python start.py --app ../Notre-Dame --host 192.168.1.10  # physical device
+python start.py --revert-app                             # manual teardown
+```
+
+The app is patched before the server starts and restored in a `finally`: server
+up means the app is configured, server down means the app is clean. Nothing is
+ever committed on the app side; the teardown is `git checkout --` on the three
+files above.
+
+| Flag | Description |
+|------|-------------|
+| `--app PATH` | Flutter repo to configure (default: the remembered path) |
+| `--platform android\|ios` | Host to write into the app: `10.0.2.2:8080` (default) or `localhost:8080` |
+| `--host HOST` | Explicit host for a physical device (`:8080` is added when no port is given) |
+| `--revert-app` | Restore the app and exit, for a run that did not revert (killed process, crash) |
+
+The interactive menu offers the same thing: it asks for the app path once,
+remembers it in `.flutter_app_path` (git-ignored) and offers it on later runs.
+Its default is to leave the app alone and start the server only; `--app` wins
+over the remembered path.
+
+The three files have to be a clean git checkout. If any of them carries local
+changes unrelated to the mock, the run stops instead of starting, because the
+teardown would discard them.
