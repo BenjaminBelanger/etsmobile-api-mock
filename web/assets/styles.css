@@ -593,7 +593,6 @@ body {
   accent-color: var(--colorCompoundBrandBackground);
   cursor: pointer;
 }
-.check.is-pinned span { color: var(--colorBrandForeground1); }
 
 .trash { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .trash__empty {

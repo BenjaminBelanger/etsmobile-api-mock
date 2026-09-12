@@ -727,8 +727,8 @@ function propInput(key, label, value, type, opts = {}) {
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
 
-function checkBox(key, label, checked, pinned) {
-  return `<label class="check${pinned ? " is-pinned" : ""}">
+function checkBox(key, label, checked) {
+  return `<label class="check">
         <input type="checkbox" data-key="${key}"${checked ? " checked" : ""} />
         <span>${label}</span>
       </label>`;
@@ -781,8 +781,8 @@ function propsHtml(ev) {
           ${grade("dateCible", "Date cible", "date")}
         </div>
         <div class="props__checks">
-          ${checkBox("ev:publie", "Publié", ev.publie, pinned.includes("publie"))}
-          ${checkBox("ev:isTeam", "Équipe", ev.isTeam, false)}
+          ${checkBox("ev:publie", "Publié", ev.publie)}
+          ${checkBox("ev:isTeam", "Équipe", ev.isTeam)}
         </div>
         <button type="button" class="stats${open ? " is-open" : ""}${
           statsPinned ? " is-pinned" : ""
