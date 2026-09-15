@@ -350,3 +350,34 @@ def test_the_startup_config_reaches_the_middleware(client, monkeypatch):
     failures.load_from_env()
 
     assert client.get(ENDPOINT).status_code == 401
+
+
+def test_the_options_endpoint_lists_the_api_endpoints_and_the_presets(client):
+    options = client.get("/admin/failures/options").json()
+
+    assert options["endpoints"] == sorted(options["endpoints"])
+    assert "listeCours" in options["endpoints"]
+    assert not any(name.startswith("admin") for name in options["endpoints"])
+
+    flaky = next(p for p in options["presets"] if p["name"] == "flaky")
+    assert flaky["description"]
+    assert flaky["config"]["errorRate"] == 0.3
+
+
+def test_applying_a_preset_replaces_the_whole_config(client):
+    client.patch("/admin/failures", json={"authRequired": True})
+
+    applied = client.post("/admin/failures/preset", json={"name": "flaky"}).json()
+
+    assert applied["latencyMs"] == "100-800"
+    assert applied["errorRate"] == 0.3
+    assert applied["authRequired"] is False
+    assert client.get("/admin/failures").json() == applied
+
+
+def test_an_unknown_preset_is_refused(client):
+    response = client.post("/admin/failures/preset", json={"name": "inconnu"})
+
+    assert response.status_code == 404
+    assert "inconnu" in response.json()["error"]
+    assert failures.get_config().is_default()
