@@ -18,13 +18,20 @@ const ICONS = {
   delete: "delete_20_regular",
   dismiss: "dismiss_20_regular",
   dismissCircle: "dismiss_circle_20_regular",
+  documentError: "document_error_20_regular",
   edit: "edit_20_regular",
+  flash: "flash_20_regular",
   hatGraduation: "hat_graduation_20_regular",
+  hourglass: "hourglass_20_regular",
+  lockClosed: "lock_closed_20_regular",
+  plugDisconnected: "plug_disconnected_20_regular",
   redo: "arrow_redo_20_regular",
   reset: "arrow_reset_20_regular",
   restore: "arrow_hook_up_left_20_regular",
+  timer: "timer_20_regular",
   today: "calendar_today_20_regular",
   undo: "arrow_undo_20_regular",
+  warning: "warning_20_regular",
 };
 
 const banner = (what) =>

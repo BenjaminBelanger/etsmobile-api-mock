@@ -46,6 +46,10 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
+The page has two tabs: **Horaire**, the schedule editor described below, and
+**Pannes**, the [failure injection](#failure-injection) panel. A red dot on the
+Pannes tab means the API is currently broken on purpose.
+
 Nothing extra is needed to run it. Start the server and open the page:
 
 ```bash
@@ -221,7 +225,25 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 ## Failure Injection
 
-The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
+The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server from the **Pannes** tab of the web UI, the `manage_failures.py` CLI, or `/admin/failures`.
+
+### The Pannes tab
+
+Open `http://localhost:8080/editor` and pick **Pannes**. The tab lists every
+active injection, one row per parameter, and each row is editable in place:
+
+- change a latency, an error rate or a timeout duration in its field
+- add an endpoint to a list with the **+ Endpoint** chip, drop one with its ×
+- remove a whole injection with the × at the end of its row, or clear them all
+  with the reset button in the toolbar
+- **Ajouter une panne** opens a dialog: pick a type, fill its parameter, and for
+  endpoint failures queue as many endpoints as you want before saving
+- **Scénarios** applies a preset from `seed/failure_presets.json`, and the
+  applied one stays marked. Every parameter it sets stays editable afterwards,
+  so a preset is a starting point rather than a fixed config.
+
+Everything goes through the same `/admin/failures` endpoint the CLI uses, so the
+tab, the CLI and the startup flags all describe the same config.
 
 ### Startup flags
 
@@ -259,6 +281,12 @@ curl -X PATCH http://localhost:8080/admin/failures \
 
 # Reset everything to defaults
 curl -X DELETE http://localhost:8080/admin/failures
+
+# List the API endpoint names and the presets (what the UI offers)
+curl http://localhost:8080/admin/failures/options
+
+# Apply a named preset, replacing the current config
+curl -X POST http://localhost:8080/admin/failures/preset   -H 'Content-Type: application/json'   -d '{"name": "flaky"}'
 ```
 
 PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool). All optional.

@@ -168,13 +168,121 @@ function defineElements(window) {
   }
 }
 
-function createServer(initial) {
+const ADMIN = "/admin/failures";
+
+const DEFAULT_FAILURES = {
+  latencyMs: 0,
+  errorRate: 0,
+  failEndpoints: [],
+  timeoutEndpoints: [],
+  timeoutDurationS: 60,
+  malformed: false,
+  authRequired: false,
+};
+
+export const ENDPOINTS = ["helloWorld", "listeCoequipiers", "listeCours"];
+
+export const PRESETS = [
+  {
+    name: "flaky",
+    description: "Intermittent failures",
+    config: { latencyMs: "100-800", errorRate: 0.3 },
+  },
+  {
+    name: "outage",
+    description: "Every API endpoint returns 503",
+    config: { failEndpoints: ["*"] },
+  },
+];
+
+export const defaultFailures = () => clone(DEFAULT_FAILURES);
+
+function normalizeLatency(raw) {
+  const [lo, hi] = String(raw ?? "0").split("-");
+  return hi === undefined || Number(lo) === Number(hi) ? Number(lo) : `${lo}-${hi}`;
+}
+
+function createAdmin(options) {
+  const calls = [];
+  const replies = new Map();
+  let config = { ...DEFAULT_FAILURES, ...(options.failures || {}) };
+
+  const patch = (body) => {
+    Object.entries(body).forEach(([key, value]) => {
+      if (key === "latencyMs") config.latencyMs = normalizeLatency(value);
+      else if (Array.isArray(value)) config[key] = [...new Set(value)].sort();
+      else config[key] = value;
+    });
+  };
+
+  const admin = {
+    calls,
+    get config() {
+      return config;
+    },
+    reply(path, payload, status = 200) {
+      replies.set(path, { status, payload });
+      if (status !== 200) {
+        refused.add(payload && payload.error);
+        refused.add("Error");
+      }
+    },
+    called(path) {
+      return calls.filter((call) => call.path === path);
+    },
+    lastCall(path) {
+      const matching = admin.called(path);
+      return matching.length ? matching[matching.length - 1] : null;
+    },
+    handle(href, request) {
+      const path = href.slice(ADMIN.length);
+      const method = request.method || "GET";
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, method, body });
+
+      const canned = replies.get(path);
+      if (canned) {
+        return {
+          ok: canned.status === 200,
+          status: canned.status,
+          statusText: "Error",
+          json: async () => clone(canned.payload),
+        };
+      }
+
+      if (path === "/options") {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            endpoints: clone(options.endpoints || ENDPOINTS),
+            presets: clone(options.presets || PRESETS),
+          }),
+        };
+      }
+      if (path === "/preset") {
+        const preset = (options.presets || PRESETS).find((p) => p.name === body.name);
+        config = clone(DEFAULT_FAILURES);
+        if (preset) patch(preset.config);
+      } else if (method === "PATCH") {
+        patch(body);
+      } else if (method === "DELETE") {
+        config = clone(DEFAULT_FAILURES);
+      }
+      return { ok: true, status: 200, json: async () => clone(config) };
+    },
+  };
+  return admin;
+}
+
+function createServer(initial, options) {
   const calls = [];
   const replies = new Map();
   let current = clone(initial);
 
   const server = {
     calls,
+    admin: createAdmin(options),
     get state() {
       return current;
     },
@@ -196,14 +304,15 @@ function createServer(initial) {
       const matching = server.called(path);
       return matching.length ? matching[matching.length - 1] : null;
     },
-    fetch: async (url, options = {}) => {
+    fetch: async (url, request = {}) => {
       const href = String(url);
+      if (href.startsWith(ADMIN)) return server.admin.handle(href, request);
       const [rawPath, query] = href.replace("/editor/api", "").split("?");
       const call = {
         path: rawPath,
         query: query || "",
-        method: options.method || "GET",
-        body: options.body ? JSON.parse(options.body) : null,
+        method: request.method || "GET",
+        body: request.body ? JSON.parse(request.body) : null,
       };
       calls.push(call);
 
@@ -252,7 +361,7 @@ export async function mount(options = {}) {
     pretendToBeVisual: true,
   });
   const { window } = dom;
-  const server = createServer(options.state || baseState());
+  const server = createServer(options.state || baseState(), options);
 
   window.Element.prototype.setPointerCapture = function () {};
   window.Element.prototype.releasePointerCapture = function () {};
