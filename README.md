@@ -230,6 +230,8 @@ The **Pannes** tab lists the active injections, lets you edit, add and remove
 them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
 CLI, so both describe the same config.
 
+<img width="2557" height="1237" alt="image" src="https://github.com/user-attachments/assets/db4df454-99f9-4367-9958-f56cdbbe42a8" />
+
 ### Startup flags
 
 | Flag | Effect |
