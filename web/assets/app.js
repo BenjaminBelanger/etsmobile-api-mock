@@ -23,9 +23,37 @@ const state = {
   weekIndex: null,
   editScope: "series",
   catalog: [],
+  view: "schedule",
+  failures: null,
+  failuresPast: [],
+  failuresFuture: [],
+  failureKind: "latency",
+  staged: [],
+  endpoints: [],
+  presets: [],
 };
 
 const el = {
+  viewToggle: document.getElementById("viewToggle"),
+  scheduleView: document.getElementById("scheduleView"),
+  scheduleControls: document.getElementById("scheduleControls"),
+  scheduleToolbar: document.getElementById("scheduleToolbar"),
+  failuresView: document.getElementById("failuresView"),
+  failuresToolbar: document.getElementById("failuresToolbar"),
+  failuresDot: document.getElementById("failuresDot"),
+  failuresUndoBtn: document.getElementById("failuresUndoBtn"),
+  failuresRedoBtn: document.getElementById("failuresRedoBtn"),
+  failuresResetBtn: document.getElementById("failuresResetBtn"),
+  failureAddBtn: document.getElementById("failureAddBtn"),
+  failureDialog: document.getElementById("failureDialog"),
+  failureForm: document.getElementById("failureForm"),
+  failureParams: document.getElementById("failureParams"),
+  failureHint: document.getElementById("failureHint"),
+  failureSubmit: document.getElementById("failureSubmit"),
+  fFailureKind: document.getElementById("fFailureKind"),
+  injectionList: document.getElementById("injectionList"),
+  injectionEmpty: document.getElementById("injectionEmpty"),
+  presetList: document.getElementById("presetList"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -1370,6 +1398,536 @@ function submitAddCourse() {
   });
 }
 
+const ADMIN = "/admin/failures";
+
+const NO_FAILURES = {
+  latencyMs: 0,
+  errorRate: 0,
+  failEndpoints: [],
+  timeoutEndpoints: [],
+  timeoutDurationS: 60,
+  malformed: false,
+  authRequired: false,
+};
+
+const latencyMax = (raw) => {
+  const parts = String(raw ?? "").split("-");
+  const hi = Number(parts[parts.length - 1]);
+  return Number.isFinite(hi) ? hi : 0;
+};
+
+const percent = (rate) => Math.round(rate * 100);
+const endpointLabel = (name) => (name === "*" ? "tous les endpoints" : name);
+
+const countLabel = (names, one, many) =>
+  names.includes("*")
+    ? `tous les endpoints ${many}`
+    : `${names.length} endpoint${names.length > 1 ? "s" : ""} ${names.length > 1 ? many : one}`;
+
+function injectionInput(field, value, size, unit, label) {
+  return `<fluent-text-input class="injection__input injection__input--${size}" control-size="small"
+      appearance="filled-lighter" data-field="${field}" value="${escapeHtml(value)}"
+      aria-label="${label}"></fluent-text-input>${
+        unit ? `<span class="injection__unit">${unit}</span>` : ""
+      }`;
+}
+
+function chipList(field, names) {
+  const chips = names
+    .map(
+      (name) => `<span class="chip">${escapeHtml(endpointLabel(name))}
+        <button type="button" class="chip__x" data-chip="${field}" data-name="${escapeHtml(name)}"
+          aria-label="Retirer ${escapeHtml(name)}">${icon("dismiss", 12)}</button>
+      </span>`
+    )
+    .join("");
+  return `${chips}<button type="button" class="chip chip--add" data-add="${field}"
+      aria-label="Ajouter un endpoint">${icon("add", 12)}Endpoint</button>`;
+}
+
+function endpointField(chipsId) {
+  return `<fluent-field label-position="above">
+      <fluent-label slot="label">Endpoints</fluent-label>
+      <div slot="input" class="picker-row">
+        <fluent-dropdown id="fEndpoint" type="combobox" appearance="filled-darker"
+          placeholder="listeCours" aria-label="Endpoint"><fluent-listbox></fluent-listbox></fluent-dropdown>
+        <fluent-button id="fEndpointAdd" appearance="subtle" icon-only
+          title="Ajouter à la liste" aria-label="Ajouter à la liste">${icon("add", 16)}</fluent-button>
+      </div>
+    </fluent-field>
+    <div class="chips chips--staged" id="${chipsId}"></div>`;
+}
+
+function numberField(id, label, value, placeholder) {
+  return `<fluent-field label-position="above">
+      <fluent-label slot="label">${label}</fluent-label>
+      <fluent-text-input slot="input" id="${id}" type="number" appearance="filled-darker"
+        value="${escapeHtml(value)}" placeholder="${placeholder}" aria-label="${label}"></fluent-text-input>
+    </fluent-field>`;
+}
+
+const FAILURE_KINDS = [
+  {
+    id: "latency",
+    label: "Latence",
+    icon: "timer",
+    hint: "Retarde chaque réponse de l'API.",
+    active: (cfg) => latencyMax(cfg.latencyMs) > 0,
+    summary: (cfg) => `${cfg.latencyMs} ms`,
+    value: (cfg) =>
+      injectionInput("latencyMs", cfg.latencyMs, "md", "ms", "Durée de la latence"),
+    clear: () => ({ latencyMs: 0 }),
+    form: () =>
+      `<fluent-field label-position="above">
+        <fluent-label slot="label">Durée en ms (fixe ou min-max)</fluent-label>
+        <fluent-text-input slot="input" id="fLatency" appearance="filled-darker"
+          placeholder="100-800" aria-label="Durée en ms"></fluent-text-input>
+      </fluent-field>`,
+    read: () => {
+      const raw = el.failureParams.querySelector("#fLatency").value.trim();
+      if (!raw) return { error: "Une durée est requise" };
+      return { body: { latencyMs: raw } };
+    },
+  },
+  {
+    id: "errorRate",
+    label: "Erreurs aléatoires",
+    icon: "warning",
+    hint: "Une part des appels répond 500.",
+    active: (cfg) => cfg.errorRate > 0,
+    summary: (cfg) => `${percent(cfg.errorRate)} % d'erreurs`,
+    value: (cfg) =>
+      injectionInput("errorRate", percent(cfg.errorRate), "sm", "%", "Taux d'erreur"),
+    clear: () => ({ errorRate: 0 }),
+    form: () => numberField("fErrorRate", "Taux en %", "", "30"),
+    read: () => {
+      const pct = Number(el.failureParams.querySelector("#fErrorRate").value);
+      if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+        return { error: "Un taux entre 1 et 100 est requis" };
+      }
+      return { body: { errorRate: pct / 100 } };
+    },
+  },
+  {
+    id: "fail",
+    label: "Endpoints en panne",
+    icon: "plugDisconnected",
+    hint: "Ces endpoints répondent 503.",
+    active: (cfg) => cfg.failEndpoints.length > 0,
+    summary: (cfg) => countLabel(cfg.failEndpoints, "en panne", "en panne"),
+    value: (cfg) => chipList("failEndpoints", cfg.failEndpoints),
+    clear: () => ({ failEndpoints: [] }),
+    form: () => endpointField("fFailChips"),
+    read: (cfg) => {
+      const picked = stagedEndpoints();
+      if (!picked.length) return { error: "Un endpoint est requis" };
+      return { body: { failEndpoints: [...new Set([...cfg.failEndpoints, ...picked])] } };
+    },
+  },
+  {
+    id: "timeout",
+    label: "Endpoints qui expirent",
+    icon: "hourglass",
+    hint: "Ces endpoints retiennent la requête, puis répondent 504.",
+    active: (cfg) => cfg.timeoutEndpoints.length > 0,
+    summary: (cfg) =>
+      `${countLabel(cfg.timeoutEndpoints, "qui expire", "qui expirent")} (${cfg.timeoutDurationS} s)`,
+    value: (cfg) =>
+      `${chipList("timeoutEndpoints", cfg.timeoutEndpoints)}
+      <span class="injection__after">après</span>
+      ${injectionInput("timeoutDurationS", cfg.timeoutDurationS, "sm", "s", "Délai avant expiration")}`,
+    clear: () => ({ timeoutEndpoints: [] }),
+    form: (cfg) =>
+      endpointField("fTimeoutChips") +
+      numberField("fTimeoutDuration", "Délai en s", cfg.timeoutDurationS, "30"),
+    read: (cfg) => {
+      const picked = stagedEndpoints();
+      if (!picked.length) return { error: "Un endpoint est requis" };
+      const seconds = Number(el.failureParams.querySelector("#fTimeoutDuration").value);
+      if (!Number.isFinite(seconds) || seconds < 0) {
+        return { error: "Un délai en secondes est requis" };
+      }
+      return {
+        body: {
+          timeoutEndpoints: [...new Set([...cfg.timeoutEndpoints, ...picked])],
+          timeoutDurationS: seconds,
+        },
+      };
+    },
+  },
+  {
+    id: "malformed",
+    label: "Réponses tronquées",
+    icon: "documentError",
+    hint: "Le corps de chaque réponse 2xx est coupé en deux.",
+    active: (cfg) => cfg.malformed,
+    summary: () => "réponses tronquées",
+    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    clear: () => ({ malformed: false }),
+    form: () => "",
+    read: () => ({ body: { malformed: true } }),
+  },
+  {
+    id: "auth",
+    label: "Authentification requise",
+    icon: "lockClosed",
+    hint: "Un appel sans en-tête Authorization répond 401.",
+    active: (cfg) => cfg.authRequired,
+    summary: () => "authentification requise",
+    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    clear: () => ({ authRequired: false }),
+    form: () => "",
+    read: () => ({ body: { authRequired: true } }),
+  },
+];
+
+const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
+const activeKinds = (cfg) => (cfg ? FAILURE_KINDS.filter((k) => k.active(cfg)) : []);
+const parameterless = (kind) => kind.id === "malformed" || kind.id === "auth";
+
+function failureError(data, res) {
+  const detail = typeof data.detail === "string" ? data.detail : null;
+  return detail || data.error || res.statusText || "Échec de l'opération";
+}
+
+async function adminFetch(path, options, message, record = true) {
+  const before = state.failures;
+  setStatus("Enregistrement…", true);
+  try {
+    const res = await fetch(`${ADMIN}${path}`, options);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    if (record && before && !sameFailures(before, data)) {
+      state.failuresPast.push({ before, after: data });
+      state.failuresFuture = [];
+    }
+    applyFailures(data);
+    setStatus("Enregistré.", false);
+    if (message) toast(message);
+    return data;
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+    renderFailures();
+    throw err;
+  }
+}
+
+const patchFailures = (body, message, record) =>
+  adminFetch(
+    "",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    message,
+    record
+  );
+
+function applyFailures(cfg) {
+  state.failures = cfg;
+  el.failuresDot.hidden = !activeKinds(cfg).length;
+  renderFailures();
+}
+
+const failureFields = (cfg) =>
+  Object.fromEntries(Object.keys(NO_FAILURES).map((key) => [key, cfg[key]]));
+
+const sameFailures = (a, b) =>
+  JSON.stringify(failureFields(a)) === JSON.stringify(failureFields(b));
+
+const canUndoFailures = () => {
+  const change = state.failuresPast.at(-1);
+  return !!change && !!state.failures && sameFailures(change.after, state.failures);
+};
+
+const canRedoFailures = () => {
+  const change = state.failuresFuture.at(-1);
+  return !!change && !!state.failures && sameFailures(change.before, state.failures);
+};
+
+function renderFailureHistory() {
+  el.failuresUndoBtn.disabled = !canUndoFailures();
+  el.failuresRedoBtn.disabled = !canRedoFailures();
+}
+
+function stepFailures(from, to, target, message) {
+  const change = from.pop();
+  renderFailureHistory();
+  patchFailures(failureFields(change[target]), message, false).then(
+    () => {
+      to.push(change);
+      renderFailureHistory();
+    },
+    () => {
+      from.push(change);
+      renderFailureHistory();
+    }
+  );
+}
+
+function undoFailures() {
+  if (!canUndoFailures()) return;
+  stepFailures(state.failuresPast, state.failuresFuture, "before", "Modification annulée");
+}
+
+function redoFailures() {
+  if (!canRedoFailures()) return;
+  stepFailures(state.failuresFuture, state.failuresPast, "after", "Modification rétablie");
+}
+
+async function loadFailures() {
+  try {
+    if (!state.endpoints.length) {
+      const res = await fetch(`${ADMIN}/options`);
+      if (res.ok) {
+        const options = await res.json();
+        state.endpoints = options.endpoints || [];
+        state.presets = options.presets || [];
+        renderPresets();
+      }
+    }
+    const res = await fetch(ADMIN);
+    if (!res.ok) throw new Error(res.statusText);
+    applyFailures(await res.json());
+  } catch (err) {
+    if (state.view === "failures") {
+      setStatus("Impossible de lire les pannes.", false, true);
+      toast(err.message || "Serveur injoignable", true);
+    }
+  }
+}
+
+function injectionHtml(kind, cfg) {
+  return `<li class="injection" data-kind="${kind.id}">
+      <span class="injection__icon">${icon(kind.icon, 16)}</span>
+      <span class="injection__name" title="${escapeHtml(kind.hint)}">${kind.label}</span>
+      <span class="injection__value">${kind.value(parameterless(kind) ? kind : cfg)}</span>
+      <fluent-button class="injection__x" appearance="subtle" size="small" icon-only
+        data-remove="${kind.id}" title="Retirer la panne"
+        aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("delete", 16)}</fluent-button>
+    </li>`;
+}
+
+function renderInjections(cfg) {
+  const kinds = activeKinds(cfg);
+  el.failuresResetBtn.disabled = !kinds.length;
+  el.injectionEmpty.hidden = kinds.length > 0;
+  el.injectionList.innerHTML = kinds.map((kind) => injectionHtml(kind, cfg)).join("");
+  wireInjections(cfg);
+}
+
+function wireInjections(cfg) {
+  el.injectionList.querySelectorAll("[data-remove]").forEach((node) => {
+    const kind = kindById(node.dataset.remove);
+    node.addEventListener("click", () => patchFailures(kind.clear(), "Panne retirée"));
+  });
+  el.injectionList.querySelectorAll("[data-chip]").forEach((node) => {
+    const { chip: fieldName, name } = node.dataset;
+    node.addEventListener("click", () =>
+      patchFailures(
+        { [fieldName]: cfg[fieldName].filter((endpoint) => endpoint !== name) },
+        `${endpointLabel(name)} retiré`
+      )
+    );
+  });
+  el.injectionList.querySelectorAll("[data-add]").forEach((node) => {
+    const kind = node.dataset.add === "failEndpoints" ? "fail" : "timeout";
+    node.addEventListener("click", () => openFailureDialog(kind));
+  });
+  el.injectionList.querySelectorAll("[data-field]").forEach((node) => {
+    node.addEventListener("change", () =>
+      commitFailureField(node.dataset.field, node.value)
+    );
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") node.blur();
+    });
+  });
+}
+
+function commitFailureField(fieldName, value) {
+  if (fieldName === "errorRate") {
+    const pct = Number(value);
+    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
+      toast("Un taux entre 0 et 100 est requis", true);
+      renderFailures();
+      return;
+    }
+    patchFailures({ errorRate: pct / 100 }, "Panne modifiée");
+    return;
+  }
+  if (fieldName === "timeoutDurationS") {
+    const seconds = Number(value);
+    if (!Number.isFinite(seconds) || seconds < 0) {
+      toast("Un délai en secondes est requis", true);
+      renderFailures();
+      return;
+    }
+    patchFailures({ timeoutDurationS: seconds }, "Panne modifiée");
+    return;
+  }
+  patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
+}
+
+function presetSummary(config) {
+  const cfg = { ...NO_FAILURES, ...config };
+  return FAILURE_KINDS.filter((kind) => kind.active(cfg))
+    .map((kind) => kind.summary(cfg))
+    .join(" · ");
+}
+
+function samePreset(config, cfg) {
+  if (!cfg) return false;
+  const wanted = { ...NO_FAILURES, ...config };
+  return FAILURE_KINDS.every(
+    (kind) => kind.active(wanted) === kind.active(cfg) && kind.summary(wanted) === kind.summary(cfg)
+  );
+}
+
+function renderPresets() {
+  el.presetList.innerHTML = state.presets
+    .map(
+      (preset) => `<li>
+        <button type="button" class="preset${
+          samePreset(preset.config, state.failures) ? " is-active" : ""
+        }" data-preset="${escapeHtml(preset.name)}" title="${escapeHtml(preset.description)}">
+          <span class="preset__name">${escapeHtml(preset.name)}</span>
+          <span class="preset__summary">${escapeHtml(presetSummary(preset.config))}</span>
+        </button>
+      </li>`
+    )
+    .join("");
+  el.presetList.querySelectorAll("[data-preset]").forEach((node) => {
+    const name = node.dataset.preset;
+    node.addEventListener("click", () =>
+      adminFetch(
+        "/preset",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name }),
+        },
+        `Scénario ${name} appliqué`
+      )
+    );
+  });
+}
+
+function renderFailures() {
+  const cfg = state.failures;
+  if (!cfg) return;
+  renderInjections(cfg);
+  renderFailureHistory();
+  if (state.presets.length) renderPresets();
+}
+
+const stagedEndpoints = () => {
+  const picker = el.failureParams.querySelector("#fEndpoint");
+  const typed = String(dropdownValue(picker) || "").trim();
+  return [...new Set(typed ? [...state.staged, typed] : state.staged)];
+};
+
+function renderStagedChips() {
+  const host = el.failureParams.querySelector(".chips--staged");
+  if (!host) return;
+  host.innerHTML = state.staged
+    .map(
+      (name) => `<span class="chip">${escapeHtml(endpointLabel(name))}
+        <button type="button" class="chip__x" data-staged="${escapeHtml(name)}"
+          aria-label="Retirer ${escapeHtml(name)}">${icon("dismiss", 12)}</button>
+      </span>`
+    )
+    .join("");
+  host.querySelectorAll("[data-staged]").forEach((node) => {
+    node.addEventListener("click", () => {
+      state.staged = state.staged.filter((name) => name !== node.dataset.staged);
+      renderStagedChips();
+    });
+  });
+}
+
+function stageEndpoint() {
+  const picker = el.failureParams.querySelector("#fEndpoint");
+  const name = String(dropdownValue(picker) || "").trim();
+  if (!name) return;
+  if (!state.staged.includes(name)) state.staged.push(name);
+  picker.value = "";
+  if (picker.control) picker.control.value = "";
+  renderStagedChips();
+  picker.focus();
+}
+
+function renderFailureForm() {
+  const kind = kindById(state.failureKind);
+  const cfg = state.failures || NO_FAILURES;
+  el.failureParams.innerHTML = kind.form(cfg);
+  el.failureHint.textContent = kind.hint;
+  const picker = el.failureParams.querySelector("#fEndpoint");
+  if (!picker) return;
+  fillDropdown(
+    picker,
+    ["*", ...state.endpoints].map((name) => ({ value: name, text: endpointLabel(name) })),
+    undefined,
+    { freeform: true }
+  );
+  el.failureParams.querySelector("#fEndpointAdd").addEventListener("click", stageEndpoint);
+  picker.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    stageEndpoint();
+  });
+  renderStagedChips();
+}
+
+function openFailureDialog(kindId) {
+  state.failureKind = kindId || state.failureKind;
+  state.staged = [];
+  fillDropdown(
+    el.fFailureKind,
+    FAILURE_KINDS.map((kind) => ({ value: kind.id, text: kind.label })),
+    state.failureKind
+  );
+  renderFailureForm();
+  el.failureDialog.show();
+  setTimeout(() => {
+    const first = el.failureParams.querySelector("fluent-dropdown, fluent-text-input");
+    if (first) first.focus();
+  }, 40);
+}
+
+function submitFailure() {
+  const kind = kindById(state.failureKind);
+  const { body, error } = kind.read(state.failures || NO_FAILURES);
+  if (error) {
+    toast(error, true);
+    return;
+  }
+  patchFailures(body, "Panne enregistrée").then(() => el.failureDialog.hide());
+}
+
+function setView(view) {
+  if (view !== "schedule" && view !== "failures") return;
+  const tabId = view === "schedule" ? "viewSchedule" : "viewFailures";
+  if (el.viewToggle.activeid !== tabId) el.viewToggle.activeid = tabId;
+  if (state.view === view) return;
+  state.view = view;
+  const schedule = view === "schedule";
+  el.scheduleView.hidden = !schedule;
+  el.scheduleControls.hidden = !schedule;
+  el.scheduleToolbar.hidden = !schedule;
+  el.failuresView.hidden = schedule;
+  el.failuresToolbar.hidden = schedule;
+  document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
+  if (schedule) {
+    if (state.data) {
+      renderScaffold();
+      renderBlocks(false);
+    }
+  } else {
+    loadFailures();
+  }
+}
 paintIcons();
 
 el.fSigle.addEventListener("input", () => {
@@ -1407,6 +1965,29 @@ el.sessionSelect.addEventListener("change", () =>
 el.detailSelect.addEventListener("change", () =>
   selectCourse(dropdownValue(el.detailSelect))
 );
+el.viewToggle.addEventListener("change", (e) => {
+  const view = e.detail && e.detail.dataset ? e.detail.dataset.view : null;
+  if (view) setView(view);
+});
+el.fFailureKind.addEventListener("change", () => {
+  state.failureKind = dropdownValue(el.fFailureKind) || "latency";
+  state.staged = [];
+  renderFailureForm();
+});
+el.failureAddBtn.addEventListener("click", () => openFailureDialog());
+el.failureForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitFailure();
+});
+el.failureSubmit.addEventListener("click", submitFailure);
+el.failureDialog
+  .querySelectorAll("[data-close-failure]")
+  .forEach((n) => n.addEventListener("click", () => el.failureDialog.hide()));
+el.failuresResetBtn.addEventListener("click", () =>
+  adminFetch("", { method: "DELETE" }, "Pannes réinitialisées")
+);
+el.failuresUndoBtn.addEventListener("click", undoFailures);
+el.failuresRedoBtn.addEventListener("click", redoFailures);
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -1446,21 +2027,30 @@ document.addEventListener(
   true
 );
 
+const TEXT_ENTRY =
+  'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
+
 document.addEventListener("keydown", (e) => {
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||
     /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || "") ||
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
+  const editingText = !!document.activeElement?.closest?.(TEXT_ENTRY);
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "z") {
+  const failures = state.view === "failures";
+  const undoBtn = failures ? el.failuresUndoBtn : el.undoBtn;
+  const redoBtn = failures ? el.failuresRedoBtn : el.redoBtn;
+  if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
-      if (!el.redoBtn.disabled) el.redoBtn.click();
-    } else if (!el.undoBtn.disabled) el.undoBtn.click();
-  } else if (mod && e.key.toLowerCase() === "y") {
+      if (!redoBtn.disabled) redoBtn.click();
+    } else if (!undoBtn.disabled) undoBtn.click();
+  } else if (mod && !editingText && e.key.toLowerCase() === "y") {
     e.preventDefault();
-    if (!el.redoBtn.disabled) el.redoBtn.click();
+    if (!redoBtn.disabled) redoBtn.click();
+  } else if (failures) {
+    return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
     if (occurrenceMode()) {
       const occ = selectedOccurrence();
@@ -1492,7 +2082,7 @@ el.board.addEventListener("pointerdown", (e) => {
 });
 
 window.addEventListener("resize", () => {
-  if (state.data) {
+  if (state.data && state.view === "schedule") {
     renderScaffold();
     renderBlocks(false);
   }
@@ -1507,6 +2097,7 @@ window.addEventListener("resize", () => {
     } else {
       setStatus("Prêt.", false);
     }
+    loadFailures();
   } catch (err) {
     setStatus("Impossible de contacter le serveur.", false, true);
     toast(err.message || "Serveur injoignable", true);

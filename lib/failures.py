@@ -1,6 +1,7 @@
 """Runtime failure injection (latency, errors, auth, malformed responses)."""
 
 import asyncio
+import json
 import os
 import random
 from dataclasses import dataclass, field
@@ -10,10 +11,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from ._env import env_bool
+from ._paths import SEED
 
 API_PREFIX = "/api/"
 _ENDPOINT_PREFIX = "/api/Etudiant/"
 _DEFAULT_TIMEOUT_S = 60.0
+_PRESETS_FILE = SEED / "failure_presets.json"
 
 
 @dataclass
@@ -138,6 +141,30 @@ def load_from_env() -> FailureConfig:
     return _config
 
 
+def load_presets() -> list[dict]:
+    try:
+        raw = json.loads(_PRESETS_FILE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    return [
+        {
+            "name": name,
+            "description": spec.get("description", ""),
+            "config": spec.get("config", {}),
+        }
+        for name, spec in raw.items()
+    ]
+
+
+def api_endpoint_names(app) -> list[str]:
+    names = {
+        endpoint_name(path)
+        for path in (getattr(route, "path", "") for route in app.routes)
+        if path.startswith(_ENDPOINT_PREFIX)
+    }
+    return sorted(name for name in names if name)
+
+
 class FailureConfigUpdate(BaseModel):
     latencyMs: int | str | None = None
     errorRate: float | None = Field(default=None, ge=0.0, le=1.0)
@@ -251,4 +278,33 @@ def patch_failures(payload: FailureConfigUpdate):
 @router.delete("")
 def delete_failures():
     reset_config()
+    return _config.to_dict()
+
+
+@router.get("/options")
+def get_options(request: Request):
+    return {
+        "endpoints": api_endpoint_names(request.app),
+        "presets": load_presets(),
+    }
+
+
+class PresetApply(BaseModel):
+    name: str
+
+    model_config = {"extra": "forbid"}
+
+
+@router.post("/preset")
+def apply_preset(payload: PresetApply):
+    preset = next((p for p in load_presets() if p["name"] == payload.name), None)
+    if preset is None:
+        raise HTTPException(
+            status_code=404, detail=f"Unknown preset '{payload.name}'."
+        )
+    reset_config()
+    try:
+        update_config(FailureConfigUpdate(**preset["config"]))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return _config.to_dict()

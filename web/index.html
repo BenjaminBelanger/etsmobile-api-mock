@@ -13,28 +13,37 @@
     <div class="app" id="app">
       <header class="topbar">
         <div class="topbar__center">
-          <div class="picker">
-            <span class="picker__label">Session</span>
-            <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
-              <fluent-listbox></fluent-listbox>
-            </fluent-dropdown>
-          </div>
+          <fluent-tablist id="viewToggle" appearance="subtle" size="small" activeid="viewSchedule" aria-label="Vue">
+            <fluent-tab id="viewSchedule" data-view="schedule">Horaire</fluent-tab>
+            <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
+          </fluent-tablist>
 
-          <div class="week-picker" id="weekPicker" hidden>
-            <fluent-button id="weekPrev" appearance="subtle" icon-only data-icon="chevronLeft" aria-label="Semaine précédente"></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekPrev">Semaine précédente</fluent-tooltip>
+          <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
 
-            <fluent-dropdown id="weekSelect" appearance="filled-darker" aria-label="Semaine"><fluent-listbox></fluent-listbox></fluent-dropdown>
+          <div class="topbar__schedule" id="scheduleControls">
+            <div class="picker">
+              <span class="picker__label">Session</span>
+              <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
+                <fluent-listbox></fluent-listbox>
+              </fluent-dropdown>
+            </div>
 
-            <fluent-button id="weekNext" appearance="subtle" icon-only data-icon="chevronRight" aria-label="Semaine suivante"></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekNext">Semaine suivante</fluent-tooltip>
+            <div class="week-picker" id="weekPicker" hidden>
+              <fluent-button id="weekPrev" appearance="subtle" icon-only data-icon="chevronLeft" aria-label="Semaine précédente"></fluent-button>
+              <fluent-tooltip positioning="below" anchor="weekPrev">Semaine précédente</fluent-tooltip>
 
-            <fluent-button id="weekToday" appearance="subtle" icon-only data-icon="today" aria-label="Semaine courante" hidden></fluent-button>
-            <fluent-tooltip positioning="below" anchor="weekToday">Aller à la semaine courante</fluent-tooltip>
+              <fluent-dropdown id="weekSelect" appearance="filled-darker" aria-label="Semaine"><fluent-listbox></fluent-listbox></fluent-dropdown>
+
+              <fluent-button id="weekNext" appearance="subtle" icon-only data-icon="chevronRight" aria-label="Semaine suivante"></fluent-button>
+              <fluent-tooltip positioning="below" anchor="weekNext">Semaine suivante</fluent-tooltip>
+
+              <fluent-button id="weekToday" appearance="subtle" icon-only data-icon="today" aria-label="Semaine courante" hidden></fluent-button>
+              <fluent-tooltip positioning="below" anchor="weekToday">Aller à la semaine courante</fluent-tooltip>
+            </div>
           </div>
         </div>
 
-        <div class="toolbar">
+        <div class="toolbar" id="scheduleToolbar">
           <fluent-tablist id="scopeToggle" appearance="subtle" size="small" activeid="scopeSeries" aria-label="Portée des modifications">
             <fluent-tab id="scopeSeries" data-scope="series">Toutes les semaines</fluent-tab>
             <fluent-tab id="scopeOccurrence" data-scope="occurrence">Cette séance</fluent-tab>
@@ -56,9 +65,25 @@
             Ajouter un cours
           </fluent-button>
         </div>
+
+        <div class="toolbar" id="failuresToolbar" hidden>
+          <fluent-button id="failuresUndoBtn" appearance="subtle" icon-only data-icon="undo" aria-label="Annuler" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="failuresUndoBtn">Annuler (Ctrl+Z)</fluent-tooltip>
+
+          <fluent-button id="failuresRedoBtn" appearance="subtle" icon-only data-icon="redo" aria-label="Rétablir" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="failuresRedoBtn">Rétablir (Ctrl+Y)</fluent-tooltip>
+
+          <fluent-button id="failuresResetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Tout réinitialiser"></fluent-button>
+          <fluent-tooltip positioning="below" anchor="failuresResetBtn">Tout réinitialiser</fluent-tooltip>
+
+          <fluent-button id="failureAddBtn" appearance="primary">
+            <span slot="start" data-icon="add" data-icon-size="16"></span>
+            Ajouter une panne
+          </fluent-button>
+        </div>
       </header>
 
-      <main class="layout">
+      <main class="layout" id="scheduleView">
         <section class="board" id="board">
           <div class="week" id="week">
             <div class="week__gutterhead"></div>
@@ -86,6 +111,25 @@
               <h2>Corbeille</h2>
             </header>
             <ul class="trash" id="trashList"></ul>
+          </section>
+        </aside>
+      </main>
+
+      <main class="layout" id="failuresView" hidden>
+        <section class="board board--list" id="failuresBoard">
+          <ul class="injections" id="injectionList"></ul>
+          <div class="board__empty" id="injectionEmpty" hidden>
+            <p>Aucune panne active. L’API répond normalement.</p>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="flash" data-icon-size="16"></span>
+              <h2>Scénarios</h2>
+            </header>
+            <ul class="presets" id="presetList"></ul>
           </section>
         </aside>
       </main>
@@ -157,6 +201,28 @@
         </p>
         <fluent-button slot="action" appearance="secondary" data-close-reset>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="resetConfirm">Réinitialiser</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="failureDialog" type="modal" aria-label="Ajouter une panne">
+      <fluent-dialog-body>
+        <span slot="title">Ajouter une panne</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-failure></fluent-button>
+
+        <form id="failureForm" class="form" novalidate>
+          <fluent-field label-position="above">
+            <fluent-label slot="label">Type</fluent-label>
+            <fluent-dropdown slot="input" id="fFailureKind" appearance="filled-darker" aria-label="Type de panne">
+              <fluent-listbox></fluent-listbox>
+            </fluent-dropdown>
+          </fluent-field>
+
+          <div class="form__params" id="failureParams"></div>
+        </form>
+        <p class="dialog__hint" id="failureHint"></p>
+
+        <fluent-button slot="action" appearance="secondary" data-close-failure>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="failureSubmit">Ajouter</fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 

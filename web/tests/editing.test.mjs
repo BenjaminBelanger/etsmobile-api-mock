@@ -263,6 +263,48 @@ describe("keyboard", () => {
     app.close();
   });
 
+  test("leaves undo and redo to the field being typed in", async () => {
+    const app = await withUndo();
+    const input = app.query('#detail [data-key="course:cote"]');
+    input.tabIndex = 0;
+    input.focus();
+
+    const events = [
+      app.key("z", { ctrlKey: true }),
+      app.key("z", { ctrlKey: true, shiftKey: true }),
+      app.key("y", { ctrlKey: true }),
+    ];
+    await flush();
+
+    assert.deepEqual(
+      events.map((event) => event.defaultPrevented),
+      [false, false, false],
+    );
+    assert.equal(app.server.called("/undo").length, 0);
+    assert.equal(app.server.called("/redo").length, 0);
+    app.close();
+  });
+
+  test("still undoes from a focused checkbox or dropdown", async () => {
+    const app = await withUndo();
+    await app.click(app.query('#detail .evals__row[data-index="0"]'));
+    const checkbox = app.query('#detail [data-key="ev:publie"]');
+    checkbox.focus();
+    assert.equal(app.window.document.activeElement, checkbox);
+
+    app.key("z", { ctrlKey: true });
+    await flush();
+
+    const week = app.byId("weekSelect");
+    week.tabIndex = 0;
+    week.focus();
+    app.key("z", { ctrlKey: true });
+    await flush();
+
+    assert.equal(app.server.called("/undo").length, 2);
+    app.close();
+  });
+
   test("does nothing when there is nothing to undo", async () => {
     const app = await mount();
 

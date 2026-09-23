@@ -46,6 +46,9 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
+The page has two tabs: **Horaire**, the schedule editor described below, and
+**Pannes**, the [failure injection](#failure-injection) panel.
+
 Nothing extra is needed to run it. Start the server and open the page:
 
 ```bash
@@ -221,7 +224,13 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 ## Failure Injection
 
-The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server through `/admin/failures`.
+The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server from the **Pannes** tab of the web UI, the `manage_failures.py` CLI, or `/admin/failures`.
+
+The **Pannes** tab lists the active injections, lets you edit, add and remove
+them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
+CLI, so both describe the same config.
+
+<img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
 
 ### Startup flags
 
@@ -259,6 +268,14 @@ curl -X PATCH http://localhost:8080/admin/failures \
 
 # Reset everything to defaults
 curl -X DELETE http://localhost:8080/admin/failures
+
+# List the API endpoint names and the presets (what the UI offers)
+curl http://localhost:8080/admin/failures/options
+
+# Apply a named preset, replacing the current config
+curl -X POST http://localhost:8080/admin/failures/preset \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "flaky"}'
 ```
 
 PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool). All optional.

@@ -1,13 +1,22 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from . import schedule_editor
 from ._paths import ROOT
 
 WEB_DIR = ROOT / "web"
+NO_CACHE = {"Cache-Control": "no-cache"}
 
 router = APIRouter(prefix="/editor")
+
+
+class EditorAssets(StaticFiles):
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers.update(NO_CACHE)
+        return response
 
 
 class MoveBody(BaseModel):
@@ -103,7 +112,7 @@ def _guard(func, *args, **kwargs):
 
 @router.get("")
 def editor_index():
-    return FileResponse(WEB_DIR / "index.html")
+    return FileResponse(WEB_DIR / "index.html", headers=NO_CACHE)
 
 
 @router.get("/api/state")

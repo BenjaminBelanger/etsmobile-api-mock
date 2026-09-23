@@ -30,6 +30,21 @@ def test_the_editor_page_pulls_its_own_assets(client):
         assert client.get(asset).status_code == 200
 
 
+def test_the_editor_is_checked_for_changes_on_every_load(client):
+    for path in ("/editor", "/editor/assets/app.js", "/editor/assets/styles.css"):
+        assert client.get(path).headers["cache-control"] == "no-cache"
+
+
+def test_an_unchanged_editor_asset_is_not_sent_again(client):
+    first = client.get("/editor/assets/app.js")
+    again = client.get(
+        "/editor/assets/app.js", headers={"if-none-match": first.headers["etag"]}
+    )
+
+    assert again.status_code == 304
+    assert again.headers["cache-control"] == "no-cache"
+
+
 def test_an_unknown_endpoint_is_a_404(client):
     assert client.get("/api/Etudiant/nexistePas").status_code == 404
 

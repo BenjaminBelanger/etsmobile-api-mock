@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -10,6 +11,7 @@ from lib._paths import ROOT
 
 WEB = ROOT / "web"
 UI_TESTS = WEB / "tests"
+HARNESS = UI_TESTS / "harness.mjs"
 FIXTURE = UI_TESTS / "fixtures" / "state.json"
 SESSION = "H2026"
 
@@ -106,6 +108,43 @@ def test_the_editor_script_only_talks_to_routes_the_server_serves():
     called = set()
     for part in script.split('apiPost("')[1:]:
         called.add(part.split('"')[0])
+
+    assert called
+    assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
+
+
+def js_literal_keys(name, closing):
+    source = HARNESS.read_text(encoding="utf-8")
+    block = source.split(f"{name} = ")[1].split(closing)[0]
+    return set(re.findall(r"(\w+):", block))
+
+
+def test_the_ui_failure_mock_matches_the_config_the_server_sends(client):
+    served = client.get("/admin/failures").json()
+
+    assert js_literal_keys("DEFAULT_FAILURES", "};") == set(served)
+
+
+def test_the_ui_preset_mock_matches_the_options_the_server_sends(client):
+    served = client.get("/admin/failures/options").json()
+
+    assert set(served) == {"endpoints", "presets"}
+    assert keys_of(served["presets"][0]) == {"name", "description", "config"}
+    assert {"name", "description", "config"} <= js_literal_keys("PRESETS", "];")
+
+
+def test_the_failures_panel_only_talks_to_routes_the_server_serves():
+    from lib import failures
+
+    script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+    served = {
+        route.path.replace("/admin/failures", "")
+        for route in failures.router.routes
+        if route.path.startswith("/admin/failures")
+    }
+
+    called = set(re.findall(r'adminFetch\(\s*"([^"]*)"', script))
+    called |= set(re.findall(r"\$\{ADMIN\}(/\w+)", script))
 
     assert called
     assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
