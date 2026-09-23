@@ -369,7 +369,6 @@ describe("undo and redo on the failures tab", () => {
     await app.click(app.query(`[data-preset="${PRESETS[0].name}"]`));
 
     assert.equal(undoBtn(app).disabled, true);
-    assert.equal(app.toast().undoable, false);
     app.close();
   });
 
@@ -444,21 +443,16 @@ describe("undo and redo on the failures tab", () => {
   });
 });
 
-describe("undoing from the toast", () => {
+describe("undoing what a single click took away", () => {
   test("brings a removed row back with its endpoints", async () => {
     const app = await onFailures(BROKEN);
 
     await app.click(app.query('[data-remove="fail"]'));
-
-    assert.equal(app.toast().text, "Panne retirée");
-    assert.equal(app.toast().undoable, true);
-
-    await app.click(app.byId("toastUndo"));
+    await app.click(undoBtn(app));
 
     assert.deepEqual(lastPatch(app), { path: "", method: "PATCH", body: BROKEN });
     assert.deepEqual(chips(app, "fail"), BROKEN.failEndpoints);
     assert.equal(app.toast().text, "Modification annulée");
-    assert.equal(app.toast().undoable, false);
     app.close();
   });
 
@@ -466,8 +460,7 @@ describe("undoing from the toast", () => {
     const app = await onFailures(BROKEN);
 
     await app.click(app.byId("failuresResetBtn"));
-    assert.equal(app.toast().undoable, true);
-    await app.click(app.byId("toastUndo"));
+    await app.click(undoBtn(app));
 
     assert.deepEqual(app.server.admin.config, BROKEN);
     assert.deepEqual(kinds(app), ALL_KINDS);
@@ -479,8 +472,7 @@ describe("undoing from the toast", () => {
     const app = await onFailures(BROKEN);
 
     await app.click(app.query('[data-preset="flaky"]'));
-    assert.equal(app.toast().undoable, true);
-    await app.click(app.byId("toastUndo"));
+    await app.click(undoBtn(app));
 
     assert.deepEqual(app.server.admin.config, BROKEN);
     assert.deepEqual(app.queryAll(".preset.is-active"), []);
@@ -491,20 +483,9 @@ describe("undoing from the toast", () => {
     const app = await onFailures({ failEndpoints: ["listeCoequipiers", "listeCours"] });
 
     await app.click(app.query('.injection[data-kind="fail"] .chip__x'));
-    await app.click(app.byId("toastUndo"));
+    await app.click(undoBtn(app));
 
     assert.deepEqual(chips(app, "fail"), ["listeCoequipiers", "listeCours"]);
-    app.close();
-  });
-
-  test("is only offered when something is lost", async () => {
-    const app = await onFailures({ latencyMs: 500 });
-
-    app.select(field(app, "latency", "latencyMs"), "200-900");
-    await flush();
-
-    assert.equal(app.toast().undoable, false);
-    assert.equal(undoBtn(app).disabled, false);
     app.close();
   });
 });
