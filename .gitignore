@@ -11,3 +11,4 @@ env/
 
 seed/schedule_overrides.json
 node_modules/
+.pytest-tmp/

@@ -98,6 +98,8 @@ body {
   min-height: 24px;
 }
 
+fluent-button[disabled] > .icon { fill: currentColor; }
+
 .toolbar {
   display: flex;
   gap: 6px;
