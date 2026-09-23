@@ -25,6 +25,8 @@ const state = {
   catalog: [],
   view: "schedule",
   failures: null,
+  failuresPast: [],
+  failuresFuture: [],
   failureKind: "latency",
   staged: [],
   endpoints: [],
@@ -39,6 +41,8 @@ const el = {
   failuresView: document.getElementById("failuresView"),
   failuresToolbar: document.getElementById("failuresToolbar"),
   failuresDot: document.getElementById("failuresDot"),
+  failuresUndoBtn: document.getElementById("failuresUndoBtn"),
+  failuresRedoBtn: document.getElementById("failuresRedoBtn"),
   failuresResetBtn: document.getElementById("failuresResetBtn"),
   failureAddBtn: document.getElementById("failureAddBtn"),
   failureDialog: document.getElementById("failureDialog"),
@@ -89,6 +93,7 @@ const el = {
   toastHost: document.getElementById("toastHost"),
   toast: document.getElementById("toast"),
   toastText: document.getElementById("toastText"),
+  toastUndo: document.getElementById("toastUndo"),
 };
 
 const toMin = (hhmm) => {
@@ -217,12 +222,20 @@ function setStatus(text, busy, isError) {
 }
 
 let toastTimer = null;
-function toast(msg, isError) {
+let toastUndo = null;
+
+function hideToastLater() {
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.toastHost.hidden = true), toastUndo ? 6000 : 2600);
+}
+
+function toast(msg, isError, undo) {
   el.toastText.textContent = msg;
   el.toast.setAttribute("intent", isError ? "error" : "success");
+  toastUndo = undo || null;
+  el.toastUndo.hidden = !toastUndo;
   el.toastHost.hidden = false;
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (el.toastHost.hidden = true), 2600);
+  hideToastLater();
 }
 
 async function apiGet(session) {
@@ -1586,12 +1599,17 @@ function failureError(data, res) {
   return detail || data.error || res.statusText || "Échec de l'opération";
 }
 
-async function adminFetch(path, options, message) {
+async function adminFetch(path, options, message, record = true) {
+  const before = state.failures;
   setStatus("Enregistrement…", true);
   try {
     const res = await fetch(`${ADMIN}${path}`, options);
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
+    if (record && before && !sameFailures(before, data)) {
+      state.failuresPast.push({ before, after: data });
+      state.failuresFuture = [];
+    }
     applyFailures(data);
     setStatus("Enregistré.", false);
     if (message) toast(message);
@@ -1604,7 +1622,7 @@ async function adminFetch(path, options, message) {
   }
 }
 
-const patchFailures = (body, message) =>
+const patchFailures = (body, message, record) =>
   adminFetch(
     "",
     {
@@ -1612,13 +1630,67 @@ const patchFailures = (body, message) =>
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     },
-    message
+    message,
+    record
   );
 
 function applyFailures(cfg) {
   state.failures = cfg;
   el.failuresDot.hidden = !activeKinds(cfg).length;
   renderFailures();
+}
+
+const failureFields = (cfg) =>
+  Object.fromEntries(Object.keys(NO_FAILURES).map((key) => [key, cfg[key]]));
+
+const sameFailures = (a, b) =>
+  JSON.stringify(failureFields(a)) === JSON.stringify(failureFields(b));
+
+function offerUndo(message, change) {
+  return change().then((after) => {
+    const recorded = state.failuresPast.at(-1)?.after === after;
+    toast(message, false, recorded ? undoFailures : null);
+  });
+}
+
+const canUndoFailures = () => {
+  const change = state.failuresPast.at(-1);
+  return !!change && !!state.failures && sameFailures(change.after, state.failures);
+};
+
+const canRedoFailures = () => {
+  const change = state.failuresFuture.at(-1);
+  return !!change && !!state.failures && sameFailures(change.before, state.failures);
+};
+
+function renderFailureHistory() {
+  el.failuresUndoBtn.disabled = !canUndoFailures();
+  el.failuresRedoBtn.disabled = !canRedoFailures();
+}
+
+function stepFailures(from, to, target, message) {
+  const change = from.pop();
+  renderFailureHistory();
+  patchFailures(failureFields(change[target]), message, false).then(
+    () => {
+      to.push(change);
+      renderFailureHistory();
+    },
+    () => {
+      from.push(change);
+      renderFailureHistory();
+    }
+  );
+}
+
+function undoFailures() {
+  if (!canUndoFailures()) return;
+  stepFailures(state.failuresPast, state.failuresFuture, "before", "Modification annulée");
+}
+
+function redoFailures() {
+  if (!canRedoFailures()) return;
+  stepFailures(state.failuresFuture, state.failuresPast, "after", "Modification rétablie");
 }
 
 async function loadFailures() {
@@ -1649,8 +1721,8 @@ function injectionHtml(kind, cfg) {
       <span class="injection__name" title="${escapeHtml(kind.hint)}">${kind.label}</span>
       <span class="injection__value">${kind.value(parameterless(kind) ? kind : cfg)}</span>
       <fluent-button class="injection__x" appearance="subtle" size="small" icon-only
-        data-remove="${kind.id}" title="Retirer"
-        aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("dismiss", 16)}</fluent-button>
+        data-remove="${kind.id}" title="Retirer la panne"
+        aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("delete", 16)}</fluent-button>
     </li>`;
 }
 
@@ -1665,14 +1737,17 @@ function renderInjections(cfg) {
 function wireInjections(cfg) {
   el.injectionList.querySelectorAll("[data-remove]").forEach((node) => {
     const kind = kindById(node.dataset.remove);
-    node.addEventListener("click", () => patchFailures(kind.clear(), "Panne retirée"));
+    node.addEventListener("click", () =>
+      offerUndo("Panne retirée", () => patchFailures(kind.clear()))
+    );
   });
   el.injectionList.querySelectorAll("[data-chip]").forEach((node) => {
     const { chip: fieldName, name } = node.dataset;
     node.addEventListener("click", () =>
-      patchFailures(
-        { [fieldName]: cfg[fieldName].filter((endpoint) => endpoint !== name) },
-        `${endpointLabel(name)} retiré`
+      offerUndo(`${endpointLabel(name)} retiré`, () =>
+        patchFailures({
+          [fieldName]: cfg[fieldName].filter((endpoint) => endpoint !== name),
+        })
       )
     );
   });
@@ -1745,14 +1820,12 @@ function renderPresets() {
   el.presetList.querySelectorAll("[data-preset]").forEach((node) => {
     const name = node.dataset.preset;
     node.addEventListener("click", () =>
-      adminFetch(
-        "/preset",
-        {
+      offerUndo(`Scénario ${name} appliqué`, () =>
+        adminFetch("/preset", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
-        },
-        `Scénario ${name} appliqué`
+        })
       )
     );
   });
@@ -1762,6 +1835,7 @@ function renderFailures() {
   const cfg = state.failures;
   if (!cfg) return;
   renderInjections(cfg);
+  renderFailureHistory();
   if (state.presets.length) renderPresets();
 }
 
@@ -1927,8 +2001,16 @@ el.failureDialog
   .querySelectorAll("[data-close-failure]")
   .forEach((n) => n.addEventListener("click", () => el.failureDialog.hide()));
 el.failuresResetBtn.addEventListener("click", () =>
-  adminFetch("", { method: "DELETE" }, "Pannes réinitialisées")
+  offerUndo("Pannes réinitialisées", () => adminFetch("", { method: "DELETE" }))
 );
+el.failuresUndoBtn.addEventListener("click", undoFailures);
+el.failuresRedoBtn.addEventListener("click", redoFailures);
+el.toastUndo.addEventListener("click", () => {
+  el.toastHost.hidden = true;
+  if (toastUndo) toastUndo();
+});
+el.toastHost.addEventListener("pointerenter", () => clearTimeout(toastTimer));
+el.toastHost.addEventListener("pointerleave", hideToastLater);
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -1968,22 +2050,30 @@ document.addEventListener(
   true
 );
 
+const TEXT_ENTRY =
+  'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
+
 document.addEventListener("keydown", (e) => {
-  if (state.view !== "schedule") return;
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||
     /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement?.tagName || "") ||
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
+  const editingText = !!document.activeElement?.closest?.(TEXT_ENTRY);
   const mod = e.ctrlKey || e.metaKey;
-  if (mod && e.key.toLowerCase() === "z") {
+  const failures = state.view === "failures";
+  const undoBtn = failures ? el.failuresUndoBtn : el.undoBtn;
+  const redoBtn = failures ? el.failuresRedoBtn : el.redoBtn;
+  if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
-      if (!el.redoBtn.disabled) el.redoBtn.click();
-    } else if (!el.undoBtn.disabled) el.undoBtn.click();
-  } else if (mod && e.key.toLowerCase() === "y") {
+      if (!redoBtn.disabled) redoBtn.click();
+    } else if (!undoBtn.disabled) undoBtn.click();
+  } else if (mod && !editingText && e.key.toLowerCase() === "y") {
     e.preventDefault();
-    if (!el.redoBtn.disabled) el.redoBtn.click();
+    if (!redoBtn.disabled) redoBtn.click();
+  } else if (failures) {
+    return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
     if (occurrenceMode()) {
       const occ = selectedOccurrence();

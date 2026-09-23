@@ -67,6 +67,12 @@
         </div>
 
         <div class="toolbar" id="failuresToolbar" hidden>
+          <fluent-button id="failuresUndoBtn" appearance="subtle" icon-only data-icon="undo" aria-label="Annuler" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="failuresUndoBtn">Annuler (Ctrl+Z)</fluent-tooltip>
+
+          <fluent-button id="failuresRedoBtn" appearance="subtle" icon-only data-icon="redo" aria-label="Rétablir" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="failuresRedoBtn">Rétablir (Ctrl+Y)</fluent-tooltip>
+
           <fluent-button id="failuresResetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Tout réinitialiser"></fluent-button>
           <fluent-tooltip positioning="below" anchor="failuresResetBtn">Tout réinitialiser</fluent-tooltip>
 
@@ -223,6 +229,7 @@
     <div class="toast-host" id="toastHost" hidden>
       <fluent-message-bar id="toast" intent="success" shape="rounded" layout="singleline">
         <span id="toastText"></span>
+        <fluent-button slot="actions" id="toastUndo" appearance="transparent" size="small" hidden>Annuler</fluent-button>
       </fluent-message-bar>
     </div>
   </body>

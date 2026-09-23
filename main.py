@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
-from fastapi.staticfiles import StaticFiles
 
 from lib import failures
 from lib._paths import ROOT
@@ -17,7 +16,7 @@ from lib.data_store import (
     SCENARIO_NAME,
     reload as reload_data,
 )
-from lib.editor_routes import router as editor_router
+from lib.editor_routes import EditorAssets, router as editor_router
 from lib.routes import router
 from lib.schedule_editor import clear_cache as clear_editor_cache
 
@@ -65,7 +64,7 @@ app.include_router(failures.router)
 app.include_router(editor_router)
 app.mount(
     "/editor/assets",
-    StaticFiles(directory=ROOT / "web" / "assets"),
+    EditorAssets(directory=ROOT / "web" / "assets"),
     name="editor-assets",
 )
 

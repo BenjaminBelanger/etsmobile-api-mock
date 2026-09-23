@@ -1,7 +1,19 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ENDPOINTS, PRESETS, flush, mount } from "./harness.mjs";
+import { ENDPOINTS, PRESETS, baseState, defaultFailures, flush, mount } from "./harness.mjs";
+
+const BROKEN = {
+  latencyMs: "500-2000",
+  errorRate: 0.4,
+  failEndpoints: ["lireHoraireDesSeances", "listeElementsEvaluation"],
+  timeoutEndpoints: ["listeCours"],
+  timeoutDurationS: 30,
+  malformed: true,
+  authRequired: true,
+};
+
+const ALL_KINDS = ["latency", "errorRate", "fail", "timeout", "malformed", "auth"];
 
 async function openFailures(app) {
   app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewFailures") });
@@ -25,6 +37,20 @@ const field = (app, kind, name) =>
   app.query(`.injection[data-kind="${kind}"] [data-field="${name}"]`);
 
 const lastPatch = (app) => app.server.admin.lastCall("");
+
+const patches = (app) =>
+  app.server.admin.called("").filter((call) => call.method === "PATCH");
+
+const undoBtn = (app) => app.byId("failuresUndoBtn");
+const redoBtn = (app) => app.byId("failuresRedoBtn");
+
+const iconOf = (node) => node.querySelector("svg").dataset.name;
+
+async function undoKey(app) {
+  const event = app.key("z", { ctrlKey: true });
+  await flush();
+  return event;
+}
 
 const stagedChips = (app) =>
   app.queryAll(".chips--staged .chip").map((node) => node.textContent.trim());
@@ -245,6 +271,240 @@ describe("removing an injection", () => {
 
     assert.equal(app.server.admin.lastCall("").method, "DELETE");
     assert.equal(kinds(app).length, 0);
+    app.close();
+  });
+
+  test("tells a whole row apart from one of its endpoints", async () => {
+    const app = await onFailures(BROKEN);
+
+    for (const kind of ["fail", "timeout"]) {
+      const row = app.query(`.injection[data-kind="${kind}"]`);
+      assert.equal(iconOf(row.querySelector("[data-remove]")), "delete");
+      row.querySelectorAll(".chip__x").forEach((node) => assert.equal(iconOf(node), "dismiss"));
+    }
+    app.close();
+  });
+});
+
+describe("undo and redo on the failures tab", () => {
+  test("start with nothing to undo or redo", async () => {
+    const app = await onFailures(BROKEN);
+
+    assert.equal(undoBtn(app).disabled, true);
+    assert.equal(redoBtn(app).disabled, true);
+    app.close();
+  });
+
+  test("undo and redo an edit from the toolbar", async () => {
+    const app = await onFailures({ latencyMs: 500 });
+    app.select(field(app, "latency", "latencyMs"), "200-900");
+    await flush();
+
+    assert.equal(undoBtn(app).disabled, false);
+    await app.click(undoBtn(app));
+
+    assert.deepEqual(lastPatch(app).body, { ...defaultFailures(), latencyMs: 500 });
+    assert.equal(field(app, "latency", "latencyMs").getAttribute("value"), "500");
+    assert.equal(app.toast().text, "Modification annulée");
+    assert.equal(undoBtn(app).disabled, true);
+    assert.equal(redoBtn(app).disabled, false);
+
+    await app.click(redoBtn(app));
+
+    assert.equal(field(app, "latency", "latencyMs").getAttribute("value"), "200-900");
+    assert.equal(app.toast().text, "Modification rétablie");
+    assert.equal(undoBtn(app).disabled, false);
+    assert.equal(redoBtn(app).disabled, true);
+    app.close();
+  });
+
+  test("step back through several changes and forward again", async () => {
+    const app = await onFailures(BROKEN);
+    await app.click(app.query('[data-remove="latency"]'));
+    app.select(field(app, "errorRate", "errorRate"), "50");
+    await flush();
+    await app.click(app.byId("failuresResetBtn"));
+
+    for (let i = 0; i < 3; i += 1) await undoKey(app);
+
+    assert.deepEqual(app.server.admin.config, BROKEN);
+    assert.equal(undoBtn(app).disabled, true);
+
+    app.key("y", { ctrlKey: true });
+    await flush();
+    app.key("z", { ctrlKey: true, shiftKey: true });
+    await flush();
+
+    assert.deepEqual(app.server.admin.config, {
+      ...BROKEN,
+      latencyMs: 0,
+      errorRate: 0.5,
+    });
+
+    app.key("y", { ctrlKey: true });
+    await flush();
+
+    assert.deepEqual(app.server.admin.config, defaultFailures());
+    assert.equal(redoBtn(app).disabled, true);
+    app.close();
+  });
+
+  test("forget what was undone once something else changes", async () => {
+    const app = await onFailures(BROKEN);
+    await app.click(app.query('[data-remove="latency"]'));
+    await undoKey(app);
+
+    assert.equal(redoBtn(app).disabled, false);
+
+    app.select(field(app, "errorRate", "errorRate"), "50");
+    await flush();
+
+    assert.equal(redoBtn(app).disabled, true);
+    app.close();
+  });
+
+  test("record nothing for a scenario that changed nothing", async () => {
+    const app = await onFailures(PRESETS[0].config);
+
+    await app.click(app.query(`[data-preset="${PRESETS[0].name}"]`));
+
+    assert.equal(undoBtn(app).disabled, true);
+    assert.equal(app.toast().undoable, false);
+    app.close();
+  });
+
+  test("do not undo past a change made outside the editor", async () => {
+    const app = await onFailures(BROKEN);
+    await app.click(app.query('[data-remove="latency"]'));
+    app.server.admin.config.malformed = false;
+
+    app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewSchedule") });
+    await flush();
+    await openFailures(app);
+    await undoKey(app);
+
+    assert.equal(undoBtn(app).disabled, true);
+    assert.equal(patches(app).length, 1);
+    app.close();
+  });
+
+  test("leave ctrl+z to the field being typed in", async () => {
+    const app = await onFailures(BROKEN);
+    await app.click(app.query('[data-remove="auth"]'));
+    const input = field(app, "latency", "latencyMs");
+    input.tabIndex = 0;
+    input.focus();
+
+    const event = await undoKey(app);
+
+    assert.equal(event.defaultPrevented, false);
+    assert.equal(patches(app).length, 1);
+    app.close();
+  });
+
+  test("keep their history apart from the schedule", async () => {
+    const state = baseState();
+    state.canUndo = true;
+    const app = await mount({ state, failures: BROKEN });
+    await openFailures(app);
+    await app.click(app.byId("failuresResetBtn"));
+
+    app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewSchedule") });
+    await flush();
+    await undoKey(app);
+
+    assert.equal(app.server.called("/undo").length, 1);
+    assert.equal(patches(app).length, 0);
+
+    await openFailures(app);
+    await undoKey(app);
+
+    assert.equal(app.server.called("/undo").length, 1);
+    assert.deepEqual(app.server.admin.config, BROKEN);
+    app.close();
+  });
+
+  test("can be retried when a step fails", async () => {
+    const app = await onFailures(BROKEN);
+    await app.click(app.byId("failuresResetBtn"));
+    app.server.admin.reply("", { error: "server unavailable" }, 500);
+
+    await app.click(undoBtn(app));
+
+    assert.equal(app.toast().intent, "error");
+    assert.equal(kinds(app).length, 0);
+    assert.equal(undoBtn(app).disabled, false);
+
+    app.server.admin.reply("", BROKEN);
+    await undoKey(app);
+
+    assert.equal(patches(app).length, 2);
+    assert.deepEqual(kinds(app), ALL_KINDS);
+    app.close();
+  });
+});
+
+describe("undoing from the toast", () => {
+  test("brings a removed row back with its endpoints", async () => {
+    const app = await onFailures(BROKEN);
+
+    await app.click(app.query('[data-remove="fail"]'));
+
+    assert.equal(app.toast().text, "Panne retirée");
+    assert.equal(app.toast().undoable, true);
+
+    await app.click(app.byId("toastUndo"));
+
+    assert.deepEqual(lastPatch(app), { path: "", method: "PATCH", body: BROKEN });
+    assert.deepEqual(chips(app, "fail"), BROKEN.failEndpoints);
+    assert.equal(app.toast().text, "Modification annulée");
+    assert.equal(app.toast().undoable, false);
+    app.close();
+  });
+
+  test("puts every parameter back after a full reset", async () => {
+    const app = await onFailures(BROKEN);
+
+    await app.click(app.byId("failuresResetBtn"));
+    assert.equal(app.toast().undoable, true);
+    await app.click(app.byId("toastUndo"));
+
+    assert.deepEqual(app.server.admin.config, BROKEN);
+    assert.deepEqual(kinds(app), ALL_KINDS);
+    assert.equal(app.byId("failuresDot").hidden, false);
+    app.close();
+  });
+
+  test("puts back the setup a scenario replaced", async () => {
+    const app = await onFailures(BROKEN);
+
+    await app.click(app.query('[data-preset="flaky"]'));
+    assert.equal(app.toast().undoable, true);
+    await app.click(app.byId("toastUndo"));
+
+    assert.deepEqual(app.server.admin.config, BROKEN);
+    assert.deepEqual(app.queryAll(".preset.is-active"), []);
+    app.close();
+  });
+
+  test("brings back a single endpoint", async () => {
+    const app = await onFailures({ failEndpoints: ["listeCoequipiers", "listeCours"] });
+
+    await app.click(app.query('.injection[data-kind="fail"] .chip__x'));
+    await app.click(app.byId("toastUndo"));
+
+    assert.deepEqual(chips(app, "fail"), ["listeCoequipiers", "listeCours"]);
+    app.close();
+  });
+
+  test("is only offered when something is lost", async () => {
+    const app = await onFailures({ latencyMs: 500 });
+
+    app.select(field(app, "latency", "latencyMs"), "200-900");
+    await flush();
+
+    assert.equal(app.toast().undoable, false);
+    assert.equal(undoBtn(app).disabled, false);
     app.close();
   });
 });

@@ -394,6 +394,7 @@ export async function mount(options = {}) {
       hidden: window.document.getElementById("toastHost").hidden,
       text: window.document.getElementById("toastText").textContent,
       intent: window.document.getElementById("toast").getAttribute("intent"),
+      undoable: !window.document.getElementById("toastUndo").hidden,
     }),
     async reload(state) {
       server.state = state;
