@@ -34,6 +34,7 @@ const state = {
   calls: [],
   callsSeq: 0,
   callsFailed: false,
+  callsGroup: null,
 };
 
 const el = {
@@ -2007,12 +2008,14 @@ function repeatsOf(calls) {
     totals.set(key, (totals.get(key) || 0) + 1);
   });
   const seen = new Map();
+  const firsts = new Map();
   return new Map(
     calls.map((call) => {
       const key = callKey(call);
       const nth = (seen.get(key) || 0) + 1;
       seen.set(key, nth);
-      return [call.id, { nth, total: totals.get(key) }];
+      if (nth === 1) firsts.set(key, call.id);
+      return [call.id, { nth, total: totals.get(key), group: String(firsts.get(key)) }];
     })
   );
 }
@@ -2060,7 +2063,8 @@ function repeatHtml({ nth, total }) {
 function callRowHtml(call, repeat) {
   const pending = call.status == null;
   const classes = ["call", repeat.nth > 1 ? "is-repeat" : "", pending ? "is-pending" : ""];
-  return `<tr class="${classes.join(" ").trim()}" data-id="${call.id}">
+  const group = repeat.total > 1 ? ` data-group="${repeat.group}"` : "";
+  return `<tr class="${classes.join(" ").trim()}" data-id="${call.id}"${group}>
       <td class="calls__time">${fmtClock(call.time)}</td>
       <td class="calls__endpoint" title="${escapeHtml(call.path)}"><span class="calls__name">${escapeHtml(
         call.endpoint || call.path
@@ -2138,6 +2142,18 @@ function renderEndpointStats(calls, repeats) {
   el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
 }
 
+function markCallGroup() {
+  el.callRows
+    .querySelectorAll("tr[data-group]")
+    .forEach((row) => row.classList.toggle("is-grouped", row.dataset.group === state.callsGroup));
+}
+
+function hoverCallGroup(group) {
+  if (state.callsGroup === group) return;
+  state.callsGroup = group;
+  markCallGroup();
+}
+
 function renderCalls(stick) {
   const board = el.callsBoard;
   const atBottom = stick || board.scrollHeight - board.scrollTop - board.clientHeight < 24;
@@ -2152,6 +2168,7 @@ function renderCalls(stick) {
         : markerRowHtml(entry, sections.get(entry.id))
     )
     .join("");
+  markCallGroup();
   el.callsTable.hidden = !entries.length;
   el.callsEmpty.hidden = entries.length > 0;
   el.callsClearBtn.disabled = !entries.length;
@@ -2344,6 +2361,10 @@ el.markerLabel.addEventListener("keydown", (e) => {
   e.preventDefault();
   addMarker();
 });
+el.callRows.addEventListener("mouseover", (e) =>
+  hoverCallGroup(e.target.closest("tr[data-group]")?.dataset.group ?? null)
+);
+el.callRows.addEventListener("mouseleave", () => hoverCallGroup(null));
 document.addEventListener("visibilitychange", () => {
   if (state.view !== "calls") return;
   if (document.hidden) scheduleCallsPoll();

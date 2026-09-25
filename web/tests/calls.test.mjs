@@ -258,6 +258,68 @@ describe("repeated calls", () => {
   });
 });
 
+describe("hovering a repeated call", () => {
+  const lit = (app) =>
+    app.queryAll("#callRows tr.is-grouped").map((row) => Number(row.dataset.id));
+
+  const hover = (app, id) => app.fire(rowFor(app, id).querySelector(".calls__params"), "mouseover");
+
+  const leave = (app) => app.fire(app.byId("callRows"), "mouseleave", { bubbles: false });
+
+  async function onGroups() {
+    return onCalls([
+      callEntry({ id: 1, ...GRADES }),
+      callEntry({ id: 2, endpoint: "listeSessions" }),
+      callEntry({ id: 3, endpoint: "listeCours" }),
+      markerEntry({ id: 4 }),
+      callEntry({ id: 5, ...GRADES }),
+      callEntry({ id: 6, endpoint: "listeCours" }),
+    ]);
+  }
+
+  test("lights up every identical call", async () => {
+    const app = await onGroups();
+
+    hover(app, 5);
+    assert.deepEqual(lit(app), [1, 5]);
+
+    hover(app, 3);
+    assert.deepEqual(lit(app), [3, 6]);
+    app.close();
+  });
+
+  test("lights up nothing for a call made once", async () => {
+    const app = await onGroups();
+
+    hover(app, 1);
+    hover(app, 2);
+
+    assert.deepEqual(lit(app), []);
+    app.close();
+  });
+
+  test("stops once the pointer leaves the list", async () => {
+    const app = await onGroups();
+
+    hover(app, 1);
+    leave(app);
+
+    assert.deepEqual(lit(app), []);
+    app.close();
+  });
+
+  test("keeps the calls lit when new ones come in", async () => {
+    const app = await onGroups();
+    hover(app, 1);
+
+    app.server.callLog.add(callEntry({ id: 7, ...GRADES }));
+    await refresh(app);
+
+    assert.deepEqual(lit(app), [1, 5, 7]);
+    app.close();
+  });
+});
+
 describe("markers", () => {
   test("split the list and sum up the calls that followed them", async () => {
     const app = await onCalls([

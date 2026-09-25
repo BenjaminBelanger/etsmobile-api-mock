@@ -794,7 +794,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .calls__duration,
 .calls__size,
 .calls__failures { color: var(--colorNeutralForeground2); }
-.call:hover td { background: var(--colorNeutralBackground2Hover); }
+.call:hover td,
+.call.is-grouped td { background: var(--colorNeutralBackground2Hover); }
 
 .param {
   display: inline-block;
