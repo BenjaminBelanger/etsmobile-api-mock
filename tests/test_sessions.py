@@ -84,6 +84,42 @@ def test_an_unreadable_session_code_ranks_last(code):
     assert sessions.session_rank(code) == 9999
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("H2025", "H2025"),
+        ("E2025", "É2025"),
+        ("É2025", "É2025"),
+        ("A2025", "A2025"),
+        ("Hiver 2025", "H2025"),
+        ("Été 2025", "É2025"),
+        ("Ete 2025", "É2025"),
+        ("Automne 2025", "A2025"),
+        ("20251", "H2025"),
+        ("20252", "É2025"),
+        ("20253", "A2025"),
+        ("E\u0301te\u0301 2025", "É2025"),
+    ],
+)
+def test_every_session_format_normalizes_to_the_short_code(value, expected):
+    assert sessions.normalize_session_code(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", "X2025", "H25", "20254", "Printemps 2025"])
+def test_an_unreadable_session_is_left_as_is(value):
+    assert sessions.normalize_session_code(value) == value
+
+
+@pytest.mark.parametrize("value", ["Hiver", "Hiver 2025x", "Habcd", "20254"])
+def test_a_malformed_session_ranks_last_instead_of_failing(value):
+    assert sessions.session_rank(value) == 9999
+
+
+@pytest.mark.parametrize("value", ["E2025", "Été 2025", "Ete 2025", "20252"])
+def test_every_session_format_ranks_like_the_short_code(value):
+    assert sessions.session_rank(value) == sessions.session_rank("É2025")
+
+
 def test_the_course_window_runs_from_the_start_to_the_last_class_day():
     assert sessions.course_window("H2026") == (
         date(2026, 1, 5),

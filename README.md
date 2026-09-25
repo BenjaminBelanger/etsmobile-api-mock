@@ -131,6 +131,8 @@ All endpoints are `GET /api/Etudiant/...`:
 | `lireJoursRemplaces` | `session` | Replaced days |
 | `listeCoequipiers` | `session`, `sigle`, `groupe`, `nomElementEval` | Teammates |
 
+Session parameters (`session`, `sessionDebut`, `sessionFin`) accept the short (`H2025`, `E2025` or `É2025`, `A2025`), long (`Hiver 2025`, `Été 2025`, `Automne 2025`) and numeric (`20251`, `20252`, `20253`) formats.
+
 ## Managing Courses
 
 Courses are defined in `seed/courses.json`. Data is computed at startup.

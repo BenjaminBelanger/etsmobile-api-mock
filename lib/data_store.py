@@ -187,7 +187,9 @@ def load(name: str):
 
 
 def load_session(name: str, session: str, default=None):
-    return load(name).get(session, [] if default is None else default)
+    return load(name).get(
+        sessions.normalize_session_code(session), [] if default is None else default
+    )
 
 
 def empty_evaluation() -> dict:
