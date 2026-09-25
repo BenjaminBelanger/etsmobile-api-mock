@@ -28,6 +28,7 @@ const state = {
   failuresPast: [],
   failuresFuture: [],
   failureKind: "latency",
+  failuresPoll: null,
   staged: [],
   endpoints: [],
   presets: [],
@@ -1442,7 +1443,12 @@ const NO_FAILURES = {
   timeoutDurationS: 60,
   malformed: false,
   authRequired: false,
+  tokenExpiredCalls: 0,
+  tokensRejected: false,
+  tokenLifetimeS: 0,
 };
+
+const FAILURES_POLL_MS = 2000;
 
 const latencyMax = (raw) => {
   const parts = String(raw ?? "").split("-");
@@ -1452,6 +1458,8 @@ const latencyMax = (raw) => {
 
 const percent = (rate) => Math.round(rate * 100);
 const endpointLabel = (name) => (name === "*" ? "tous les endpoints" : name);
+
+const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
 
 const countLabel = (names, one, many) =>
   names.includes("*")
@@ -1613,11 +1621,67 @@ const FAILURE_KINDS = [
     form: () => "",
     read: () => ({ body: { authRequired: true } }),
   },
+  {
+    id: "tokenExpired",
+    label: "Jeton expiré",
+    icon: "keyReset",
+    hint: "Les prochains appels répondent 401, puis les appels réussissent de nouveau.",
+    active: (cfg) => cfg.tokenExpiredCalls > 0,
+    summary: (cfg) => `jeton expiré pour ${plural(cfg.tokenExpiredCalls, "appel")}`,
+    value: (cfg) =>
+      injectionInput(
+        "tokenExpiredCalls",
+        cfg.tokenExpiredCalls,
+        "sm",
+        cfg.tokenExpiredCalls > 1 ? "appels restants" : "appel restant",
+        "Appels restants"
+      ),
+    clear: () => ({ tokenExpiredCalls: 0 }),
+    form: () => numberField("fTokenExpiredCalls", "Nombre d'appels", "", "3"),
+    read: () => {
+      const calls = Number(el.failureParams.querySelector("#fTokenExpiredCalls").value);
+      if (!Number.isInteger(calls) || calls < 1) {
+        return { error: "Un nombre d'appels est requis" };
+      }
+      return { body: { tokenExpiredCalls: calls } };
+    },
+  },
+  {
+    id: "tokensRejected",
+    label: "Jetons refusés",
+    icon: "shieldDismiss",
+    hint: "Chaque appel répond 401, peu importe le jeton.",
+    active: (cfg) => cfg.tokensRejected,
+    summary: () => "jetons refusés",
+    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    clear: () => ({ tokensRejected: false }),
+    form: () => "",
+    read: () => ({ body: { tokensRejected: true } }),
+  },
+  {
+    id: "tokenLifetime",
+    label: "Durée de vie du jeton",
+    icon: "passwordClock",
+    hint: "Un jeton plus vieux que ce délai répond 401. Un nouveau jeton repart à zéro.",
+    active: (cfg) => cfg.tokenLifetimeS > 0,
+    summary: (cfg) => `jetons valides ${cfg.tokenLifetimeS} s`,
+    value: (cfg) =>
+      injectionInput("tokenLifetimeS", cfg.tokenLifetimeS, "sm", "s", "Durée de vie du jeton"),
+    clear: () => ({ tokenLifetimeS: 0 }),
+    form: () => numberField("fTokenLifetime", "Durée de vie en s", "", "30"),
+    read: () => {
+      const seconds = Number(el.failureParams.querySelector("#fTokenLifetime").value);
+      if (!Number.isFinite(seconds) || seconds <= 0) {
+        return { error: "Une durée en secondes est requise" };
+      }
+      return { body: { tokenLifetimeS: seconds } };
+    },
+  },
 ];
 
 const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
 const activeKinds = (cfg) => (cfg ? FAILURE_KINDS.filter((k) => k.active(cfg)) : []);
-const parameterless = (kind) => kind.id === "malformed" || kind.id === "auth";
+const parameterless = (kind) => ["malformed", "auth", "tokensRejected"].includes(kind.id);
 
 function failureError(data, res) {
   const detail = typeof data.detail === "string" ? data.detail : null;
@@ -1663,6 +1727,21 @@ function applyFailures(cfg) {
   state.failures = cfg;
   el.failuresDot.hidden = !activeKinds(cfg).length;
   renderFailures();
+  scheduleFailuresPoll();
+}
+
+function scheduleFailuresPoll() {
+  clearTimeout(state.failuresPoll);
+  if (state.view === "failures" && state.failures?.tokenExpiredCalls > 0) {
+    state.failuresPoll = setTimeout(pollFailures, FAILURES_POLL_MS);
+  }
+}
+
+async function pollFailures() {
+  const res = await fetch(ADMIN).catch(() => null);
+  const cfg = res && res.ok ? await res.json() : null;
+  if (cfg && !sameFailures(cfg, state.failures)) applyFailures(cfg);
+  else scheduleFailuresPoll();
 }
 
 const failureFields = (cfg) =>
@@ -1780,28 +1859,33 @@ function wireInjections(cfg) {
   });
 }
 
+const NUMBER_FIELDS = {
+  errorRate: {
+    valid: (n) => n >= 0 && n <= 100,
+    toBody: (n) => n / 100,
+    error: "Un taux entre 0 et 100 est requis",
+  },
+  timeoutDurationS: { valid: (n) => n >= 0, error: "Un délai en secondes est requis" },
+  tokenExpiredCalls: {
+    valid: (n) => Number.isInteger(n) && n >= 0,
+    error: "Un nombre d'appels est requis",
+  },
+  tokenLifetimeS: { valid: (n) => n >= 0, error: "Une durée en secondes est requise" },
+};
+
 function commitFailureField(fieldName, value) {
-  if (fieldName === "errorRate") {
-    const pct = Number(value);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      toast("Un taux entre 0 et 100 est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ errorRate: pct / 100 }, "Panne modifiée");
+  const numeric = NUMBER_FIELDS[fieldName];
+  if (!numeric) {
+    patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
     return;
   }
-  if (fieldName === "timeoutDurationS") {
-    const seconds = Number(value);
-    if (!Number.isFinite(seconds) || seconds < 0) {
-      toast("Un délai en secondes est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ timeoutDurationS: seconds }, "Panne modifiée");
+  const n = Number(value);
+  if (!Number.isFinite(n) || !numeric.valid(n)) {
+    toast(numeric.error, true);
+    renderFailures();
     return;
   }
-  patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
+  patchFailures({ [fieldName]: numeric.toBody ? numeric.toBody(n) : n }, "Panne modifiée");
 }
 
 function presetSummary(config) {
@@ -1954,6 +2038,7 @@ function setView(view) {
   el.failuresToolbar.hidden = schedule;
   document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
   if (schedule) {
+    clearTimeout(state.failuresPoll);
     if (state.data) {
       renderScaffold();
       renderBlocks(false);

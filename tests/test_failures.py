@@ -33,6 +33,23 @@ def fixed_random(monkeypatch):
     return apply
 
 
+@pytest.fixture
+def clock(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(
+        failures, "time", types.SimpleNamespace(monotonic=lambda: now[0])
+    )
+
+    def advance(seconds):
+        now[0] += seconds
+
+    return advance
+
+
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -95,6 +112,9 @@ def test_a_fresh_config_is_the_default_one():
     assert not FailureConfig(malformed=True).is_default()
     assert not FailureConfig(timeout_duration_s=5.0).is_default()
     assert not FailureConfig(fail_endpoints={"listeCours"}).is_default()
+    assert not FailureConfig(token_expired_calls=1).is_default()
+    assert not FailureConfig(tokens_rejected=True).is_default()
+    assert not FailureConfig(token_lifetime_s=30.0).is_default()
 
 
 def test_a_config_renders_a_fixed_latency_as_a_number_and_a_range_as_text():
@@ -117,6 +137,9 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("TIMEOUT_DURATION_S", "12.5")
     monkeypatch.setenv("MALFORMED", "true")
     monkeypatch.setenv("AUTH_REQUIRED", "yes")
+    monkeypatch.setenv("TOKEN_EXPIRED_CALLS", "3")
+    monkeypatch.setenv("TOKENS_REJECTED", "on")
+    monkeypatch.setenv("TOKEN_LIFETIME_S", "45")
 
     config = failures.load_from_env()
 
@@ -127,6 +150,9 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     assert config.timeout_duration_s == 12.5
     assert config.malformed is True
     assert config.auth_required is True
+    assert config.token_expired_calls == 3
+    assert config.tokens_rejected is True
+    assert config.token_lifetime_s == 45.0
 
 
 def test_an_empty_environment_boots_the_default_config(monkeypatch):
@@ -138,6 +164,9 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         "TIMEOUT_DURATION_S",
         "MALFORMED",
         "AUTH_REQUIRED",
+        "TOKEN_EXPIRED_CALLS",
+        "TOKENS_REJECTED",
+        "TOKEN_LIFETIME_S",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -153,6 +182,11 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         ("ERROR_RATE", "-0.5"),
         ("TIMEOUT_DURATION_S", "abc"),
         ("TIMEOUT_DURATION_S", "-1"),
+        ("TOKEN_EXPIRED_CALLS", "abc"),
+        ("TOKEN_EXPIRED_CALLS", "1.5"),
+        ("TOKEN_EXPIRED_CALLS", "-1"),
+        ("TOKEN_LIFETIME_S", "abc"),
+        ("TOKEN_LIFETIME_S", "-1"),
     ],
 )
 def test_a_broken_environment_value_falls_back_to_the_default(monkeypatch, name, value):
@@ -196,6 +230,9 @@ def test_a_broken_latency_patch_is_rejected():
         {"errorRate": 1.5},
         {"errorRate": -0.1},
         {"timeoutDurationS": -1},
+        {"tokenExpiredCalls": -1},
+        {"tokenExpiredCalls": 1.5},
+        {"tokenLifetimeS": -1},
         {"inconnu": True},
     ],
 )
@@ -248,6 +285,112 @@ def test_a_blank_authorization_header_does_not_count(client):
     assert client.get(ENDPOINT, headers={"Authorization": "   "}).status_code == 401
 
 
+def test_an_expired_token_fails_the_next_calls_then_lets_them_through(client):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 2})
+
+    first = client.get(ENDPOINT, headers=bearer("abc"))
+    assert first.status_code == 401
+    assert first.json() == {"error": "Jeton expiré."}
+    assert client.get("/admin/failures").json()["tokenExpiredCalls"] == 1
+
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 401
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 200
+    assert failures.get_config().is_default()
+
+
+def test_an_expired_token_counts_calls_without_a_token_too(client):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 1})
+
+    assert client.get(ENDPOINT).status_code == 401
+    assert client.get(ENDPOINT).status_code == 200
+
+
+def test_only_api_calls_use_up_an_expired_token(client, session):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 1})
+
+    client.get("/admin/failures")
+    client.get(f"/editor/api/state?session={session}")
+
+    assert failures.get_config().token_expired_calls == 1
+
+
+def test_rejected_tokens_turn_every_api_call_into_a_401(client):
+    client.patch("/admin/failures", json={"tokensRejected": True})
+
+    for headers in (bearer("abc"), bearer("null"), {}):
+        response = client.get(ENDPOINT, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"error": "Jeton refusé."}
+
+
+def test_a_token_is_refused_once_it_outlives_its_lifetime(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+
+    assert client.get(ENDPOINT, headers=bearer("old")).status_code == 200
+    clock(30)
+    assert client.get(ENDPOINT, headers=bearer("old")).status_code == 200
+    clock(0.5)
+
+    response = client.get(ENDPOINT, headers=bearer("old"))
+    assert response.status_code == 401
+    assert response.json() == {"error": "Jeton expiré."}
+
+
+def test_a_new_token_starts_its_own_clock(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+    client.get(ENDPOINT, headers=bearer("old"))
+    clock(20)
+    client.get(ENDPOINT, headers=bearer("new"))
+    clock(20)
+
+    assert client.get(ENDPOINT, headers=bearer("old")).status_code == 401
+    assert client.get(ENDPOINT, headers=bearer("new")).status_code == 200
+
+    clock(20)
+    assert client.get(ENDPOINT, headers=bearer("new")).status_code == 401
+
+
+def test_a_token_lifetime_leaves_calls_without_a_token_alone(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+    client.get(ENDPOINT)
+    clock(60)
+
+    assert client.get(ENDPOINT).status_code == 200
+
+
+def test_a_new_token_lifetime_restarts_every_clock(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+    client.get(ENDPOINT, headers=bearer("abc"))
+    clock(40)
+
+    client.patch("/admin/failures", json={"tokenLifetimeS": 60})
+
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 200
+    clock(61)
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 401
+
+
+def test_repeating_the_same_token_lifetime_keeps_the_clocks(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+    client.get(ENDPOINT, headers=bearer("abc"))
+    clock(40)
+
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 401
+
+
+def test_a_reset_forgets_the_tokens_it_has_seen(client, clock):
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+    client.get(ENDPOINT, headers=bearer("abc"))
+    clock(40)
+
+    client.delete("/admin/failures")
+    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
+
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 200
+
+
 def test_a_failing_endpoint_returns_503(client):
     client.patch("/admin/failures", json={"failEndpoints": ["listeCours"]})
 
@@ -264,7 +407,10 @@ def test_the_wildcard_fails_every_api_endpoint(client):
 
 
 def test_failure_injection_leaves_the_editor_and_admin_alone(client, session):
-    client.patch("/admin/failures", json={"failEndpoints": ["*"], "authRequired": True})
+    client.patch(
+        "/admin/failures",
+        json={"failEndpoints": ["*"], "authRequired": True, "tokensRejected": True},
+    )
 
     assert client.get("/admin/failures").status_code == 200
     assert client.get(f"/editor/api/state?session={session}").status_code == 200

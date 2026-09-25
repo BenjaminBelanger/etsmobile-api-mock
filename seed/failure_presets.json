@@ -34,6 +34,24 @@
       "authRequired": true
     }
   },
+  "token-expired": {
+    "description": "The next 3 API calls return 401 for an expired token, then calls succeed",
+    "config": {
+      "tokenExpiredCalls": 3
+    }
+  },
+  "token-rejected": {
+    "description": "Every API call returns 401, whatever the token",
+    "config": {
+      "tokensRejected": true
+    }
+  },
+  "token-lifetime": {
+    "description": "A token is refused with 401 once it is 30s old; a new token starts its own clock",
+    "config": {
+      "tokenLifetimeS": 30
+    }
+  },
   "corrupt": {
     "description": "Truncate every successful response body in half",
     "config": {

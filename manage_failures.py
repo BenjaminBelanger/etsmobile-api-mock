@@ -134,6 +134,20 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         default=None,
         help="Require Authorization header",
     )
+    parser.add_argument(
+        "--token-expired", type=int, help="Answer the next N API calls with 401"
+    )
+    parser.add_argument(
+        "--tokens-rejected",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Answer every API call with 401",
+    )
+    parser.add_argument(
+        "--token-lifetime",
+        type=float,
+        help="Refuse a token with 401 once it is older than this many seconds",
+    )
     return parser
 
 
@@ -153,6 +167,12 @@ def _custom_args_to_config(args: argparse.Namespace) -> dict:
         config["malformed"] = args.malformed
     if args.auth is not None:
         config["authRequired"] = args.auth
+    if args.token_expired is not None:
+        config["tokenExpiredCalls"] = args.token_expired
+    if args.tokens_rejected is not None:
+        config["tokensRejected"] = args.tokens_rejected
+    if args.token_lifetime is not None:
+        config["tokenLifetimeS"] = args.token_lifetime
     return config
 
 

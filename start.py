@@ -21,6 +21,9 @@ FAILURE_ENV = {
     "timeoutDurationS": "TIMEOUT_DURATION_S",
     "malformed": "MALFORMED",
     "authRequired": "AUTH_REQUIRED",
+    "tokenExpiredCalls": "TOKEN_EXPIRED_CALLS",
+    "tokensRejected": "TOKENS_REJECTED",
+    "tokenLifetimeS": "TOKEN_LIFETIME_S",
 }
 
 MANAGED_ENV = (
@@ -48,6 +51,9 @@ CONFIG_FLAGS = (
     "timeout_duration",
     "malformed",
     "auth",
+    "token_expired",
+    "tokens_rejected",
+    "token_lifetime",
 )
 
 DAY_NAMES = {
@@ -146,6 +152,20 @@ def _seconds(raw: str) -> float:
         ) from None
     if val < 0:
         raise argparse.ArgumentTypeError(f"expected a number of seconds, got {val}")
+    return val
+
+
+def _count(raw: str) -> int:
+    try:
+        val = int(raw)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"expected a whole number of calls, got {raw!r}"
+        ) from None
+    if val < 0:
+        raise argparse.ArgumentTypeError(
+            f"expected a whole number of calls, got {val}"
+        )
     return val
 
 
@@ -308,6 +328,26 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Exige un header Authorization.",
         default=None,
     )
+    failures.add_argument(
+        "--token-expired",
+        type=_count,
+        metavar="N",
+        help="Les N prochains appels retournent 401 (jeton expiré).",
+        default=None,
+    )
+    failures.add_argument(
+        "--tokens-rejected",
+        action=argparse.BooleanOptionalAction,
+        help="Chaque appel retourne 401, peu importe le jeton.",
+        default=None,
+    )
+    failures.add_argument(
+        "--token-lifetime",
+        type=_seconds,
+        metavar="S",
+        help="Refuse un jeton (401) une fois qu'il a plus de S secondes.",
+        default=None,
+    )
     return parser
 
 
@@ -336,6 +376,9 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
         "timeoutDurationS": args.timeout_duration,
         "malformed": args.malformed,
         "authRequired": args.auth,
+        "tokenExpiredCalls": args.token_expired,
+        "tokensRejected": args.tokens_rejected,
+        "tokenLifetimeS": args.token_lifetime,
     }
     overrides = {k: v for k, v in explicit.items() if v is not None}
     if overrides:

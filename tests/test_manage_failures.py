@@ -101,6 +101,11 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "10",
             "--malformed",
             "--auth",
+            "--token-expired",
+            "3",
+            "--tokens-rejected",
+            "--token-lifetime",
+            "30",
         ]
     )
 
@@ -116,13 +121,20 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "timeoutDurationS": 10.0,
             "malformed": True,
             "authRequired": True,
+            "tokenExpiredCalls": 3,
+            "tokensRejected": True,
+            "tokenLifetimeS": 30.0,
         },
     )
 
 
 def test_the_negative_form_of_a_boolean_flag_is_sent(http):
-    manage_failures.cmd_custom(["--no-malformed", "--no-auth"])
-    assert http.calls[-1][2] == {"malformed": False, "authRequired": False}
+    manage_failures.cmd_custom(["--no-malformed", "--no-auth", "--no-tokens-rejected"])
+    assert http.calls[-1][2] == {
+        "malformed": False,
+        "authRequired": False,
+        "tokensRejected": False,
+    }
 
 
 def test_a_custom_config_resets_before_patching(http):
