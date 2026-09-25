@@ -562,3 +562,56 @@ describe("clearing the log", () => {
     app.close();
   });
 });
+
+describe("exporting the log", () => {
+  test("is only offered when there is something to export", async () => {
+    const empty = await onCalls();
+    assert.equal(empty.byId("callsExportBtn").disabled, true);
+    empty.close();
+
+    const app = await onCalls([callEntry({ id: 1 })]);
+    assert.equal(app.byId("callsExportBtn").disabled, false);
+    app.close();
+  });
+
+  test("downloads the log as JSON in the endpoint's format", async () => {
+    const entries = [
+      callEntry({ id: 4, ...GRADES, failures: [{ kind: "latency", ms: 120 }] }),
+      markerEntry({ id: 5, label: "notes ouvertes" }),
+      callEntry({ id: 6, status: null, durationMs: null, bytes: null }),
+    ];
+    const app = await onCalls(entries);
+
+    await app.click(app.byId("callsExportBtn"));
+
+    assert.equal(app.downloads.length, 1);
+    const [download] = app.downloads;
+    assert.match(download.name, /^api-calls-\d{4}-\d{2}-\d{2}-\d{4}\.json$/);
+    assert.equal(download.blob.type, "application/json");
+    assert.deepEqual(JSON.parse(await download.blob.text()), { entries, firstId: 4 });
+    app.close();
+  });
+
+  test("names the file after the local date and time", async () => {
+    const app = await onCalls([callEntry({ id: 1 })]);
+    const before = new Date();
+
+    await app.click(app.byId("callsExportBtn"));
+
+    const after = new Date();
+    const pad = (value) => String(value).padStart(2, "0");
+    const day = (d) => `api-calls-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}-`;
+    const name = app.downloads[0].name;
+    assert.equal(name.startsWith(day(before)) || name.startsWith(day(after)), true);
+    app.close();
+  });
+
+  test("lets go of the temporary file once the download started", async () => {
+    const app = await onCalls([callEntry({ id: 1 })]);
+
+    await app.click(app.byId("callsExportBtn"));
+
+    assert.deepEqual(app.liveObjectUrls(), []);
+    app.close();
+  });
+});

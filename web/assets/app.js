@@ -65,6 +65,7 @@ const el = {
   callRows: document.getElementById("callRows"),
   callsEmpty: document.getElementById("callsEmpty"),
   callsClearBtn: document.getElementById("callsClearBtn"),
+  callsExportBtn: document.getElementById("callsExportBtn"),
   callsTotal: document.getElementById("callsTotal"),
   endpointStats: document.getElementById("endpointStats"),
   endpointStatsRows: document.getElementById("endpointStatsRows"),
@@ -2172,6 +2173,7 @@ function renderCalls(stick) {
   el.callsTable.hidden = !entries.length;
   el.callsEmpty.hidden = entries.length > 0;
   el.callsClearBtn.disabled = !entries.length;
+  el.callsExportBtn.disabled = !entries.length;
   renderEndpointStats(calls, repeats);
   if (atBottom) board.scrollTop = board.scrollHeight;
 }
@@ -2237,6 +2239,21 @@ async function changeCalls(path, options, message) {
   }
   await loadCalls(true);
   return saved;
+}
+
+function exportCalls() {
+  if (!state.calls.length) return;
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(
+    now.getHours()
+  )}${pad(now.getMinutes())}`;
+  const body = JSON.stringify({ entries: state.calls, firstId: state.calls[0].id }, null, 2);
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `api-calls-${stamp}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url));
 }
 
 function addMarker() {
@@ -2355,6 +2372,7 @@ el.failuresRedoBtn.addEventListener("click", redoFailures);
 el.callsClearBtn.addEventListener("click", () =>
   changeCalls("", { method: "DELETE" }, "Journal effacé")
 );
+el.callsExportBtn.addEventListener("click", exportCalls);
 el.markerAddBtn.addEventListener("click", addMarker);
 el.markerLabel.addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;

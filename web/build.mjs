@@ -20,6 +20,7 @@ const ICONS = {
   dismiss: "dismiss_20_regular",
   dismissCircle: "dismiss_circle_20_regular",
   documentError: "document_error_20_regular",
+  download: "arrow_download_20_regular",
   edit: "edit_20_regular",
   flash: "flash_20_regular",
   hatGraduation: "hat_graduation_20_regular",

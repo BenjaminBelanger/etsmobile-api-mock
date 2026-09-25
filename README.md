@@ -333,6 +333,9 @@ Use it to see when and how often the app calls the API:
   press Enter) just before doing something in the app. The calls that follow
   are grouped under the marker with their count and size, so you can see which
   calls that one action triggers. An empty label gives a numbered marker.
+- The download button saves the log as a JSON file in the same format as the
+  endpoint below, for example to compare the calls an action makes before and
+  after a change in the app.
 - The trash button clears the log.
 
 The log is kept in memory. It holds the last 1000 entries and starts over when

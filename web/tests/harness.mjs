@@ -491,6 +491,20 @@ export async function mount(options = {}) {
   window.Element.prototype.releasePointerCapture = function () {};
   window.PointerEvent = window.MouseEvent;
   window.fetch = server.fetch;
+
+  const downloads = [];
+  const objectUrls = new Map();
+  window.URL.createObjectURL = (blob) => {
+    const url = `blob:http://localhost:8080/${objectUrls.size + downloads.length + 1}`;
+    objectUrls.set(url, blob);
+    return url;
+  };
+  window.URL.revokeObjectURL = (url) => objectUrls.delete(url);
+  window.HTMLAnchorElement.prototype.click = function () {
+    if (this.download) {
+      downloads.push({ name: this.download, blob: objectUrls.get(this.href) });
+    }
+  };
   window.icon = (name, size = 20) =>
     `<svg class="icon" data-name="${name}" width="${size}" height="${size}"></svg>`;
 
@@ -506,6 +520,8 @@ export async function mount(options = {}) {
     window,
     document: window.document,
     server,
+    downloads,
+    liveObjectUrls: () => [...objectUrls.keys()],
     byId: (id) => window.document.getElementById(id),
     query: (selector) => window.document.querySelector(selector),
     queryAll: (selector) => [...window.document.querySelectorAll(selector)],
