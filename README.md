@@ -324,16 +324,16 @@ timeout injection) shows as *en cours* until it does.
 
 Use it to see when and how often the app calls the API:
 
-- Calls with the same endpoint and the same parameters get a `×N` badge, and
-  every one after the first is highlighted. These are calls the app could cache
+- Calls with the same endpoint and the same parameters get a `×N` mark, shown
+  in orange on every one after the first. These are calls the app could cache
   or skip.
-- The **Par endpoint** panel shows, for each endpoint, the number of calls, the
-  total size, the average duration and how many calls were repeats.
+- The **Par endpoint** panel shows, for each endpoint, the number of calls, how
+  many were repeats and the total size, with a total row at the bottom.
 - Type a label such as `notes ouvertes`, then click **Ajouter un marqueur** (or
   press Enter) just before doing something in the app. The calls that follow
   are grouped under the marker with their count and size, so you can see which
   calls that one action triggers. An empty label gives a numbered marker.
-- The broom button clears the log.
+- The trash button clears the log.
 
 The log is kept in memory. It holds the last 1000 entries and starts over when
 the server restarts.

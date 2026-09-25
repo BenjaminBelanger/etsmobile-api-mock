@@ -31,19 +31,15 @@ const rowIds = (app) => app.queryAll("#callRows tr").map((row) => Number(row.dat
 const cells = (row) =>
   [...row.cells].map((cell) => cell.textContent.trim().replace(/\s+/g, " "));
 
-const chips = (row) =>
-  [...row.querySelectorAll(".call-failure")].map((chip) => ({
-    text: chip.textContent.trim(),
-    icon: chip.querySelector("svg").dataset.name,
-  }));
+const failures = (row) =>
+  [...row.querySelectorAll(".call-failure")].map((failure) => failure.textContent.trim());
 
 const reads = (app) => app.server.callLog.called("", "GET").map((call) => call.query);
 
 const stats = (app) =>
-  app.queryAll("#endpointStats .endpoint-stat").map((item) => ({
-    endpoint: item.dataset.endpoint,
-    count: item.querySelector(".endpoint-stat__count").textContent.trim(),
-    details: item.querySelector(".endpoint-stat__details").textContent.trim(),
+  app.queryAll("#endpointStatsRows tr").map((row) => ({
+    endpoint: row.dataset.endpoint,
+    cells: cells(row).slice(1),
   }));
 
 describe("the calls tab", () => {
@@ -188,20 +184,12 @@ describe("the call list", () => {
       callEntry({ id: 5, status: 401, failures: [{ kind: "auth" }] }),
     ]);
 
-    assert.deepEqual(chips(rowFor(app, 1)), [
-      { text: "Latence 340 ms", icon: "timer" },
-      { text: "Réponse tronquée", icon: "documentError" },
-    ]);
-    assert.deepEqual(chips(rowFor(app, 2)), [
-      { text: "Expiration après 30 s", icon: "hourglass" },
-    ]);
-    assert.deepEqual(chips(rowFor(app, 3)), [
-      { text: "Endpoint en panne", icon: "plugDisconnected" },
-    ]);
-    assert.deepEqual(chips(rowFor(app, 4)), [{ text: "Erreur aléatoire", icon: "warning" }]);
-    assert.deepEqual(chips(rowFor(app, 5)), [
-      { text: "Authentification manquante", icon: "lockClosed" },
-    ]);
+    assert.deepEqual(failures(rowFor(app, 1)), ["Latence 340 ms", "Réponse tronquée"]);
+    assert.equal(cells(rowFor(app, 1))[6], "Latence 340 ms, Réponse tronquée");
+    assert.deepEqual(failures(rowFor(app, 2)), ["Expiration après 30 s"]);
+    assert.deepEqual(failures(rowFor(app, 3)), ["Endpoint en panne"]);
+    assert.deepEqual(failures(rowFor(app, 4)), ["Erreur aléatoire"]);
+    assert.deepEqual(failures(rowFor(app, 5)), ["Authentification manquante"]);
     app.close();
   });
 
@@ -345,39 +333,32 @@ describe("markers", () => {
 });
 
 describe("per-endpoint stats", () => {
-  test("count calls, total size and average duration, busiest first", async () => {
+  test("count calls, repeats and total size, busiest first", async () => {
     const app = await onCalls([
-      callEntry({ id: 1, endpoint: "listeCours", durationMs: 8, bytes: 900 }),
-      callEntry({ id: 2, ...GRADES, durationMs: 10, bytes: 1024 }),
-      callEntry({ id: 3, ...GRADES, durationMs: 20, bytes: 1024 }),
-      callEntry({ id: 4, ...GRADES, params: {}, durationMs: 30, bytes: 1024 }),
+      callEntry({ id: 1, endpoint: "listeCours", bytes: 900 }),
+      callEntry({ id: 2, ...GRADES, bytes: 1024 }),
+      callEntry({ id: 3, ...GRADES, bytes: 1024 }),
+      callEntry({ id: 4, ...GRADES, params: {}, bytes: 1024 }),
     ]);
 
     assert.deepEqual(stats(app), [
-      {
-        endpoint: "listeElementsEvaluation",
-        count: "3 appels",
-        details: "3 ko au total · 20 ms en moyenne · 1 répété",
-      },
-      { endpoint: "listeCours", count: "1 appel", details: "900 o au total · 8 ms en moyenne" },
+      { endpoint: "listeElementsEvaluation", cells: ["3", "1", "3 ko"] },
+      { endpoint: "listeCours", cells: ["1", "", "900 o"] },
     ]);
-    assert.equal(
-      app.byId("callsTotal").textContent,
-      "4 appels · 3,9 ko au total · 17 ms en moyenne · 1 répété",
-    );
+    assert.deepEqual(cells(app.byId("callsTotal")), ["Total", "4", "1", "3,9 ko"]);
     app.close();
   });
 
-  test("leave calls still running out of the size and average", async () => {
+  test("leave calls still running out of the size", async () => {
     const app = await onCalls([
-      callEntry({ id: 1, durationMs: 10, bytes: 1024 }),
+      callEntry({ id: 1, bytes: 1024 }),
       callEntry({ id: 2, params: { session: "H2026" }, status: null, durationMs: null, bytes: null }),
       callEntry({ id: 3, endpoint: "listeCoequipiers", status: null, durationMs: null, bytes: null }),
     ]);
 
     assert.deepEqual(stats(app), [
-      { endpoint: "listeCours", count: "2 appels", details: "1 ko au total · 10 ms en moyenne" },
-      { endpoint: "listeCoequipiers", count: "1 appel", details: "en cours" },
+      { endpoint: "listeCours", cells: ["2", "", "1 ko"] },
+      { endpoint: "listeCoequipiers", cells: ["1", "", ""] },
     ]);
     app.close();
   });
@@ -386,7 +367,8 @@ describe("per-endpoint stats", () => {
     const app = await onCalls([markerEntry({ id: 1 })]);
 
     assert.deepEqual(stats(app), []);
-    assert.equal(app.byId("callsTotal").textContent, "Aucun appel.");
+    assert.equal(app.byId("endpointStats").hidden, true);
+    assert.equal(app.byId("endpointStatsEmpty").hidden, false);
     app.close();
   });
 });

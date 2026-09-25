@@ -66,6 +66,8 @@ const el = {
   callsClearBtn: document.getElementById("callsClearBtn"),
   callsTotal: document.getElementById("callsTotal"),
   endpointStats: document.getElementById("endpointStats"),
+  endpointStatsRows: document.getElementById("endpointStatsRows"),
+  endpointStatsEmpty: document.getElementById("endpointStatsEmpty"),
   markerLabel: document.getElementById("markerLabel"),
   markerAddBtn: document.getElementById("markerAddBtn"),
   sessionSelect: document.getElementById("sessionSelect"),
@@ -2047,19 +2049,12 @@ const paramsHtml = (params) =>
     .join(" ");
 
 function callFailureHtml(failure) {
-  const kind = kindById(failure.kind);
   const label = CALL_FAILURES[failure.kind]?.(failure) ?? failure.kind;
-  return `<span class="call-failure" data-failure="${escapeHtml(failure.kind)}">${icon(
-    kind ? kind.icon : "warning",
-    12
-  )}${escapeHtml(label)}</span>`;
+  return `<span class="call-failure">${escapeHtml(label)}</span>`;
 }
 
 function repeatHtml({ nth, total }) {
-  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">${icon(
-    "repeat",
-    12
-  )}×${total}</span>`;
+  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">×${total}</span>`;
 }
 
 function callRowHtml(call, repeat) {
@@ -2074,11 +2069,7 @@ function callRowHtml(call, repeat) {
       <td class="calls__num calls__status">${statusHtml(call.status)}</td>
       <td class="calls__num calls__duration">${pending ? "" : fmtDuration(call.durationMs)}</td>
       <td class="calls__num calls__size">${pending ? "" : fmtBytes(call.bytes)}</td>
-      <td class="calls__failures">${
-        call.failures.length
-          ? `<span class="call-failures">${call.failures.map(callFailureHtml).join("")}</span>`
-          : ""
-      }</td>
+      <td class="calls__failures">${call.failures.map(callFailureHtml).join(", ")}</td>
     </tr>`;
 }
 
@@ -2088,7 +2079,7 @@ function markerRowHtml(marker, section) {
     : "aucun appel";
   return `<tr class="marker" data-id="${marker.id}">
       <td class="calls__time">${fmtClock(marker.time)}</td>
-      <td colspan="6"><span class="marker__label">${icon("flag", 14)}${escapeHtml(
+      <td colspan="6"><span class="marker__label">${escapeHtml(
         marker.label
       )}</span><span class="marker__summary">${summary}</span></td>
     </tr>`;
@@ -2103,14 +2094,12 @@ function endpointStats(calls, repeats) {
       repeated: 0,
       done: 0,
       bytes: 0,
-      durationMs: 0,
     };
     row.calls += 1;
     if (repeats.get(call.id).nth > 1) row.repeated += 1;
     if (call.status != null) {
       row.done += 1;
       row.bytes += call.bytes;
-      row.durationMs += call.durationMs;
     }
     rows.set(call.endpoint, row);
   });
@@ -2119,15 +2108,10 @@ function endpointStats(calls, repeats) {
   );
 }
 
-function statDetails(row) {
-  const parts = row.done
-    ? [`${fmtBytes(row.bytes)} au total`, `${fmtDuration(row.durationMs / row.done)} en moyenne`]
-    : ["en cours"];
-  if (row.repeated) {
-    parts.push(`<span class="stat-repeat">${plural(row.repeated, "répété")}</span>`);
-  }
-  return parts.join(" · ");
-}
+const statCells = (row) => `
+      <td class="endpoint-stats__num">${row.calls}</td>
+      <td class="endpoint-stats__num endpoint-stats__repeated">${row.repeated || ""}</td>
+      <td class="endpoint-stats__num">${row.done ? fmtBytes(row.bytes) : ""}</td>`;
 
 function renderEndpointStats(calls, repeats) {
   const rows = endpointStats(calls, repeats);
@@ -2137,24 +2121,21 @@ function renderEndpointStats(calls, repeats) {
       repeated: sum.repeated + row.repeated,
       done: sum.done + row.done,
       bytes: sum.bytes + row.bytes,
-      durationMs: sum.durationMs + row.durationMs,
     }),
-    { calls: 0, repeated: 0, done: 0, bytes: 0, durationMs: 0 }
+    { calls: 0, repeated: 0, done: 0, bytes: 0 }
   );
-  el.callsTotal.innerHTML = total.calls
-    ? `<b>${plural(total.calls, "appel")}</b> · ${statDetails(total)}`
-    : "Aucun appel.";
-  el.endpointStats.innerHTML = rows
+  el.endpointStats.hidden = !total.calls;
+  el.endpointStatsEmpty.hidden = total.calls > 0;
+  el.endpointStatsRows.innerHTML = rows
     .map(
-      (row) => `<li class="endpoint-stat" data-endpoint="${escapeHtml(row.endpoint)}">
-        <span class="endpoint-stat__name" title="${escapeHtml(row.endpoint)}">${escapeHtml(
-          row.endpoint
-        )}</span>
-        <span class="endpoint-stat__count">${plural(row.calls, "appel")}</span>
-        <span class="endpoint-stat__details">${statDetails(row)}</span>
-      </li>`
+      (row) => `<tr data-endpoint="${escapeHtml(row.endpoint)}">
+        <th scope="row" title="${escapeHtml(row.endpoint)}">${escapeHtml(row.endpoint)}</th>${statCells(
+          row
+        )}
+      </tr>`
     )
     .join("");
+  el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
 }
 
 function renderCalls(stick) {
