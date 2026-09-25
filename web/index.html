@@ -16,6 +16,7 @@
           <fluent-tablist id="viewToggle" appearance="subtle" size="small" activeid="viewSchedule" aria-label="Vue">
             <fluent-tab id="viewSchedule" data-view="schedule">Horaire</fluent-tab>
             <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
+            <fluent-tab id="viewCalls" data-view="calls">Appels</fluent-tab>
           </fluent-tablist>
 
           <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
@@ -81,6 +82,19 @@
             Ajouter une panne
           </fluent-button>
         </div>
+
+        <div class="toolbar" id="callsToolbar" hidden>
+          <fluent-button id="callsClearBtn" appearance="subtle" icon-only data-icon="broom" aria-label="Effacer le journal" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="callsClearBtn">Effacer le journal</fluent-tooltip>
+
+          <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
+
+          <fluent-text-input id="markerLabel" appearance="filled-darker" placeholder="ex. : notes ouvertes" maxlength="120" aria-label="Nom du marqueur"></fluent-text-input>
+          <fluent-button id="markerAddBtn" appearance="primary">
+            <span slot="start" data-icon="flag" data-icon-size="16"></span>
+            Ajouter un marqueur
+          </fluent-button>
+        </div>
       </header>
 
       <main class="layout" id="scheduleView">
@@ -130,6 +144,39 @@
               <h2>Scénarios</h2>
             </header>
             <ul class="presets" id="presetList"></ul>
+          </section>
+        </aside>
+      </main>
+
+      <main class="layout" id="callsView" hidden>
+        <section class="board board--list board--log" id="callsBoard">
+          <table class="calls" id="callsTable" hidden>
+            <thead>
+              <tr>
+                <th scope="col">Heure</th>
+                <th scope="col">Endpoint</th>
+                <th scope="col">Paramètres</th>
+                <th scope="col" class="calls__num">Statut</th>
+                <th scope="col" class="calls__num">Durée</th>
+                <th scope="col" class="calls__num">Taille</th>
+                <th scope="col">Panne</th>
+              </tr>
+            </thead>
+            <tbody id="callRows"></tbody>
+          </table>
+          <div class="board__empty" id="callsEmpty">
+            <p>Aucun appel reçu. Les requêtes vers /api/ s’afficheront ici.</p>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="dataBar" data-icon-size="16"></span>
+              <h2>Par endpoint</h2>
+            </header>
+            <p class="stats-total" id="callsTotal"></p>
+            <ul class="endpoint-stats" id="endpointStats"></ul>
           </section>
         </aside>
       </main>

@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { afterEach } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { JSDOM } from "jsdom";
@@ -25,6 +26,11 @@ const GRID = { left: 0, top: 0, width: 600, height: 907 };
 export const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const refused = new Set();
+const mounted = new Set();
+
+afterEach(() => {
+  mounted.forEach((harness) => harness.close());
+});
 
 function ignoreRefusedRejections() {
   process.removeAllListeners("unhandledRejection");
@@ -275,6 +281,122 @@ function createAdmin(options) {
   return admin;
 }
 
+const CALLS = "/admin/calls";
+
+const CALL_ENTRY = {
+  id: 1,
+  kind: "call",
+  time: "",
+  endpoint: "listeCours",
+  path: "/api/Etudiant/listeCours",
+  params: {},
+  status: 200,
+  durationMs: 4.2,
+  bytes: 1834,
+  failures: [],
+};
+
+const MARKER_ENTRY = {
+  id: 1,
+  kind: "marker",
+  time: "",
+  label: "Marqueur 1",
+};
+
+export const at = (hours, minutes, seconds, ms = 0) =>
+  new Date(2026, 8, 25, hours, minutes, seconds, ms).toISOString();
+
+export const callEntry = (fields = {}) => ({
+  ...clone(CALL_ENTRY),
+  time: at(14, 3, 12, 345),
+  path: `/api/Etudiant/${fields.endpoint || CALL_ENTRY.endpoint}`,
+  ...fields,
+});
+
+export const markerEntry = (fields = {}) => ({
+  ...clone(MARKER_ENTRY),
+  time: at(14, 3, 0),
+  ...fields,
+});
+
+function createCallLog(options) {
+  const calls = [];
+  const replies = new Map();
+  let entries = clone(options.calls || []);
+  let nextId = 1;
+  const bump = () => {
+    nextId = Math.max(nextId, ...entries.map((entry) => entry.id + 1));
+  };
+  bump();
+
+  const reply = (payload, status = 200) => ({
+    ok: status === 200,
+    status,
+    statusText: "Error",
+    json: async () => clone(payload),
+  });
+
+  const log = {
+    calls,
+    get entries() {
+      return entries;
+    },
+    set entries(next) {
+      entries = clone(next);
+      bump();
+    },
+    add(...added) {
+      entries.push(...clone(added));
+      bump();
+    },
+    update(id, fields) {
+      Object.assign(
+        entries.find((entry) => entry.id === id),
+        clone(fields),
+      );
+    },
+    fail(method, path, payload, status = 500) {
+      replies.set(`${method} ${path}`, { payload, status });
+    },
+    heal(method, path) {
+      replies.delete(`${method} ${path}`);
+    },
+    called(path, method) {
+      return calls.filter(
+        (call) => call.path === path && (!method || call.method === method),
+      );
+    },
+    handle(href, request) {
+      const [path, query = ""] = href.slice(CALLS.length).split("?");
+      const method = request.method || "GET";
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, query, method, body });
+
+      const canned = replies.get(`${method} ${path}`);
+      if (canned) return reply(canned.payload, canned.status);
+
+      if (path === "/marker") {
+        const marker = {
+          id: nextId,
+          kind: "marker",
+          time: new Date().toISOString(),
+          label: body.label,
+        };
+        nextId += 1;
+        entries.push(marker);
+        return reply(marker);
+      }
+      if (method === "DELETE") entries = [];
+      const after = Number(new URLSearchParams(query).get("after") || 0);
+      return reply({
+        entries: entries.filter((entry) => entry.id > after),
+        firstId: entries.length ? entries[0].id : nextId,
+      });
+    },
+  };
+  return log;
+}
+
 function createServer(initial, options) {
   const calls = [];
   const replies = new Map();
@@ -283,6 +405,7 @@ function createServer(initial, options) {
   const server = {
     calls,
     admin: createAdmin(options),
+    callLog: createCallLog(options),
     get state() {
       return current;
     },
@@ -307,6 +430,7 @@ function createServer(initial, options) {
     fetch: async (url, request = {}) => {
       const href = String(url);
       if (href.startsWith(ADMIN)) return server.admin.handle(href, request);
+      if (href.startsWith(CALLS)) return server.callLog.handle(href, request);
       const [rawPath, query] = href.replace("/editor/api", "").split("?");
       const call = {
         path: rawPath,
@@ -470,9 +594,11 @@ export async function mount(options = {}) {
       await flush();
     },
     close() {
+      mounted.delete(harness);
       window.close();
     },
   };
 
+  mounted.add(harness);
   return harness;
 }

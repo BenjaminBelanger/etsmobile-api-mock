@@ -96,6 +96,15 @@ def clean_failures():
     failures.reset_config()
 
 
+@pytest.fixture(autouse=True)
+def clean_call_log():
+    from lib import call_log
+
+    call_log.clear()
+    yield
+    call_log.clear()
+
+
 @pytest.fixture
 def reconfigure(monkeypatch):
     def apply(**env):

@@ -13,6 +13,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 - [Profiles](#profiles)
 - [Scenarios](#scenarios)
 - [Failure Injection](#failure-injection)
+- [Call Log](#call-log)
 - [Sample Data](#sample-data)
 - [Authentication](#authentication)
 - [Customizing Data](#customizing-data)
@@ -50,8 +51,9 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has two tabs: **Horaire**, the schedule editor described below, and
-**Pannes**, the [failure injection](#failure-injection) panel.
+The page has three tabs: **Horaire**, the schedule editor described below,
+**Pannes**, the [failure injection](#failure-injection) panel, and **Appels**,
+the [call log](#call-log).
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -234,7 +236,8 @@ The mock can simulate broken-server conditions. Set them at startup with flags, 
 
 The **Pannes** tab lists the active injections, lets you edit, add and remove
 them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
-CLI, so both describe the same config.
+CLI, so both describe the same config. The [call log](#call-log) shows which
+calls each injection hit.
 
 <img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
 
@@ -310,6 +313,79 @@ python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail liste
 | `chaos` | Latency + errors + corrupted bodies all at once |
 
 Add new presets by editing `seed/failure_presets.json`.
+
+## Call Log
+
+The **Appels** tab of the web UI lists every call the mock receives under
+`/api/`, oldest first, and refreshes itself every second. Each row shows the
+time, endpoint, parameters, status, duration, response size and the injected
+failure, if any. A call that has not answered yet (for example one held by a
+timeout injection) shows as *en cours* until it does.
+
+Use it to see when and how often the app calls the API:
+
+- Calls with the same endpoint and the same parameters get a `×N` badge, and
+  every one after the first is highlighted. These are calls the app could cache
+  or skip.
+- The **Par endpoint** panel shows, for each endpoint, the number of calls, the
+  total size, the average duration and how many calls were repeats.
+- Type a label such as `notes ouvertes`, then click **Ajouter un marqueur** (or
+  press Enter) just before doing something in the app. The calls that follow
+  are grouped under the marker with their count and size, so you can see which
+  calls that one action triggers. An empty label gives a numbered marker.
+- The broom button clears the log.
+
+The log is kept in memory. It holds the last 1000 entries and starts over when
+the server restarts.
+
+### Runtime access via admin endpoint
+
+```bash
+# List the log
+curl http://localhost:8080/admin/calls
+
+# Only the entries newer than id 42
+curl "http://localhost:8080/admin/calls?after=42"
+
+# Add a marker
+curl -X POST http://localhost:8080/admin/calls/marker \
+  -H 'Content-Type: application/json' \
+  -d '{"label": "notes ouvertes"}'
+
+# Clear the log
+curl -X DELETE http://localhost:8080/admin/calls
+```
+
+```json
+{
+  "entries": [
+    {"id": 7, "time": "2026-09-25T14:26:32.391+00:00", "kind": "marker", "label": "notes ouvertes"},
+    {
+      "id": 8,
+      "time": "2026-09-25T14:26:32.407+00:00",
+      "kind": "call",
+      "endpoint": "listeElementsEvaluation",
+      "path": "/api/Etudiant/listeElementsEvaluation",
+      "params": {"session": "H2026", "sigle": "LOG430", "groupe": "01"},
+      "status": 200,
+      "durationMs": 84.3,
+      "bytes": 244,
+      "failures": [{"kind": "latency", "ms": 82}]
+    }
+  ],
+  "firstId": 1
+}
+```
+
+- `time` is when the call came in, in UTC.
+- `durationMs` includes injected latency and timeouts. `bytes` is the size of
+  the body actually sent, so a truncated body counts its truncated size.
+- `status`, `durationMs` and `bytes` are `null` while the call is running.
+- `failures` lists what failure injection did to the call: `latency` (with
+  `ms`), `errorRate`, `fail`, `timeout` (with `seconds`), `malformed` or `auth`.
+- `firstId` is the id of the oldest entry still kept, or the next id when the
+  log is empty. A client that polls with `after` can drop the entries it holds
+  below that id, since they were cleared or pushed out.
 
 ## Sample Data
 
