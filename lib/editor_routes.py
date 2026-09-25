@@ -3,7 +3,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import schedule_editor
+from . import schedule_editor, student_editor
 from ._paths import ROOT
 
 WEB_DIR = ROOT / "web"
@@ -101,6 +101,18 @@ class CoteBody(BaseModel):
     session: str
     courseId: str
     cote: str = ""
+
+
+class StudentFieldBody(BaseModel):
+    session: str = ""
+    field: str
+    value: bool | str | None = None
+
+
+class SessionDateBody(BaseModel):
+    session: str
+    field: str
+    value: str | None = None
 
 
 def _guard(func, *args, **kwargs):
@@ -269,3 +281,37 @@ def redo(body: SessionBody):
 @router.post("/api/reset")
 def reset(body: SessionBody):
     return _guard(schedule_editor.reset_session, body.session)
+
+
+@router.get("/api/student/state")
+def student_state(session: str = Query("")):
+    return _guard(student_editor.get_state, session)
+
+
+@router.post("/api/student/profile")
+def student_profile(body: StudentFieldBody):
+    return _guard(
+        student_editor.set_student_field, body.session, body.field, body.value
+    )
+
+
+@router.post("/api/student/session-date")
+def student_session_date(body: SessionDateBody):
+    return _guard(
+        student_editor.set_session_date, body.session, body.field, body.value
+    )
+
+
+@router.post("/api/student/undo")
+def student_undo(body: SessionBody):
+    return _guard(student_editor.undo, body.session)
+
+
+@router.post("/api/student/redo")
+def student_redo(body: SessionBody):
+    return _guard(student_editor.redo, body.session)
+
+
+@router.post("/api/student/reset")
+def student_reset(body: SessionBody):
+    return _guard(student_editor.reset, body.session)

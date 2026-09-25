@@ -6,13 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from lib import schedule_editor
+from lib import schedule_editor, student_editor
 from lib._paths import ROOT
 
 WEB = ROOT / "web"
 UI_TESTS = WEB / "tests"
 HARNESS = UI_TESTS / "harness.mjs"
 FIXTURE = UI_TESTS / "fixtures" / "state.json"
+STUDENT_FIXTURE = UI_TESTS / "fixtures" / "student.json"
 SESSION = "H2026"
 
 
@@ -145,6 +146,36 @@ def test_the_failures_panel_only_talks_to_routes_the_server_serves():
 
     called = set(re.findall(r'adminFetch\(\s*"([^"]*)"', script))
     called |= set(re.findall(r"\$\{ADMIN\}(/\w+)", script))
+
+    assert called
+    assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
+
+
+def test_the_ui_student_fixture_matches_the_state_the_server_sends():
+    served = student_editor.get_state(SESSION)
+    fixture = json.loads(STUDENT_FIXTURE.read_text(encoding="utf-8"))
+
+    assert keys_of(fixture) == keys_of(served)
+    assert keys_of(fixture["dates"][0]) == keys_of(served["dates"][0])
+    assert keys_of(fixture["student"][0]) == keys_of(served["student"][0])
+    assert [row["key"] for row in fixture["dates"]] == [row["key"] for row in served["dates"]]
+    assert [row["key"] for row in fixture["student"]] == [
+        row["key"] for row in served["student"]
+    ]
+
+
+def test_the_student_tab_only_talks_to_routes_the_server_serves():
+    from lib import editor_routes
+
+    script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+    served = {
+        route.path.replace("/editor/api/student", "")
+        for route in editor_routes.router.routes
+        if route.path.startswith("/editor/api/student")
+    }
+
+    called = set(re.findall(r'studentPost\(\s*"([^"]*)"', script))
+    called |= set(re.findall(r"\$\{STUDENT_API\}(/\w+)", script))
 
     assert called
     assert called <= served, f"the UI calls routes the server does not serve: {called - served}"

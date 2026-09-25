@@ -31,6 +31,8 @@ const state = {
   staged: [],
   endpoints: [],
   presets: [],
+  student: null,
+  scheduleStale: false,
 };
 
 const el = {
@@ -54,6 +56,16 @@ const el = {
   injectionList: document.getElementById("injectionList"),
   injectionEmpty: document.getElementById("injectionEmpty"),
   presetList: document.getElementById("presetList"),
+  studentView: document.getElementById("studentView"),
+  studentToolbar: document.getElementById("studentToolbar"),
+  studentUndoBtn: document.getElementById("studentUndoBtn"),
+  studentRedoBtn: document.getElementById("studentRedoBtn"),
+  studentResetBtn: document.getElementById("studentResetBtn"),
+  studentSessionSelect: document.getElementById("studentSessionSelect"),
+  dateList: document.getElementById("dateList"),
+  dateWarn: document.getElementById("dateWarn"),
+  dateEmpty: document.getElementById("dateEmpty"),
+  profileFields: document.getElementById("profileFields"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -748,15 +760,15 @@ function propInput(key, label, value, type, opts = {}) {
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
-  const title = pinned
-    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
-    : "";
+  const hint = opts.hint || "Valeur modifiée, videz le champ pour rétablir la valeur générée";
+  const title = pinned ? ` title="${hint}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
 
-function checkBox(key, label, checked) {
-  return `<label class="check">
+function checkBox(key, label, checked, pinned) {
+  const title = pinned ? ' title="Valeur modifiée"' : "";
+  return `<label class="check${pinned ? " is-pinned" : ""}"${title}>
         <input type="checkbox" data-key="${key}"${checked ? " checked" : ""} />
         <span>${label}</span>
       </label>`;
@@ -1940,27 +1952,275 @@ function submitFailure() {
   patchFailures(body, "Panne enregistrée").then(() => el.failureDialog.hide());
 }
 
+const STUDENT_API = `${API}/student`;
+
+const PROFILE_LABELS = {
+  nom: "Nom",
+  prenom: "Prénom",
+  codePerm: "Code permanent",
+  codeUniversel: "Code universel",
+  soldeTotal: "Solde",
+  masculin: "Masculin",
+};
+
+const DATE_LABELS = {
+  dateDebut: "Début de la session",
+  dateFin: "Fin de la session",
+  dateFinCours: "Fin des cours",
+  dateDebutChemiNot: "Début ChemiNot",
+  dateFinChemiNot: "Fin ChemiNot",
+  dateDebutAnnulationAvecRemboursement: "Début de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursement: "Fin de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursementNouveauxEtudiants:
+    "Fin de l'annulation avec remboursement (nouveaux étudiants)",
+  dateDebutAnnulationSansRemboursementNouveauxEtudiants:
+    "Début de l'annulation sans remboursement (nouveaux étudiants)",
+  dateFinAnnulationSansRemboursementNouveauxEtudiants:
+    "Fin de l'annulation sans remboursement (nouveaux étudiants)",
+  dateLimitePourAnnulerASEQ: "Date limite pour annuler l'ASEQ",
+};
+
+const DATE_ORDER = [
+  ["dateDebut", "dateFinCours"],
+  ["dateFinCours", "dateFin"],
+  ["dateDebutChemiNot", "dateFinChemiNot"],
+  ["dateDebutAnnulationAvecRemboursement", "dateFinAnnulationAvecRemboursement"],
+  [
+    "dateDebutAnnulationSansRemboursementNouveauxEtudiants",
+    "dateFinAnnulationSansRemboursementNouveauxEtudiants",
+  ],
+];
+
+const ORIGINAL_HINT = "Valeur modifiée, videz le champ pour rétablir la valeur d'origine";
+
+const dateLabel = (key) => DATE_LABELS[key] || key;
+const profileLabel = (key) => PROFILE_LABELS[key] || key;
+
+async function loadStudent(session) {
+  try {
+    const res = await fetch(`${STUDENT_API}/state?session=${encodeURIComponent(session || "")}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applyStudent(data);
+  } catch (err) {
+    setStatus("Impossible de lire le dossier étudiant.", false, true);
+    toast(err.message || "Serveur injoignable", true);
+  }
+}
+
+async function studentPost(path, body, message) {
+  setStatus("Enregistrement…", true);
+  try {
+    const res = await fetch(`${STUDENT_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    state.scheduleStale = true;
+    applyStudent(data);
+    setStatus("Enregistré.", false);
+    if (message) toast(message);
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+    renderStudent();
+  }
+}
+
+function applyStudent(data) {
+  state.student = data;
+  renderStudent();
+}
+
+function renderStudentSessions(data) {
+  const key = data.sessions.join(",");
+  if (
+    el.studentSessionSelect.dataset.key === key &&
+    dropdownValue(el.studentSessionSelect) === data.session
+  )
+    return;
+  fillDropdown(
+    el.studentSessionSelect,
+    data.sessions.map((code) => ({ value: code, text: code })),
+    data.session,
+  );
+  el.studentSessionSelect.dataset.key = key;
+}
+
+function dateRowHtml(row) {
+  const label = dateLabel(row.key);
+  const key = escapeHtml(row.key);
+  const name =
+    label === row.key
+      ? `<code class="date__key">${key}</code>`
+      : `<span class="date__label">${escapeHtml(label)}</span><code class="date__key">${key}</code>`;
+  const title = row.modified ? ` title="${ORIGINAL_HINT}"` : "";
+  const reset = row.modified
+    ? `<fluent-button class="date__reset" appearance="subtle" size="small" icon-only
+        data-reset="${key}" title="Rétablir la date d'origine"
+        aria-label="Rétablir : ${escapeHtml(label)}">${icon("reset", 16)}</fluent-button>`
+    : "";
+  return `<li class="date${row.modified ? " is-modified" : ""}">
+      <span class="date__name">${name}</span>
+      <fluent-text-input class="date__input${row.modified ? " is-pinned" : ""}" control-size="small"
+        appearance="filled-lighter" type="date" data-key="date:${key}" value="${escapeHtml(row.value)}"
+        aria-label="${escapeHtml(label)}"${title}></fluent-text-input>
+      ${reset}
+    </li>`;
+}
+
+function dateWarnings(dates) {
+  const values = Object.fromEntries(dates.map((row) => [row.key, row.value]));
+  return DATE_ORDER.filter(
+    ([start, end]) => values[start] && values[end] && values[end] < values[start]
+  ).map(([start, end]) => `« ${dateLabel(end)} » précède « ${dateLabel(start)} »`);
+}
+
+function renderDates(data) {
+  const dates = data.session ? data.dates : [];
+  el.studentSessionSelect.hidden = !data.session;
+  el.dateEmpty.hidden = !!data.session;
+  el.dateList.innerHTML = dates.map(dateRowHtml).join("");
+  const warnings = dateWarnings(dates);
+  el.dateWarn.hidden = !warnings.length;
+  el.dateWarn.innerHTML = warnings.map((line) => `<span>${escapeHtml(line)}</span>`).join("");
+  el.dateList.querySelectorAll("[data-reset]").forEach((node) => {
+    node.addEventListener("click", () => commitDate(node.dataset.reset, null));
+  });
+}
+
+function renderProfile(fields) {
+  const inputs = fields.filter((row) => typeof row.value !== "boolean");
+  const checks = fields.filter((row) => typeof row.value === "boolean");
+  el.profileFields.innerHTML = `<div class="props__grid">${inputs
+    .map((row) =>
+      propInput(`student:${row.key}`, escapeHtml(profileLabel(row.key)), row.value, "text", {
+        pinned: row.modified,
+        hint: ORIGINAL_HINT,
+      })
+    )
+    .join("")}</div>
+      <div class="props__checks">${checks
+        .map((row) =>
+          checkBox(`student:${row.key}`, escapeHtml(profileLabel(row.key)), row.value, row.modified)
+        )
+        .join("")}</div>`;
+}
+
+let renderingStudent = false;
+const typingIn = new WeakSet();
+
+function saveOnLeave(node, commit) {
+  let saved = node.value;
+  const save = () => {
+    if (renderingStudent) return;
+    typingIn.delete(node);
+    if (node.value === saved) return;
+    saved = node.value;
+    commit(node.value);
+  };
+  node.addEventListener("pointerdown", () => typingIn.delete(node));
+  node.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") node.blur();
+    else typingIn.add(node);
+  });
+  node.addEventListener("change", () => {
+    if (!typingIn.has(node)) save();
+  });
+  node.addEventListener("focusout", save);
+}
+
+function wireStudentFields() {
+  el.studentView.querySelectorAll("[data-key]").forEach((node) => {
+    const [scope, field] = node.dataset.key.split(":");
+    const commit = scope === "date" ? commitDate : commitProfile;
+    if (node.type === "checkbox") {
+      node.addEventListener("change", () => commit(field, node.checked));
+      return;
+    }
+    saveOnLeave(node, (value) => commit(field, value));
+  });
+}
+
+function restoreStudentFocus(previous) {
+  const fresh = el.studentView.querySelector(`[data-key="${previous.dataset.key}"]`);
+  if (!fresh) return;
+  if (!typingIn.has(previous)) {
+    fresh.focus();
+    return;
+  }
+  ["class", "title"].forEach((name) => {
+    if (fresh.hasAttribute(name)) previous.setAttribute(name, fresh.getAttribute(name));
+    else previous.removeAttribute(name);
+  });
+  fresh.replaceWith(previous);
+  previous.focus();
+}
+
+function renderStudent() {
+  const data = state.student;
+  if (!data) return;
+  const active = document.activeElement;
+  const focused = el.studentView.contains(active) && active.dataset.key ? active : null;
+  renderStudentSessions(data);
+  renderingStudent = true;
+  renderDates(data);
+  renderProfile(data.student);
+  renderingStudent = false;
+  wireStudentFields();
+  el.studentUndoBtn.disabled = !data.canUndo;
+  el.studentRedoBtn.disabled = !data.canRedo;
+  el.studentResetBtn.disabled = !data.canReset;
+  if (focused) restoreStudentFocus(focused);
+}
+
+function commitDate(field, value) {
+  studentPost(
+    "/session-date",
+    { session: state.student.session, field, value },
+    value == null ? "Date rétablie" : null
+  );
+}
+
+function commitProfile(field, value) {
+  studentPost("/profile", { session: state.student.session, field, value });
+}
+
+const VIEWS = {
+  schedule: {
+    tab: "viewSchedule",
+    title: "Horaire",
+    parts: ["scheduleView", "scheduleControls", "scheduleToolbar"],
+  },
+  failures: { tab: "viewFailures", title: "Pannes", parts: ["failuresView", "failuresToolbar"] },
+  student: { tab: "viewStudent", title: "Étudiant", parts: ["studentView", "studentToolbar"] },
+};
+
+function showSchedule() {
+  if (state.scheduleStale && state.session) {
+    state.scheduleStale = false;
+    loadSession(state.session);
+  } else if (state.data) {
+    renderScaffold();
+    renderBlocks(false);
+  }
+}
+
 function setView(view) {
-  if (view !== "schedule" && view !== "failures") return;
-  const tabId = view === "schedule" ? "viewSchedule" : "viewFailures";
-  if (el.viewToggle.activeid !== tabId) el.viewToggle.activeid = tabId;
+  const target = VIEWS[view];
+  if (!target) return;
+  if (el.viewToggle.activeid !== target.tab) el.viewToggle.activeid = target.tab;
   if (state.view === view) return;
   state.view = view;
-  const schedule = view === "schedule";
-  el.scheduleView.hidden = !schedule;
-  el.scheduleControls.hidden = !schedule;
-  el.scheduleToolbar.hidden = !schedule;
-  el.failuresView.hidden = schedule;
-  el.failuresToolbar.hidden = schedule;
-  document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
-  if (schedule) {
-    if (state.data) {
-      renderScaffold();
-      renderBlocks(false);
-    }
-  } else {
-    loadFailures();
-  }
+  Object.entries(VIEWS).forEach(([name, { parts }]) =>
+    parts.forEach((part) => (el[part].hidden = name !== view))
+  );
+  document.title = `${target.title} - ÉTS Mock`;
+  if (view === "schedule") showSchedule();
+  else if (view === "failures") loadFailures();
+  else loadStudent(state.student ? state.student.session : state.session);
 }
 paintIcons();
 
@@ -2022,6 +2282,18 @@ el.failuresResetBtn.addEventListener("click", () =>
 );
 el.failuresUndoBtn.addEventListener("click", undoFailures);
 el.failuresRedoBtn.addEventListener("click", redoFailures);
+el.studentSessionSelect.addEventListener("change", () =>
+  loadStudent(dropdownValue(el.studentSessionSelect))
+);
+el.studentUndoBtn.addEventListener("click", () =>
+  studentPost("/undo", { session: state.student.session }, "Modification annulée")
+);
+el.studentRedoBtn.addEventListener("click", () =>
+  studentPost("/redo", { session: state.student.session }, "Modification rétablie")
+);
+el.studentResetBtn.addEventListener("click", () =>
+  studentPost("/reset", { session: state.student.session }, "Dossier étudiant réinitialisé")
+);
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -2072,9 +2344,11 @@ document.addEventListener("keydown", (e) => {
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
   const editingText = !!document.activeElement?.closest?.(TEXT_ENTRY);
   const mod = e.ctrlKey || e.metaKey;
-  const failures = state.view === "failures";
-  const undoBtn = failures ? el.failuresUndoBtn : el.undoBtn;
-  const redoBtn = failures ? el.failuresRedoBtn : el.redoBtn;
+  const [undoBtn, redoBtn] = {
+    schedule: [el.undoBtn, el.redoBtn],
+    failures: [el.failuresUndoBtn, el.failuresRedoBtn],
+    student: [el.studentUndoBtn, el.studentRedoBtn],
+  }[state.view];
   if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
@@ -2083,7 +2357,7 @@ document.addEventListener("keydown", (e) => {
   } else if (mod && !editingText && e.key.toLowerCase() === "y") {
     e.preventDefault();
     if (!redoBtn.disabled) redoBtn.click();
-  } else if (failures) {
+  } else if (state.view !== "schedule") {
     return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
     if (occurrenceMode()) {

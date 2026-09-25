@@ -19,6 +19,7 @@ from lib.data_store import (
 from lib.editor_routes import EditorAssets, router as editor_router
 from lib.routes import router
 from lib.schedule_editor import clear_cache as clear_editor_cache
+from lib.student_editor import clear_history as clear_student_history
 
 failures.load_from_env()
 
@@ -78,4 +79,5 @@ async def root_redirect():
 async def reload_seed_data():
     reload_data()
     clear_editor_cache()
+    clear_student_history()
     return {"status": "ok"}
