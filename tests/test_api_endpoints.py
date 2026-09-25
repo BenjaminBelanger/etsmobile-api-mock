@@ -89,6 +89,37 @@ def test_a_session_range_that_spans_nothing_is_empty(client):
     assert body["liste"] == []
 
 
+@pytest.mark.parametrize(
+    "start,end",
+    [
+        ("Hiver 2024", "Automne 2024"),
+        ("20241", "20243"),
+        ("Hiver 2024", "20243"),
+    ],
+)
+def test_a_session_range_accepts_the_long_and_numeric_formats(client, start, end):
+    expected = json_of(
+        client, "listeCoursIntervalleSessions", sessionDebut="H2024", sessionFin="A2024"
+    )
+    assert expected["liste"]
+    assert (
+        json_of(client, "listeCoursIntervalleSessions", sessionDebut=start, sessionFin=end)
+        == expected
+    )
+
+
+@pytest.mark.parametrize("alias", ["E2024", "Été 2024", "20242"])
+def test_a_summer_session_range_accepts_every_spelling(client, alias):
+    expected = json_of(
+        client, "listeCoursIntervalleSessions", sessionDebut="É2024", sessionFin="É2024"
+    )
+    assert expected["liste"]
+    assert (
+        json_of(client, "listeCoursIntervalleSessions", sessionDebut=alias, sessionFin=alias)
+        == expected
+    )
+
+
 def test_programs_are_served(client):
     codes = [p["code"] for p in json_of(client, "listeProgrammes")["liste"]]
     assert "7084" in codes
@@ -280,6 +311,48 @@ def test_teammates_of_an_unknown_evaluation_are_empty(client, session):
         nomElementEval="Inexistant",
     )
     assert body["liste"] == []
+
+
+@pytest.mark.parametrize(
+    "path,params",
+    [
+        ("lireEvaluationCours", {}),
+        ("lireHoraireDesSeances", {}),
+        ("listeHoraireEtProf", {}),
+        ("listeElementsEvaluation", {"sigle": "LOG430", "groupe": "02"}),
+        ("lireHoraire", {"prefixe": "LOG"}),
+        ("listeHoraireExamensFin", {}),
+        ("lireJoursRemplaces", {}),
+        (
+            "listeCoequipiers",
+            {"sigle": "LOG410", "groupe": "01", "nomElementEval": "TP1 - Diagrammes UML"},
+        ),
+    ],
+)
+@pytest.mark.parametrize("alias", ["Hiver 2026", "20261"])
+def test_session_endpoints_accept_the_long_and_numeric_formats(
+    client, path, params, alias
+):
+    expected = json_of(client, path, session="H2026", **params)
+    assert expected != json_of(client, path, session="H2099", **params)
+    assert json_of(client, path, session=alias, **params) == expected
+
+
+@pytest.mark.parametrize(
+    "path,params",
+    [
+        ("lireEvaluationCours", {}),
+        ("lireHoraireDesSeances", {}),
+        ("listeHoraireEtProf", {}),
+        ("lireHoraire", {"prefixe": "LOG"}),
+        ("listeHoraireExamensFin", {}),
+    ],
+)
+@pytest.mark.parametrize("alias", ["E2024", "Été 2024", "20242"])
+def test_summer_session_endpoints_accept_every_spelling(client, path, params, alias):
+    expected = json_of(client, path, session="É2024", **params)
+    assert expected != json_of(client, path, session="É2099", **params)
+    assert json_of(client, path, session=alias, **params) == expected
 
 
 @pytest.mark.parametrize(
