@@ -417,3 +417,48 @@ def test_reloading_sessions_restores_the_file_contents():
         "A2025",
         "H2026",
     ]
+
+
+def session_end(code="H2026"):
+    entry = next(s for s in sessions.get_raw_sessions() if s["abrege"] == code)
+    return date.fromisoformat(entry["dateFin"])
+
+
+def test_the_ended_shift_makes_the_session_end_yesterday(today):
+    now = today("2026-09-09")
+
+    sessions.shift_session_metadata(
+        "H2026", sessions.compute_ended_shift_delta("H2026")
+    )
+
+    assert session_end() == now - timedelta(days=1)
+
+
+def test_the_ended_shift_needs_a_known_session():
+    with pytest.raises(ValueError, match="No metadata"):
+        sessions.compute_ended_shift_delta("X2099")
+
+
+@pytest.mark.parametrize("gap", [0, 10, 120])
+def test_the_gap_shift_leaves_the_requested_days_off(gap):
+    sessions.shift_session_metadata(
+        "É2025", sessions.compute_gap_shift_delta("H2025", "É2025", gap)
+    )
+
+    days_off = (session_start("É2025") - session_end("H2025")).days - 1
+    assert days_off == gap
+
+
+def test_the_gap_shift_moves_only_by_what_is_missing():
+    days_off = (session_start("É2025") - session_end("H2025")).days - 1
+    assert sessions.compute_gap_shift_delta("H2025", "É2025", days_off) == 0
+
+
+def test_a_negative_gap_is_refused():
+    with pytest.raises(ValueError, match="gap_days must be >= 0"):
+        sessions.compute_gap_shift_delta("H2025", "É2025", -1)
+
+
+def test_the_gap_shift_needs_both_sessions():
+    with pytest.raises(ValueError, match="No metadata"):
+        sessions.compute_gap_shift_delta("H2025", "X2099", 10)

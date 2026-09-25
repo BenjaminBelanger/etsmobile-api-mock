@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 from . import profiles, scenarios, sessions
+from ._env import env_bool
 from ._paths import SEED
 from .compute import build_all_course_data
 from .resource_specs import COURSES, GENERATED_FILENAMES, PROGRAMS, SESSIONS
@@ -19,6 +20,9 @@ PROFILE_NAME = DEFAULT_PROFILE
 SCENARIO_NAME = DEFAULT_SCENARIO
 GENERATION_CONFIG = None
 SEMESTER_WEEK: int | None = None
+BETWEEN_SESSIONS = False
+SEMESTER_GAP: int | None = None
+NO_NEXT_SESSION = False
 
 _EMPTY_EVALUATION_SUMMARY = {
     "noteACeJour": "",
@@ -46,14 +50,36 @@ def _parse_semester_week(raw: str) -> int | None:
     return week
 
 
+def _parse_semester_gap(raw: str) -> int | None:
+    raw = raw.strip()
+    if not raw:
+        return None
+    try:
+        gap = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"SEMESTER_GAP must be an integer, got '{raw}'.") from exc
+    if gap < 0:
+        raise ValueError(f"SEMESTER_GAP must be >= 0, got {gap}.")
+    return gap
+
+
 def _refresh_config():
     global ACTIVE_SESSION, NEXT_SESSION, PROFILE_NAME, SCENARIO_NAME, GENERATION_CONFIG, SEMESTER_WEEK
+    global BETWEEN_SESSIONS, SEMESTER_GAP, NO_NEXT_SESSION
 
     ACTIVE_SESSION = sessions.compute_active_session()
     NEXT_SESSION = sessions.compute_next_session(ACTIVE_SESSION)
     PROFILE_NAME = os.environ.get("PROFILE", DEFAULT_PROFILE)
     SCENARIO_NAME = os.environ.get("SCENARIO", DEFAULT_SCENARIO)
     SEMESTER_WEEK = _parse_semester_week(os.environ.get("SEMESTER_WEEK", ""))
+    BETWEEN_SESSIONS = env_bool("BETWEEN_SESSIONS")
+    SEMESTER_GAP = _parse_semester_gap(os.environ.get("SEMESTER_GAP", ""))
+    NO_NEXT_SESSION = env_bool("NO_NEXT_SESSION")
+
+    if SEMESTER_WEEK is not None and BETWEEN_SESSIONS:
+        raise ValueError("SEMESTER_WEEK and BETWEEN_SESSIONS cannot be combined.")
+    if SEMESTER_GAP is not None and NO_NEXT_SESSION:
+        raise ValueError("SEMESTER_GAP and NO_NEXT_SESSION cannot be combined.")
 
     valid_profiles = profiles.get_valid_profiles()
     if PROFILE_NAME not in valid_profiles:
@@ -117,6 +143,28 @@ def _apply_overrides(built_courses: list[dict]) -> list[dict]:
     return result
 
 
+def _shift_calendar():
+    delta = 0
+    if SEMESTER_WEEK is not None:
+        delta = sessions.compute_week_shift_delta(ACTIVE_SESSION, SEMESTER_WEEK)
+    elif BETWEEN_SESSIONS:
+        delta = sessions.compute_ended_shift_delta(ACTIVE_SESSION)
+    sessions.shift_session_metadata(ACTIVE_SESSION, delta)
+    sessions.shift_session_metadata(NEXT_SESSION, delta)
+    if SEMESTER_GAP is not None:
+        sessions.shift_session_metadata(
+            NEXT_SESSION,
+            sessions.compute_gap_shift_delta(
+                ACTIVE_SESSION, NEXT_SESSION, SEMESTER_GAP
+            ),
+        )
+
+
+def _drop_sessions_after(session_code: str, courses: list[dict]) -> list[dict]:
+    last = sessions.session_rank(session_code)
+    return [c for c in courses if sessions.session_rank(c["session"]) <= last]
+
+
 def _initialize():
     global _seed_courses, _base_courses, _professors, _pools, _programs, _generated
     _refresh_config()
@@ -125,10 +173,7 @@ def _initialize():
     _pools = json.loads((SEED / "pools.json").read_text(encoding="utf-8"))
     sessions.ensure_session_metadata(ACTIVE_SESSION)
     sessions.ensure_session_metadata(NEXT_SESSION)
-    if SEMESTER_WEEK is not None:
-        delta = sessions.compute_week_shift_delta(ACTIVE_SESSION, SEMESTER_WEEK)
-        sessions.shift_session_metadata(ACTIVE_SESSION, delta)
-        sessions.shift_session_metadata(NEXT_SESSION, delta)
+    _shift_calendar()
     _seed_courses = _build_courses(_seed_courses, _pools, _professors)
     _seed_courses = _seed_courses + sessions.generate_random_courses(
         NEXT_SESSION, _seed_courses, _pools, _professors
@@ -139,6 +184,8 @@ def _initialize():
             PROFILE_NAME, ACTIVE_SESSION, _seed_courses
         )
         _programs = profiles.seed_programs(PROFILE_NAME, ACTIVE_SESSION, _programs)
+    if NO_NEXT_SESSION:
+        _seed_courses = _drop_sessions_after(ACTIVE_SESSION, _seed_courses)
     _seed_courses = scenarios.seed_replaced_day_overrides(_seed_courses)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         _seed_courses = scenarios.seed_occurrence_overrides(

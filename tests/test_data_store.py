@@ -267,3 +267,161 @@ def test_a_scenario_cancels_seances_in_the_activity_fixture(reconfigure):
     after = len(data_store.load_session(COURSE_ACTIVITIES.filename, active))
 
     assert after < before
+
+
+def served_session(code):
+    return next(
+        (s for s in data_store.load(SESSIONS.filename) if s["abrege"] == code), None
+    )
+
+
+def served_dates(code, key):
+    return date.fromisoformat(served_session(code)[key])
+
+
+def days_off_before_next():
+    end = served_dates(data_store.ACTIVE_SESSION, "dateFin")
+    start = served_dates(data_store.NEXT_SESSION, "dateDebut")
+    return (start - end).days - 1
+
+
+def test_between_sessions_ends_the_active_session_yesterday(reconfigure):
+    reconfigure(BETWEEN_SESSIONS="true")
+
+    yesterday = date.today() - timedelta(days=1)
+    assert data_store.BETWEEN_SESSIONS is True
+    assert served_dates(data_store.ACTIVE_SESSION, "dateFin") == yesterday
+
+
+def test_between_sessions_keeps_the_real_gap(reconfigure):
+    reconfigure(BETWEEN_SESSIONS=None)
+    real_gap = days_off_before_next()
+
+    reconfigure(BETWEEN_SESSIONS="true")
+
+    assert days_off_before_next() == real_gap
+
+
+def test_between_sessions_leaves_no_session_running_today(reconfigure):
+    reconfigure(BETWEEN_SESSIONS="true")
+
+    today = date.today()
+    running = [
+        s["abrege"]
+        for s in data_store.load(SESSIONS.filename)
+        if date.fromisoformat(s["dateDebut"]) <= today
+        and date.fromisoformat(s["dateFin"]) >= today
+    ]
+    assert running == []
+
+
+def test_between_sessions_keeps_every_activity_of_the_active_session_in_the_past(
+    reconfigure,
+):
+    reconfigure(BETWEEN_SESSIONS="true")
+
+    activities = data_store.load_session(
+        COURSE_ACTIVITIES.filename, data_store.ACTIVE_SESSION
+    )
+    assert activities
+    assert max(a["dateFin"] for a in activities) < date.today().isoformat()
+
+
+@pytest.mark.parametrize("gap", [0, 10, 45])
+def test_the_semester_gap_sets_the_days_off_before_the_next_session(reconfigure, gap):
+    reconfigure(SEMESTER_GAP=str(gap))
+
+    assert data_store.SEMESTER_GAP == gap
+    assert days_off_before_next() == gap
+
+
+@pytest.mark.parametrize("gap", [0, 10, 45])
+def test_between_sessions_the_gap_is_the_days_until_the_next_session(
+    reconfigure, gap
+):
+    reconfigure(BETWEEN_SESSIONS="true", SEMESTER_GAP=str(gap))
+
+    next_start = served_dates(data_store.NEXT_SESSION, "dateDebut")
+    assert (next_start - date.today()).days == gap
+
+
+def test_the_semester_gap_applies_on_top_of_the_semester_week(reconfigure):
+    reconfigure(SEMESTER_WEEK="3", SEMESTER_GAP="5")
+
+    window = sessions.course_window(data_store.ACTIVE_SESSION)
+    today = date.today()
+    this_monday = today - timedelta(days=today.weekday())
+    start_monday = window[0] - timedelta(days=window[0].weekday())
+
+    assert (this_monday - start_monday).days == 14
+    assert days_off_before_next() == 5
+
+
+def test_the_semester_gap_moves_every_date_of_the_next_session(reconfigure):
+    reconfigure(SEMESTER_GAP=None)
+    before = dict(served_session(data_store.NEXT_SESSION))
+
+    reconfigure(SEMESTER_GAP="30")
+    after = served_session(data_store.NEXT_SESSION)
+
+    deltas = {
+        (date.fromisoformat(after[key]) - date.fromisoformat(value)).days
+        for key, value in before.items()
+        if key not in ("abrege", "auLong")
+    }
+    assert len(deltas) == 1
+
+
+def test_the_next_session_courses_follow_the_semester_gap(reconfigure):
+    reconfigure(BETWEEN_SESSIONS="true", SEMESTER_GAP="20")
+
+    activities = data_store.load_session(
+        COURSE_ACTIVITIES.filename, data_store.NEXT_SESSION
+    )
+    first_class = (date.today() + timedelta(days=20)).isoformat()
+    assert activities
+    assert min(a["dateDebut"] for a in activities) >= first_class
+
+
+def test_no_next_session_serves_nothing_after_the_active_one(reconfigure):
+    reconfigure(NO_NEXT_SESSION="true")
+
+    last = sessions.session_rank(data_store.ACTIVE_SESSION)
+    served = [s["abrege"] for s in data_store.load(SESSIONS.filename)]
+    course_sessions = {c["session"] for c in data_store.load(COURSES.filename)}
+
+    assert data_store.NO_NEXT_SESSION is True
+    assert data_store.ACTIVE_SESSION in served
+    assert all(sessions.session_rank(code) <= last for code in served)
+    assert all(sessions.session_rank(code) <= last for code in course_sessions)
+    assert data_store.NEXT_SESSION not in data_store.get_sessions_with_courses()
+
+
+def test_between_sessions_without_a_next_session_leaves_no_session_ahead(
+    reconfigure,
+):
+    reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
+
+    today = date.today().isoformat()
+    assert all(s["dateFin"] < today for s in data_store.load(SESSIONS.filename))
+
+
+@pytest.mark.parametrize("raw", ["abc", "-1"])
+def test_an_impossible_semester_gap_stops_the_boot(reconfigure, raw):
+    with pytest.raises(ValueError, match="SEMESTER_GAP"):
+        reconfigure(SEMESTER_GAP=raw)
+
+
+def test_an_empty_semester_gap_means_the_real_calendar(reconfigure):
+    reconfigure(SEMESTER_GAP="")
+    assert data_store.SEMESTER_GAP is None
+
+
+def test_a_week_and_between_sessions_cannot_be_combined(reconfigure):
+    with pytest.raises(ValueError, match="cannot be combined"):
+        reconfigure(SEMESTER_WEEK="3", BETWEEN_SESSIONS="true")
+
+
+def test_a_gap_and_no_next_session_cannot_be_combined(reconfigure):
+    with pytest.raises(ValueError, match="cannot be combined"):
+        reconfigure(SEMESTER_GAP="10", NO_NEXT_SESSION="true")

@@ -197,6 +197,28 @@ def compute_week_shift_delta(active_code: str, target_week: int) -> int:
     return (target_start - original_start).days
 
 
+def _require_session_dates(code: str) -> dict:
+    meta = _get_session_dates(code)
+    if meta is None:
+        raise ValueError(f"No metadata for session '{code}'")
+    return meta
+
+
+def compute_ended_shift_delta(active_code: str) -> int:
+    original_end = date.fromisoformat(_require_session_dates(active_code)["dateFin"])
+    yesterday = date.today() - timedelta(days=1)
+    return (yesterday - original_end).days
+
+
+def compute_gap_shift_delta(active_code: str, next_code: str, gap_days: int) -> int:
+    if gap_days < 0:
+        raise ValueError("gap_days must be >= 0")
+    active_end = date.fromisoformat(_require_session_dates(active_code)["dateFin"])
+    next_start = date.fromisoformat(_require_session_dates(next_code)["dateDebut"])
+    target_start = active_end + timedelta(days=gap_days + 1)
+    return (target_start - next_start).days
+
+
 def shift_session_metadata(session_code: str, day_delta: int) -> None:
     """Shift every date field of the session record in _RAW_SESSIONS in place."""
     if day_delta == 0:

@@ -13,6 +13,9 @@ DEFAULT_PROFILE = "normal"
 
 TIME_CHOICES = ("morning", "afternoon", "evening")
 
+MAX_SEMESTER_WEEK = 15
+MAX_SEMESTER_GAP = 180
+
 FAILURE_ENV = {
     "latencyMs": "LATENCY_MS",
     "errorRate": "ERROR_RATE",
@@ -27,6 +30,9 @@ MANAGED_ENV = (
     "PROFILE",
     "SCENARIO",
     "SEMESTER_WEEK",
+    "BETWEEN_SESSIONS",
+    "SEMESTER_GAP",
+    "NO_NEXT_SESSION",
     "COURSE_COUNT",
     "SCHEDULE_DAYS",
     "TIME_PREFERENCE",
@@ -37,6 +43,9 @@ CONFIG_FLAGS = (
     "profile",
     "scenario",
     "semester_week",
+    "between_sessions",
+    "semester_gap",
+    "no_next_session",
     "courses",
     "days",
     "time",
@@ -188,6 +197,8 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --profile semester-off")
     lines.append("  python start.py --courses 2 --days 1,3,5 --time morning")
     lines.append("  python start.py --scenario semaine-relache --semester-week 3")
+    lines.append("  python start.py --between-sessions --semester-gap 10")
+    lines.append("  python start.py --between-sessions --no-next-session")
     lines.append("  python start.py --failures flaky")
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
     return "\n".join(lines)
@@ -221,13 +232,6 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     parser.add_argument(
-        "--semester-week",
-        type=_bounded_int(1, 15),
-        metavar="N",
-        help="Décale la session pour qu'aujourd'hui tombe à la semaine N (1-15).",
-        default=None,
-    )
-    parser.add_argument(
         "--courses",
         type=_bounded_int(1, 5),
         metavar="N",
@@ -246,6 +250,46 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_time_list,
         metavar="morning,evening",
         help=f"Plage horaire: {', '.join(TIME_CHOICES)} (séparées par des virgules).",
+        default=None,
+    )
+
+    calendar = parser.add_argument_group(
+        "calendrier",
+        "Position d'aujourd'hui dans la session active et congé avant la "
+        "session suivante.",
+    )
+    position = calendar.add_mutually_exclusive_group()
+    position.add_argument(
+        "--semester-week",
+        type=_bounded_int(1, MAX_SEMESTER_WEEK),
+        metavar="N",
+        help=(
+            "Décale la session pour qu'aujourd'hui tombe à la semaine N "
+            f"(1-{MAX_SEMESTER_WEEK})."
+        ),
+        default=None,
+    )
+    position.add_argument(
+        "--between-sessions",
+        action="store_true",
+        help="Décale la session active pour qu'elle se soit terminée hier.",
+        default=None,
+    )
+    next_session = calendar.add_mutually_exclusive_group()
+    next_session.add_argument(
+        "--semester-gap",
+        type=_bounded_int(0, MAX_SEMESTER_GAP),
+        metavar="JOURS",
+        help=(
+            "Jours de congé entre la fin de la session active et le début de "
+            f"la suivante (0-{MAX_SEMESTER_GAP})."
+        ),
+        default=None,
+    )
+    next_session.add_argument(
+        "--no-next-session",
+        action="store_true",
+        help="Aucune session après la session active.",
         default=None,
     )
 
@@ -348,7 +392,20 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
     )
 
 
-def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | None]:
+def _calendar_label(overrides: dict) -> str:
+    parts = []
+    if "SEMESTER_WEEK" in overrides:
+        parts.append(f"semaine {overrides['SEMESTER_WEEK']}")
+    if "BETWEEN_SESSIONS" in overrides:
+        parts.append("entre deux sessions")
+    if "SEMESTER_GAP" in overrides:
+        parts.append(f"congé de {overrides['SEMESTER_GAP']} jours")
+    if "NO_NEXT_SESSION" in overrides:
+        parts.append("aucune session suivante")
+    return " + ".join(parts)
+
+
+def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, str]:
     overrides: dict[str, str] = {}
     if args.profile is not None:
         overrides["PROFILE"] = args.profile
@@ -356,6 +413,12 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | N
         overrides["SCENARIO"] = args.scenario
     if args.semester_week is not None:
         overrides["SEMESTER_WEEK"] = str(args.semester_week)
+    if args.between_sessions:
+        overrides["BETWEEN_SESSIONS"] = "true"
+    if args.semester_gap is not None:
+        overrides["SEMESTER_GAP"] = str(args.semester_gap)
+    if args.no_next_session:
+        overrides["NO_NEXT_SESSION"] = "true"
     if args.courses is not None:
         overrides["COURSE_COUNT"] = str(args.courses)
     if args.days is not None:
@@ -374,7 +437,12 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | N
     if failure_label:
         profile_display = f"{profile_display} + pannes « {failure_label} »"
 
-    return overrides, profile_display, args.scenario or "none", args.semester_week
+    return (
+        overrides,
+        profile_display,
+        args.scenario or "none",
+        _calendar_label(overrides),
+    )
 
 
 def _validate_menu_choice(raw: str, max_choices: int) -> int | None:
@@ -487,27 +555,55 @@ def _prompt_days() -> list[str] | None:
         print("  Entrée invalide, utilisez les codes 1-6 séparés par des virgules.")
 
 
-def _prompt_semester_week() -> int | None:
-    print("\n=== Semaine de la session (optionnel) ===\n")
-    print("  À quelle semaine de la session active voulez-vous être?")
+def _prompt_calendar_position() -> dict[str, str]:
+    print("\n=== Position dans la session (optionnel) ===\n")
+    print("  À quel moment de la session active voulez-vous être?")
     print("  Utile si la session réelle est presque terminée.")
+    print(f"    1-{MAX_SEMESTER_WEEK}  Semaine de la session")
+    print("    E     Entre deux sessions (la session active s'est terminée hier)")
     print("  (Vide = utiliser les dates réelles)")
     while True:
         try:
-            raw = input("\n  Semaine (1-15, vide = réelle): ").strip()
+            raw = input(f"\n  Semaine (1-{MAX_SEMESTER_WEEK}, E, vide = réelle): ")
         except EOFError:
-            return None
+            return {}
+        raw = raw.strip()
         if not raw:
-            return None
+            return {}
+        if raw.lower() == "e":
+            return {"BETWEEN_SESSIONS": "true"}
+        week = _validate_menu_choice(raw, MAX_SEMESTER_WEEK)
+        if week is None:
+            print(
+                "  Entrée invalide, entrez un nombre entre 1 et "
+                f"{MAX_SEMESTER_WEEK} ou E."
+            )
+            continue
+        return {"SEMESTER_WEEK": str(week)}
+
+
+def _prompt_next_session() -> dict[str, str]:
+    print("\n=== Session suivante (optionnel) ===\n")
+    print("  Combien de jours de congé avant la session suivante?")
+    print("  Entre deux sessions, c'est le nombre de jours avant la rentrée.")
+    print(f"    0-{MAX_SEMESTER_GAP}  Jours de congé après la session active")
+    print("    A      Aucune session suivante")
+    print("  (Vide = utiliser le calendrier réel)")
+    while True:
         try:
-            week = int(raw)
-        except ValueError:
-            print("  Entrée invalide, entrez un nombre entre 1 et 15.")
-            continue
-        if week < 1 or week > 15:
-            print("  Entrée invalide, entrez un nombre entre 1 et 15.")
-            continue
-        return week
+            raw = input(f"\n  Congé (0-{MAX_SEMESTER_GAP}, A, vide = réel): ")
+        except EOFError:
+            return {}
+        raw = raw.strip()
+        if not raw:
+            return {}
+        if raw.lower() == "a":
+            return {"NO_NEXT_SESSION": "true"}
+        if raw.isdigit() and int(raw) <= MAX_SEMESTER_GAP:
+            return {"SEMESTER_GAP": str(int(raw))}
+        print(
+            f"  Entrée invalide, entrez un nombre entre 0 et {MAX_SEMESTER_GAP} ou A."
+        )
 
 
 def _prompt_time_preference() -> str | None:
@@ -638,20 +734,19 @@ def _stop_existing_servers() -> None:
             pass
 
 
-def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
+def _config_from_menu() -> tuple[dict, str, str, str] | None:
     profile = _select_profile()
     if profile is None:
         print("Au revoir!")
         return None
 
     scenario = _select_scenario()
-    semester_week = _prompt_semester_week()
 
     overrides: dict[str, str] = {}
     if scenario != "none":
         overrides["SCENARIO"] = scenario
-    if semester_week is not None:
-        overrides["SEMESTER_WEEK"] = str(semester_week)
+    overrides.update(_prompt_calendar_position())
+    overrides.update(_prompt_next_session())
 
     if profile == "__custom__":
         config = _configure_custom()
@@ -668,7 +763,7 @@ def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
         overrides["PROFILE"] = profile
         profile_display = profile
 
-    return overrides, profile_display, scenario, semester_week
+    return overrides, profile_display, scenario, _calendar_label(overrides)
 
 
 def _build_env(overrides: dict) -> dict:
@@ -680,13 +775,13 @@ def _build_env(overrides: dict) -> dict:
 
 
 def _start_server(
-    overrides: dict, profile_display: str, scenario: str, semester_week: int | None
+    overrides: dict, profile_display: str, scenario: str, calendar: str
 ) -> None:
     scenario_display = f" + scénario « {scenario} »" if scenario != "none" else ""
-    week_display = f" + semaine {semester_week}" if semester_week is not None else ""
+    calendar_display = f" + {calendar}" if calendar else ""
     print(
         f"\nDémarrage du serveur avec le profil « {profile_display} »"
-        f"{scenario_display}{week_display}...\n"
+        f"{scenario_display}{calendar_display}...\n"
     )
     print("  API   : http://localhost:8080/docs")
     print("  Horaire (éditeur visuel) : http://localhost:8080/editor\n")

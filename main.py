@@ -10,10 +10,14 @@ from lib import failures
 from lib._paths import ROOT
 from lib.data_store import (
     ACTIVE_SESSION,
+    BETWEEN_SESSIONS,
     DEFAULT_SCENARIO,
     GENERATION_CONFIG,
+    NEXT_SESSION,
+    NO_NEXT_SESSION,
     PROFILE_NAME,
     SCENARIO_NAME,
+    SEMESTER_GAP,
     reload as reload_data,
 )
 from lib.editor_routes import EditorAssets, router as editor_router
@@ -30,6 +34,12 @@ async def lifespan(_app: FastAPI):
     logger.info("Active profile: %s", PROFILE_NAME)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         logger.info("Active scenario: %s", SCENARIO_NAME)
+    if BETWEEN_SESSIONS:
+        logger.info("Between sessions: %s ended yesterday", ACTIVE_SESSION)
+    if NO_NEXT_SESSION:
+        logger.info("No session after %s", ACTIVE_SESSION)
+    elif SEMESTER_GAP is not None:
+        logger.info("Semester gap: %d days off before %s", SEMESTER_GAP, NEXT_SESSION)
     if GENERATION_CONFIG:
         days = GENERATION_CONFIG.get("allowedDays", "all")
         logger.info(

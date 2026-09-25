@@ -14,11 +14,11 @@ def env_for(*argv):
 
 
 def test_profile_flag_sets_the_profile_env_var():
-    overrides, display, scenario, week = config("--profile", "semester-off")
+    overrides, display, scenario, calendar = config("--profile", "semester-off")
     assert overrides == {"PROFILE": "semester-off"}
     assert display == "semester-off"
     assert scenario == "none"
-    assert week is None
+    assert calendar == ""
 
 
 def test_generation_flags_map_to_the_generation_env_vars():
@@ -46,9 +46,47 @@ def test_scenario_none_is_left_unset():
 
 
 def test_semester_week_is_passed_through():
-    overrides, _, _, week = config("--semester-week", "3")
+    overrides, _, _, calendar = config("--semester-week", "3")
     assert overrides == {"SEMESTER_WEEK": "3"}
-    assert week == 3
+    assert calendar == "semaine 3"
+
+
+def test_between_sessions_is_passed_through():
+    overrides, _, _, calendar = config("--between-sessions")
+    assert overrides == {"BETWEEN_SESSIONS": "true"}
+    assert calendar == "entre deux sessions"
+
+
+def test_semester_gap_is_passed_through():
+    overrides, _, _, calendar = config("--semester-gap", "10")
+    assert overrides == {"SEMESTER_GAP": "10"}
+    assert calendar == "congé de 10 jours"
+
+
+def test_no_next_session_is_passed_through():
+    overrides, _, _, calendar = config("--no-next-session")
+    assert overrides == {"NO_NEXT_SESSION": "true"}
+    assert calendar == "aucune session suivante"
+
+
+def test_a_position_and_a_next_session_combine():
+    overrides, _, _, calendar = config("--between-sessions", "--semester-gap", "0")
+    assert overrides == {"BETWEEN_SESSIONS": "true", "SEMESTER_GAP": "0"}
+    assert calendar == "entre deux sessions + congé de 0 jours"
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--semester-week", "3", "--between-sessions"),
+        ("--semester-gap", "10", "--no-next-session"),
+    ],
+)
+def test_conflicting_calendar_flags_are_rejected(argv, capsys):
+    with pytest.raises(SystemExit) as exc:
+        start._build_parser().parse_args(list(argv))
+    assert exc.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -63,6 +101,9 @@ def test_semester_week_is_passed_through():
         ("--time", "lunch"),
         ("--semester-week", "0"),
         ("--semester-week", "16"),
+        ("--semester-gap", "-1"),
+        ("--semester-gap", "181"),
+        ("--semester-gap", "abc"),
         ("--profile", "nope"),
         ("--scenario", "nope"),
     ],
@@ -109,7 +150,7 @@ def test_flags_skip_the_interactive_menu(monkeypatch):
 
     start.main(["--profile", "semester-off"])
 
-    assert started == [({"PROFILE": "semester-off"}, "semester-off", "none", None)]
+    assert started == [({"PROFILE": "semester-off"}, "semester-off", "none", "")]
 
 
 def answer(monkeypatch, *responses):
@@ -119,17 +160,17 @@ def answer(monkeypatch, *responses):
 
 
 def test_menu_path_builds_the_same_overrides_as_the_flags(monkeypatch):
-    left = answer(monkeypatch, "2", "", "")
+    left = answer(monkeypatch, "2", "", "", "")
 
-    overrides, display, scenario, week = start._config_from_menu()
+    overrides, display, scenario, calendar = start._config_from_menu()
 
     assert left == []
     assert overrides == {"PROFILE": "semester-off"}
-    assert (display, scenario, week) == ("semester-off", "none", None)
+    assert (display, scenario, calendar) == ("semester-off", "none", "")
 
 
 def test_menu_custom_path_sets_the_generation_vars(monkeypatch):
-    left = answer(monkeypatch, "c", "", "", "2", "1,3", "1", "")
+    left = answer(monkeypatch, "c", "", "", "", "2", "1,3", "1", "")
 
     overrides, display, _, _ = start._config_from_menu()
 
@@ -337,17 +378,65 @@ def test_an_invalid_time_range_is_asked_again(monkeypatch):
     assert left == []
 
 
-@pytest.mark.parametrize("raw,expected", [("", None), ("3", 3), ("15", 15)])
-def test_the_prompted_semester_week_is_optional(monkeypatch, raw, expected):
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("", {}),
+        ("3", {"SEMESTER_WEEK": "3"}),
+        ("15", {"SEMESTER_WEEK": "15"}),
+        ("e", {"BETWEEN_SESSIONS": "true"}),
+        ("E", {"BETWEEN_SESSIONS": "true"}),
+    ],
+)
+def test_the_prompted_calendar_position_is_optional(monkeypatch, raw, expected):
     answer(monkeypatch, raw)
-    assert start._prompt_semester_week() == expected
+    assert start._prompt_calendar_position() == expected
 
 
 @pytest.mark.parametrize("raw", ["0", "16", "abc"])
 def test_an_impossible_semester_week_is_asked_again(monkeypatch, raw):
     left = answer(monkeypatch, raw, "2")
-    assert start._prompt_semester_week() == 2
+    assert start._prompt_calendar_position() == {"SEMESTER_WEEK": "2"}
     assert left == []
+
+
+def test_the_calendar_position_falls_back_at_end_of_input(monkeypatch):
+    def closed(*_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed)
+    assert start._prompt_calendar_position() == {}
+
+
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("", {}),
+        ("0", {"SEMESTER_GAP": "0"}),
+        ("14", {"SEMESTER_GAP": "14"}),
+        ("180", {"SEMESTER_GAP": "180"}),
+        ("a", {"NO_NEXT_SESSION": "true"}),
+        ("A", {"NO_NEXT_SESSION": "true"}),
+    ],
+)
+def test_the_prompted_next_session_is_optional(monkeypatch, raw, expected):
+    answer(monkeypatch, raw)
+    assert start._prompt_next_session() == expected
+
+
+@pytest.mark.parametrize("raw", ["-1", "181", "abc"])
+def test_an_impossible_semester_gap_is_asked_again(monkeypatch, raw):
+    left = answer(monkeypatch, raw, "7")
+    assert start._prompt_next_session() == {"SEMESTER_GAP": "7"}
+    assert left == []
+
+
+def test_the_next_session_falls_back_at_end_of_input(monkeypatch):
+    def closed(*_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed)
+    assert start._prompt_next_session() == {}
 
 
 def test_the_custom_menu_summarizes_the_answers(monkeypatch, capsys):
@@ -367,7 +456,7 @@ def test_the_custom_menu_can_be_refused(monkeypatch):
 
 
 def test_a_refused_custom_menu_starts_nothing(monkeypatch):
-    answer(monkeypatch, "c", "", "", "3", "", "4", "n")
+    answer(monkeypatch, "c", "", "", "", "3", "", "4", "n")
     assert start._config_from_menu() is None
 
 
@@ -389,18 +478,45 @@ def test_an_invalid_scenario_choice_is_asked_again(monkeypatch):
 
 
 def test_the_menu_carries_a_scenario_and_a_week(monkeypatch):
-    answer(monkeypatch, "1", "1", "4")
+    answer(monkeypatch, "1", "1", "4", "")
 
-    overrides, display, scenario, week = start._config_from_menu()
+    overrides, display, scenario, calendar = start._config_from_menu()
 
     assert overrides["SCENARIO"] == scenario
     assert overrides["SEMESTER_WEEK"] == "4"
     assert display == list(start._load_profiles())[0]
-    assert week == 4
+    assert calendar == "semaine 4"
+
+
+def test_the_menu_can_place_today_between_sessions(monkeypatch):
+    left = answer(monkeypatch, "1", "", "e", "a")
+
+    overrides, _, _, calendar = start._config_from_menu()
+
+    assert left == []
+    assert overrides["BETWEEN_SESSIONS"] == "true"
+    assert overrides["NO_NEXT_SESSION"] == "true"
+    assert calendar == "entre deux sessions + aucune session suivante"
+
+
+def test_the_menu_builds_the_same_calendar_as_the_flags(monkeypatch):
+    answer(monkeypatch, "1", "", "e", "10")
+    menu_overrides, _, _, menu_calendar = start._config_from_menu()
+
+    flag_overrides, _, _, flag_calendar = config(
+        "--profile",
+        list(start._load_profiles())[0],
+        "--between-sessions",
+        "--semester-gap",
+        "10",
+    )
+
+    assert menu_overrides == flag_overrides
+    assert menu_calendar == flag_calendar
 
 
 def test_an_invalid_profile_choice_is_asked_again(monkeypatch):
-    left = answer(monkeypatch, "99", "2", "", "")
+    left = answer(monkeypatch, "99", "2", "", "", "")
     overrides, _, _, _ = start._config_from_menu()
     assert overrides == {"PROFILE": "semester-off"}
     assert left == []
@@ -447,7 +563,7 @@ def test_starting_the_server_announces_the_configuration(monkeypatch, tmp_path, 
     monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
     monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: None)
 
-    start._start_server({}, "normal", "friday-off", 3)
+    start._start_server({}, "normal", "friday-off", "semaine 3")
 
     printed = capsys.readouterr().out
     assert "normal" in printed
