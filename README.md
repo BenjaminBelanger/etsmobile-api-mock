@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Online Demo](#online-demo)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Tests](#tests)
 - [Supported Format](#supported-format)
@@ -36,6 +37,30 @@ python start.py --scenario semaine-relache --semester-week 3
 ```
 
 `python start.py --help` lists every profile, scenario and day code.
+
+## Online Demo
+
+Try the editor without installing anything:
+**https://benjaminbelanger.github.io/etsmobile-api-mock/**
+
+The demo is a static GitHub Pages site. It runs the real mock server (`main.py`,
+`lib/` and `seed/`) inside the browser with [Pyodide](https://pyodide.org), so
+edits, undo, grades and the **Pannes** tab behave like they do locally. Nothing
+is saved: reloading the page starts again from freshly generated data. The first
+visit downloads Python, which takes a few seconds.
+
+The `Demo` workflow publishes the site on every push to `main`. It needs GitHub
+Pages to be enabled once, under **Settings > Pages > Source: GitHub Actions**.
+
+To preview the demo locally:
+
+```bash
+cd web
+npm run build:demo
+python -m http.server -d dist 8000
+```
+
+Then open `http://localhost:8000`.
 
 ## Schedule Editor UI
 
