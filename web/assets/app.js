@@ -216,6 +216,11 @@ function defaultWeekIndex(semester) {
   const today = todayWeekIndex(semester);
   return today != null ? today : semester.weeks[0].index;
 }
+function closestWeekIndex(semester, start) {
+  if (!semester || !semester.weeks.length) return null;
+  const reached = semester.weeks.filter((w) => w.start <= start);
+  return (reached.length ? reached[reached.length - 1] : semester.weeks[0]).index;
+}
 
 const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
 
@@ -267,6 +272,7 @@ async function apiPost(path, body) {
 
 function applyState(data, opts) {
   const prevSession = state.session;
+  const shownStart = prevSession === data.session ? currentWeek()?.start : null;
   state.session = data.session;
   state.data = data;
   const meta = data.meta;
@@ -277,13 +283,9 @@ function applyState(data, opts) {
   state.days = meta.days;
   assignTints(data.courses || []);
   state.semester = meta.semester || null;
-  if (
-    prevSession !== data.session ||
-    state.weekIndex == null ||
-    !weekExists(state.weekIndex)
-  ) {
-    state.weekIndex = defaultWeekIndex(state.semester);
-  }
+  state.weekIndex = shownStart
+    ? closestWeekIndex(state.semester, shownStart)
+    : defaultWeekIndex(state.semester);
   if (prevSession !== data.session) {
     state.detailCourseId = null;
     state.evalIndex = null;

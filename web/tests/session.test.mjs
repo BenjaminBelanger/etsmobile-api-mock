@@ -23,6 +23,8 @@ const shownKeys = (app) =>
   app.queryAll("#sessionDates [data-key]").map((node) => node.dataset.key.slice(5));
 const toggle = (app) => app.query('#sessionDates [data-act="toggleDates"]');
 const posted = (app, path) => app.server.lastCall(path)?.body;
+const renumbered = (weeks) =>
+  weeks.map((week, i) => ({ ...week, index: i + 1, label: `Semaine ${i + 1}` }));
 
 async function pick(app, key, value) {
   const node = field(app, key);
@@ -163,6 +165,40 @@ describe("the session dates panel", () => {
 
     assert.equal(app.queryAll("#weekSelect fluent-option").length, weeks - 1);
     assert.equal(app.byId("undoBtn").disabled, false);
+    app.close();
+  });
+
+  test("keeps showing the same days when the start moves", async () => {
+    const app = await mount();
+    app.select(app.byId("weekSelect"), "3");
+    await flush();
+    const later = stateWith((s) => {
+      changed(s, "dateDebut", "2026-01-12");
+      s.meta.semester.dateDebut = "2026-01-12";
+      s.meta.semester.weeks = renumbered(s.meta.semester.weeks.slice(1));
+    });
+    app.server.reply("/session/date", later);
+    await pick(app, "dateDebut", "2026-01-12");
+
+    assert.equal(app.text(".dayhead__date"), "19 janv.");
+    assert.equal(app.byId("weekSelect").value, "2");
+    app.close();
+  });
+
+  test("shows the last week when the end cuts off the shown one", async () => {
+    const app = await mount();
+    app.select(app.byId("weekSelect"), "3");
+    await flush();
+    const shorter = stateWith((s) => {
+      changed(s, "dateFin", "2026-01-17");
+      s.meta.semester.dateFin = "2026-01-17";
+      s.meta.semester.weeks = s.meta.semester.weeks.slice(0, 2);
+    });
+    app.server.reply("/session/date", shorter);
+    await pick(app, "dateFin", "2026-01-17");
+
+    assert.equal(app.text(".dayhead__date"), "12 janv.");
+    assert.equal(app.byId("weekSelect").value, "2");
     app.close();
   });
 
