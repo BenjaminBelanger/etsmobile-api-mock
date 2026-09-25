@@ -46,8 +46,8 @@ Try the editor without installing anything:
 The demo is a static GitHub Pages site. It runs the real mock server (`main.py`,
 `lib/` and `seed/`) inside the browser with [Pyodide](https://pyodide.org), so
 edits, undo, grades and the **Pannes** tab behave like they do locally. Nothing
-is saved: reloading the page starts again from freshly generated data. The first
-visit downloads Python, which takes a few seconds.
+is saved: reloading the page puts the schedule back to where it started. The
+first visit downloads Python, which takes a few seconds.
 
 The `Demo` workflow publishes the site on every push to `main`. It needs GitHub
 Pages to be enabled once, under **Settings > Pages > Source: GitHub Actions**.
