@@ -897,6 +897,8 @@ function detailHtml(course) {
       <section class="detail__section">${examHtml(course.exam)}</section>`;
 }
 
+let renderingDetail = false;
+
 function renderDetail() {
   const courses = detailCourses();
   const course = currentDetail();
@@ -914,7 +916,10 @@ function renderDetail() {
 
   const active = document.activeElement;
   const focusKey = el.detail.contains(active) ? active.dataset.key : null;
-  el.detail.innerHTML = detailHtml(course);
+  const html = detailHtml(course);
+  renderingDetail = true;
+  el.detail.innerHTML = html;
+  renderingDetail = false;
   wireDetail(course);
   if (focusKey) {
     const node = el.detail.querySelector(`[data-key="${focusKey}"]`);
@@ -960,14 +965,43 @@ function wireDetail(course) {
       node.addEventListener("change", () => commitField(course, key, node.checked));
       return;
     }
-    node.addEventListener("change", () => commitField(course, key, node.value));
-    node.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") node.blur();
-    });
+    wireTextField(node, (value) => commitField(course, key, value));
   });
   el.detail.querySelectorAll("[data-act]").forEach((node) => {
     node.addEventListener("click", () => runDetailAction(course, node.dataset.act));
   });
+}
+
+function wireTextField(node, commit) {
+  let saved = node.value;
+  let typing = false;
+  let incomplete = false;
+  const save = () => {
+    typing = false;
+    const value = incomplete ? "" : node.value;
+    if (renderingDetail || value === saved) return;
+    saved = value;
+    commit(value);
+  };
+  node.addEventListener(
+    "input",
+    (e) => {
+      incomplete = !!e.composedPath()[0].validity?.badInput;
+      if (incomplete) e.stopPropagation();
+    },
+    true,
+  );
+  node.addEventListener("pointerdown", () => {
+    typing = false;
+  });
+  node.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") node.blur();
+    else typing = true;
+  });
+  node.addEventListener("change", () => {
+    if (!typing) save();
+  });
+  node.addEventListener("focusout", save);
 }
 
 function commitField(course, key, value) {
