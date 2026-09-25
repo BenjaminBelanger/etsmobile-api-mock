@@ -106,6 +106,15 @@
         </section>
 
         <aside class="sidebar">
+          <section class="panel" id="sessionPanel" hidden>
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="calendar" data-icon-size="16"></span>
+              <h2>Dates de la session</h2>
+              <fluent-button id="sessionDatesReset" class="detail__act" appearance="subtle" size="small" icon-only data-icon="reset" data-icon-size="16" title="Rétablir les dates" aria-label="Rétablir les dates" hidden></fluent-button>
+            </header>
+            <div class="session-dates" id="sessionDates"></div>
+          </section>
+
           <section class="panel" id="detailPanel" hidden>
             <header class="panel__head">
               <span class="panel__icon" data-icon="book" data-icon-size="16"></span>
@@ -146,31 +155,14 @@
         </aside>
       </main>
 
-      <main class="layout" id="studentView" hidden>
-        <section class="board board--list">
-          <header class="board__head">
-            <span class="panel__icon" data-icon="calendar" data-icon-size="16"></span>
-            <h2>Dates de la session</h2>
-            <fluent-dropdown id="studentSessionSelect" appearance="filled-darker" aria-label="Session">
-              <fluent-listbox></fluent-listbox>
-            </fluent-dropdown>
+      <main class="layout layout--single" id="studentView" hidden>
+        <section class="panel profile">
+          <header class="panel__head">
+            <span class="panel__icon" data-icon="person" data-icon-size="16"></span>
+            <h2>Profil</h2>
           </header>
-          <ul class="dates" id="dateList"></ul>
-          <div class="dates__warn detail__warn" id="dateWarn" hidden></div>
-          <div class="board__empty" id="dateEmpty" hidden>
-            <p>Aucune session avec des cours.</p>
-          </div>
+          <ul class="fields" id="profileFields"></ul>
         </section>
-
-        <aside class="sidebar">
-          <section class="panel">
-            <header class="panel__head">
-              <span class="panel__icon" data-icon="person" data-icon-size="16"></span>
-              <h2>Profil</h2>
-            </header>
-            <div class="profile" id="profileFields"></div>
-          </section>
-        </aside>
       </main>
 
       <footer class="statusbar">

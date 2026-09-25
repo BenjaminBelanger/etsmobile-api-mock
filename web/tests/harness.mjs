@@ -287,14 +287,14 @@ function createStudent(options) {
   const original = clone(options.student || STUDENT_FIXTURE);
   let current = clone(original);
 
-  const edit = (rows, originals, key, value) => {
-    const row = rows.find((candidate) => candidate.key === key);
-    const base = originals.find((candidate) => candidate.key === key).value;
+  const set = (key, value) => {
+    const row = current.student.find((candidate) => candidate.key === key);
+    const base = original.student.find((candidate) => candidate.key === key).value;
     row.value = value === null || value === "" ? base : value;
     row.modified = row.value !== base;
     current.canUndo = true;
     current.canRedo = false;
-    current.canReset = [...current.dates, ...current.student].some((r) => r.modified);
+    current.canReset = current.student.some((candidate) => candidate.modified);
   };
 
   const student = {
@@ -318,9 +318,9 @@ function createStudent(options) {
       return matching.length ? matching[matching.length - 1] : null;
     },
     handle(href, request) {
-      const [path, query] = href.slice(STUDENT.length).split("?");
+      const path = href.slice(STUDENT.length);
       const body = request.body ? JSON.parse(request.body) : null;
-      calls.push({ path, query: query || "", method: request.method || "GET", body });
+      calls.push({ path, method: request.method || "GET", body });
 
       const canned = replies.get(path);
       if (canned) {
@@ -333,16 +333,8 @@ function createStudent(options) {
         };
       }
 
-      if (path === "/state") {
-        const wanted = new URLSearchParams(query).get("session");
-        if (current.sessions.includes(wanted)) current.session = wanted;
-      } else if (path === "/session-date") {
-        edit(current.dates, original.dates, body.field, body.value);
-      } else if (path === "/profile") {
-        edit(current.student, original.student, body.field, body.value);
-      } else if (path === "/reset") {
-        current = { ...clone(original), canUndo: true };
-      }
+      if (path === "/set") set(body.field, body.value);
+      else if (path === "/reset") current = { ...clone(original), canUndo: true };
       return { ok: true, status: 200, json: async () => clone(current) };
     },
   };

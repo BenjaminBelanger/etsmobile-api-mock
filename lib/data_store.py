@@ -152,7 +152,9 @@ def _initialize():
         sessions.shift_session_metadata(NEXT_SESSION, delta)
     _student_overrides = load_student_overrides()
     _base_sessions = {s["abrege"]: dict(s) for s in sessions.get_raw_sessions()}
-    sessions.apply_date_overrides(_student_overrides.get("sessions", {}))
+    sessions.apply_date_overrides(
+        {code: entry.get("dates", {}) for code, entry in _load_overrides().items()}
+    )
     _seed_courses = _build_courses(_seed_courses, _pools, _professors)
     _seed_courses = _seed_courses + sessions.generate_random_courses(
         NEXT_SESSION, _seed_courses, _pools, _professors
@@ -244,8 +246,7 @@ def get_student_info(*, base: bool = False) -> dict:
     info = json.loads((SEED / STUDENT_INFO.filename).read_text(encoding="utf-8"))
     if base:
         return info
-    edits = _student_overrides.get("student", {})
-    return {key: edits.get(key, value) for key, value in info.items()}
+    return {key: _student_overrides.get(key, value) for key, value in info.items()}
 
 
 def get_base_session(code: str) -> dict | None:

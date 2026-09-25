@@ -32,7 +32,7 @@ const state = {
   endpoints: [],
   presets: [],
   student: null,
-  scheduleStale: false,
+  otherDatesOpen: false,
 };
 
 const el = {
@@ -61,11 +61,10 @@ const el = {
   studentUndoBtn: document.getElementById("studentUndoBtn"),
   studentRedoBtn: document.getElementById("studentRedoBtn"),
   studentResetBtn: document.getElementById("studentResetBtn"),
-  studentSessionSelect: document.getElementById("studentSessionSelect"),
-  dateList: document.getElementById("dateList"),
-  dateWarn: document.getElementById("dateWarn"),
-  dateEmpty: document.getElementById("dateEmpty"),
   profileFields: document.getElementById("profileFields"),
+  sessionPanel: document.getElementById("sessionPanel"),
+  sessionDates: document.getElementById("sessionDates"),
+  sessionDatesReset: document.getElementById("sessionDatesReset"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -293,6 +292,7 @@ function applyState(data, opts) {
   renderWeekPicker();
   renderScaffold();
   renderBlocks(opts && opts.animate);
+  renderSessionDates();
   renderDetail();
   renderTrash(data.trash);
   renderCatalog(meta.catalog);
@@ -761,14 +761,14 @@ function propInput(key, label, value, type, opts = {}) {
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
   const hint = opts.hint || "Valeur modifiée, videz le champ pour rétablir la valeur générée";
-  const title = pinned ? ` title="${hint}"` : "";
+  const tips = [opts.tip, pinned && hint].filter(Boolean);
+  const title = tips.length ? ` title="${escapeHtml(tips.join(" · "))}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
 
-function checkBox(key, label, checked, pinned) {
-  const title = pinned ? ' title="Valeur modifiée"' : "";
-  return `<label class="check${pinned ? " is-pinned" : ""}"${title}>
+function checkBox(key, label, checked) {
+  return `<label class="check">
         <input type="checkbox" data-key="${key}"${checked ? " checked" : ""} />
         <span>${label}</span>
       </label>`;
@@ -909,8 +909,6 @@ function detailHtml(course) {
       <section class="detail__section">${examHtml(course.exam)}</section>`;
 }
 
-let renderingDetail = false;
-
 function renderDetail() {
   const courses = detailCourses();
   const course = currentDetail();
@@ -925,18 +923,7 @@ function renderDetail() {
     state.evalIndex = evals.length ? evals.length - 1 : null;
   }
   fillDetailSelect(courses, course.courseId);
-
-  const active = document.activeElement;
-  const focusKey = el.detail.contains(active) ? active.dataset.key : null;
-  const html = detailHtml(course);
-  renderingDetail = true;
-  el.detail.innerHTML = html;
-  renderingDetail = false;
-  wireDetail(course);
-  if (focusKey) {
-    const node = el.detail.querySelector(`[data-key="${focusKey}"]`);
-    if (node) node.focus();
-  }
+  redraw(el.detail, detailHtml(course), () => wireDetail(course));
 }
 
 function wireDetail(course) {
@@ -984,14 +971,42 @@ function wireDetail(course) {
   });
 }
 
+let redrawing = false;
+const typingIn = new WeakSet();
+
+function keepFocus(container, previous) {
+  const fresh = container.querySelector(`[data-key="${previous.dataset.key}"]`);
+  if (!fresh) return;
+  if (!typingIn.has(previous)) {
+    fresh.focus();
+    return;
+  }
+  ["class", "title"].forEach((name) => {
+    if (fresh.hasAttribute(name)) previous.setAttribute(name, fresh.getAttribute(name));
+    else previous.removeAttribute(name);
+  });
+  fresh.replaceWith(previous);
+  previous.focus();
+}
+
+function redraw(container, html, wire) {
+  const active = document.activeElement;
+  const focused = container.contains(active) && active.dataset.key ? active : null;
+  redrawing = true;
+  container.innerHTML = html;
+  redrawing = false;
+  wire();
+  if (focused) keepFocus(container, focused);
+}
+
 function wireTextField(node, commit) {
   let saved = node.value;
-  let typing = false;
   let incomplete = false;
   const save = () => {
-    typing = false;
+    if (redrawing) return;
+    typingIn.delete(node);
     const value = incomplete ? "" : node.value;
-    if (renderingDetail || value === saved) return;
+    if (value === saved) return;
     saved = value;
     commit(value);
   };
@@ -1003,17 +1018,115 @@ function wireTextField(node, commit) {
     },
     true,
   );
-  node.addEventListener("pointerdown", () => {
-    typing = false;
-  });
+  node.addEventListener("pointerdown", () => typingIn.delete(node));
   node.addEventListener("keydown", (e) => {
     if (e.key === "Enter") node.blur();
-    else typing = true;
+    else typingIn.add(node);
   });
   node.addEventListener("change", () => {
-    if (!typing) save();
+    if (!typingIn.has(node)) save();
   });
   node.addEventListener("focusout", save);
+}
+
+const MAIN_DATES = ["dateDebut", "dateFinCours", "dateFin"];
+
+const DATE_LABELS = {
+  dateDebut: "Début de la session",
+  dateFin: "Fin de la session",
+  dateFinCours: "Fin des cours",
+  dateDebutChemiNot: "Début ChemiNot",
+  dateFinChemiNot: "Fin ChemiNot",
+  dateDebutAnnulationAvecRemboursement: "Début de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursement: "Fin de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursementNouveauxEtudiants:
+    "Fin de l'annulation avec remboursement (nouveaux étudiants)",
+  dateDebutAnnulationSansRemboursementNouveauxEtudiants:
+    "Début de l'annulation sans remboursement (nouveaux étudiants)",
+  dateFinAnnulationSansRemboursementNouveauxEtudiants:
+    "Fin de l'annulation sans remboursement (nouveaux étudiants)",
+  dateLimitePourAnnulerASEQ: "Date limite pour annuler l'ASEQ",
+};
+
+const DATE_ORDER = [
+  ["dateDebut", "dateFinCours"],
+  ["dateFinCours", "dateFin"],
+  ["dateDebutChemiNot", "dateFinChemiNot"],
+  ["dateDebutAnnulationAvecRemboursement", "dateFinAnnulationAvecRemboursement"],
+  [
+    "dateDebutAnnulationSansRemboursementNouveauxEtudiants",
+    "dateFinAnnulationSansRemboursementNouveauxEtudiants",
+  ],
+];
+
+const ORIGINAL_HINT = "Valeur modifiée, videz le champ pour rétablir la valeur d'origine";
+
+const dateLabel = (key) => DATE_LABELS[key] || key;
+
+function dateWarnings(dates) {
+  const values = Object.fromEntries(dates.map((row) => [row.key, row.value]));
+  return DATE_ORDER.filter(
+    ([start, end]) => values[start] && values[end] && values[end] < values[start]
+  ).map(([start, end]) => `« ${dateLabel(end)} » précède « ${dateLabel(start)} »`);
+}
+
+function dateField(row) {
+  return propInput(`date:${row.key}`, escapeHtml(dateLabel(row.key)), row.value, "date", {
+    pinned: row.modified,
+    wide: true,
+    hint: ORIGINAL_HINT,
+    tip: row.key,
+  });
+}
+
+function sessionDatesHtml(dates) {
+  const main = MAIN_DATES.map((key) => dates.find((row) => row.key === key)).filter(Boolean);
+  const others = dates.filter((row) => !MAIN_DATES.includes(row.key));
+  const open = state.otherDatesOpen;
+  const othersPinned = others.some((row) => row.modified);
+  const toggle = others.length
+    ? `<button type="button" class="stats${open ? " is-open" : ""}${
+        othersPinned ? " is-pinned" : ""
+      }" data-act="toggleDates" aria-expanded="${open}"${
+        othersPinned ? ' title="Contient des dates modifiées"' : ""
+      }>${icon("chevronRight", 16)}<span>Autres dates</span></button>`
+    : "";
+  const rest =
+    open && others.length ? `<div class="props__grid">${others.map(dateField).join("")}</div>` : "";
+  const warnings = dateWarnings(dates);
+  const warn = warnings.length
+    ? `<div class="detail__warn">${warnings
+        .map((line) => `<span>${escapeHtml(line)}</span>`)
+        .join("")}</div>`
+    : "";
+  return `<div class="props__grid">${main.map(dateField).join("")}</div>${toggle}${rest}${warn}`;
+}
+
+function wireSessionDates() {
+  el.sessionDates.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
+    wireTextField(node, (value) => commitSessionDate(field, value));
+  });
+  const toggle = el.sessionDates.querySelector('[data-act="toggleDates"]');
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    state.otherDatesOpen = !state.otherDatesOpen;
+    renderSessionDates();
+    el.sessionDates.querySelector('[data-act="toggleDates"]').focus();
+  });
+}
+
+function renderSessionDates() {
+  const dates = (state.data && state.data.dates) || [];
+  el.sessionPanel.hidden = !dates.length;
+  el.sessionDatesReset.hidden = !dates.some((row) => row.modified);
+  redraw(el.sessionDates, sessionDatesHtml(dates), wireSessionDates);
+}
+
+function commitSessionDate(field, value) {
+  apiPost("/session/date", { session: state.session, field, value }).catch(() =>
+    renderSessionDates()
+  );
 }
 
 function commitField(course, key, value) {
@@ -1963,47 +2076,16 @@ const PROFILE_LABELS = {
   masculin: "Masculin",
 };
 
-const DATE_LABELS = {
-  dateDebut: "Début de la session",
-  dateFin: "Fin de la session",
-  dateFinCours: "Fin des cours",
-  dateDebutChemiNot: "Début ChemiNot",
-  dateFinChemiNot: "Fin ChemiNot",
-  dateDebutAnnulationAvecRemboursement: "Début de l'annulation avec remboursement",
-  dateFinAnnulationAvecRemboursement: "Fin de l'annulation avec remboursement",
-  dateFinAnnulationAvecRemboursementNouveauxEtudiants:
-    "Fin de l'annulation avec remboursement (nouveaux étudiants)",
-  dateDebutAnnulationSansRemboursementNouveauxEtudiants:
-    "Début de l'annulation sans remboursement (nouveaux étudiants)",
-  dateFinAnnulationSansRemboursementNouveauxEtudiants:
-    "Fin de l'annulation sans remboursement (nouveaux étudiants)",
-  dateLimitePourAnnulerASEQ: "Date limite pour annuler l'ASEQ",
-};
-
-const DATE_ORDER = [
-  ["dateDebut", "dateFinCours"],
-  ["dateFinCours", "dateFin"],
-  ["dateDebutChemiNot", "dateFinChemiNot"],
-  ["dateDebutAnnulationAvecRemboursement", "dateFinAnnulationAvecRemboursement"],
-  [
-    "dateDebutAnnulationSansRemboursementNouveauxEtudiants",
-    "dateFinAnnulationSansRemboursementNouveauxEtudiants",
-  ],
-];
-
-const ORIGINAL_HINT = "Valeur modifiée, videz le champ pour rétablir la valeur d'origine";
-
-const dateLabel = (key) => DATE_LABELS[key] || key;
 const profileLabel = (key) => PROFILE_LABELS[key] || key;
 
-async function loadStudent(session) {
+async function loadStudent() {
   try {
-    const res = await fetch(`${STUDENT_API}/state?session=${encodeURIComponent(session || "")}`);
+    const res = await fetch(`${STUDENT_API}/state`);
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
     applyStudent(data);
   } catch (err) {
-    setStatus("Impossible de lire le dossier étudiant.", false, true);
+    setStatus("Impossible de lire le profil étudiant.", false, true);
     toast(err.message || "Serveur injoignable", true);
   }
 }
@@ -2018,7 +2100,6 @@ async function studentPost(path, body, message) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
-    state.scheduleStale = true;
     applyStudent(data);
     setStatus("Enregistré.", false);
     if (message) toast(message);
@@ -2034,158 +2115,63 @@ function applyStudent(data) {
   renderStudent();
 }
 
-function renderStudentSessions(data) {
-  const key = data.sessions.join(",");
-  if (
-    el.studentSessionSelect.dataset.key === key &&
-    dropdownValue(el.studentSessionSelect) === data.session
-  )
-    return;
-  fillDropdown(
-    el.studentSessionSelect,
-    data.sessions.map((code) => ({ value: code, text: code })),
-    data.session,
-  );
-  el.studentSessionSelect.dataset.key = key;
+function profileInput(row, label) {
+  const key = `student:${row.key}`;
+  if (typeof row.value === "boolean") {
+    return `<label class="check">
+        <input type="checkbox" data-key="${key}" aria-label="${label}"${row.value ? " checked" : ""} />
+        <span>${row.value ? "Oui" : "Non"}</span>
+      </label>`;
+  }
+  const title = row.modified ? ` title="${ORIGINAL_HINT}"` : "";
+  return `<fluent-text-input class="field__input${row.modified ? " is-pinned" : ""}" control-size="small"
+      appearance="filled-lighter" data-key="${key}" value="${escapeHtml(row.value)}"
+      aria-label="${label}"${title}></fluent-text-input>`;
 }
 
-function dateRowHtml(row) {
-  const label = dateLabel(row.key);
+function profileRowHtml(row) {
+  const label = escapeHtml(profileLabel(row.key));
   const key = escapeHtml(row.key);
-  const name =
-    label === row.key
-      ? `<code class="date__key">${key}</code>`
-      : `<span class="date__label">${escapeHtml(label)}</span><code class="date__key">${key}</code>`;
-  const title = row.modified ? ` title="${ORIGINAL_HINT}"` : "";
+  const name = label === key ? "" : `<span class="field__label">${label}</span>`;
   const reset = row.modified
-    ? `<fluent-button class="date__reset" appearance="subtle" size="small" icon-only
-        data-reset="${key}" title="Rétablir la date d'origine"
-        aria-label="Rétablir : ${escapeHtml(label)}">${icon("reset", 16)}</fluent-button>`
+    ? `<fluent-button class="field__reset" appearance="subtle" size="small" icon-only
+        data-reset="${key}" title="Rétablir la valeur d'origine"
+        aria-label="Rétablir : ${label}">${icon("reset", 16)}</fluent-button>`
     : "";
-  return `<li class="date${row.modified ? " is-modified" : ""}">
-      <span class="date__name">${name}</span>
-      <fluent-text-input class="date__input${row.modified ? " is-pinned" : ""}" control-size="small"
-        appearance="filled-lighter" type="date" data-key="date:${key}" value="${escapeHtml(row.value)}"
-        aria-label="${escapeHtml(label)}"${title}></fluent-text-input>
+  return `<li class="field${row.modified ? " is-modified" : ""}">
+      <span class="field__name">${name}<code class="field__key">${key}</code></span>
+      ${profileInput(row, label)}
       ${reset}
     </li>`;
 }
 
-function dateWarnings(dates) {
-  const values = Object.fromEntries(dates.map((row) => [row.key, row.value]));
-  return DATE_ORDER.filter(
-    ([start, end]) => values[start] && values[end] && values[end] < values[start]
-  ).map(([start, end]) => `« ${dateLabel(end)} » précède « ${dateLabel(start)} »`);
-}
-
-function renderDates(data) {
-  const dates = data.session ? data.dates : [];
-  el.studentSessionSelect.hidden = !data.session;
-  el.dateEmpty.hidden = !!data.session;
-  el.dateList.innerHTML = dates.map(dateRowHtml).join("");
-  const warnings = dateWarnings(dates);
-  el.dateWarn.hidden = !warnings.length;
-  el.dateWarn.innerHTML = warnings.map((line) => `<span>${escapeHtml(line)}</span>`).join("");
-  el.dateList.querySelectorAll("[data-reset]").forEach((node) => {
-    node.addEventListener("click", () => commitDate(node.dataset.reset, null));
-  });
-}
-
-function renderProfile(fields) {
-  const inputs = fields.filter((row) => typeof row.value !== "boolean");
-  const checks = fields.filter((row) => typeof row.value === "boolean");
-  el.profileFields.innerHTML = `<div class="props__grid">${inputs
-    .map((row) =>
-      propInput(`student:${row.key}`, escapeHtml(profileLabel(row.key)), row.value, "text", {
-        pinned: row.modified,
-        hint: ORIGINAL_HINT,
-      })
-    )
-    .join("")}</div>
-      <div class="props__checks">${checks
-        .map((row) =>
-          checkBox(`student:${row.key}`, escapeHtml(profileLabel(row.key)), row.value, row.modified)
-        )
-        .join("")}</div>`;
-}
-
-let renderingStudent = false;
-const typingIn = new WeakSet();
-
-function saveOnLeave(node, commit) {
-  let saved = node.value;
-  const save = () => {
-    if (renderingStudent) return;
-    typingIn.delete(node);
-    if (node.value === saved) return;
-    saved = node.value;
-    commit(node.value);
-  };
-  node.addEventListener("pointerdown", () => typingIn.delete(node));
-  node.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") node.blur();
-    else typingIn.add(node);
-  });
-  node.addEventListener("change", () => {
-    if (!typingIn.has(node)) save();
-  });
-  node.addEventListener("focusout", save);
-}
-
-function wireStudentFields() {
-  el.studentView.querySelectorAll("[data-key]").forEach((node) => {
-    const [scope, field] = node.dataset.key.split(":");
-    const commit = scope === "date" ? commitDate : commitProfile;
+function wireProfile() {
+  el.profileFields.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
     if (node.type === "checkbox") {
-      node.addEventListener("change", () => commit(field, node.checked));
+      node.addEventListener("change", () => commitProfile(field, node.checked));
       return;
     }
-    saveOnLeave(node, (value) => commit(field, value));
+    wireTextField(node, (value) => commitProfile(field, value));
   });
-}
-
-function restoreStudentFocus(previous) {
-  const fresh = el.studentView.querySelector(`[data-key="${previous.dataset.key}"]`);
-  if (!fresh) return;
-  if (!typingIn.has(previous)) {
-    fresh.focus();
-    return;
-  }
-  ["class", "title"].forEach((name) => {
-    if (fresh.hasAttribute(name)) previous.setAttribute(name, fresh.getAttribute(name));
-    else previous.removeAttribute(name);
+  el.profileFields.querySelectorAll("[data-reset]").forEach((node) => {
+    node.addEventListener("click", () =>
+      commitProfile(node.dataset.reset, null, "Valeur d'origine rétablie")
+    );
   });
-  fresh.replaceWith(previous);
-  previous.focus();
 }
 
 function renderStudent() {
   const data = state.student;
   if (!data) return;
-  const active = document.activeElement;
-  const focused = el.studentView.contains(active) && active.dataset.key ? active : null;
-  renderStudentSessions(data);
-  renderingStudent = true;
-  renderDates(data);
-  renderProfile(data.student);
-  renderingStudent = false;
-  wireStudentFields();
+  redraw(el.profileFields, data.student.map(profileRowHtml).join(""), wireProfile);
   el.studentUndoBtn.disabled = !data.canUndo;
   el.studentRedoBtn.disabled = !data.canRedo;
   el.studentResetBtn.disabled = !data.canReset;
-  if (focused) restoreStudentFocus(focused);
 }
 
-function commitDate(field, value) {
-  studentPost(
-    "/session-date",
-    { session: state.student.session, field, value },
-    value == null ? "Date rétablie" : null
-  );
-}
-
-function commitProfile(field, value) {
-  studentPost("/profile", { session: state.student.session, field, value });
+function commitProfile(field, value, message) {
+  studentPost("/set", { field, value }, message);
 }
 
 const VIEWS = {
@@ -2198,16 +2184,6 @@ const VIEWS = {
   student: { tab: "viewStudent", title: "Étudiant", parts: ["studentView", "studentToolbar"] },
 };
 
-function showSchedule() {
-  if (state.scheduleStale && state.session) {
-    state.scheduleStale = false;
-    loadSession(state.session);
-  } else if (state.data) {
-    renderScaffold();
-    renderBlocks(false);
-  }
-}
-
 function setView(view) {
   const target = VIEWS[view];
   if (!target) return;
@@ -2218,9 +2194,14 @@ function setView(view) {
     parts.forEach((part) => (el[part].hidden = name !== view))
   );
   document.title = `${target.title} - ÉTS Mock`;
-  if (view === "schedule") showSchedule();
-  else if (view === "failures") loadFailures();
-  else loadStudent(state.student ? state.student.session : state.session);
+  if (view === "failures") {
+    loadFailures();
+  } else if (view === "student") {
+    loadStudent();
+  } else if (state.data) {
+    renderScaffold();
+    renderBlocks(false);
+  }
 }
 paintIcons();
 
@@ -2282,17 +2263,19 @@ el.failuresResetBtn.addEventListener("click", () =>
 );
 el.failuresUndoBtn.addEventListener("click", undoFailures);
 el.failuresRedoBtn.addEventListener("click", redoFailures);
-el.studentSessionSelect.addEventListener("change", () =>
-  loadStudent(dropdownValue(el.studentSessionSelect))
-);
 el.studentUndoBtn.addEventListener("click", () =>
-  studentPost("/undo", { session: state.student.session }, "Modification annulée")
+  studentPost("/undo", {}, "Modification annulée")
 );
 el.studentRedoBtn.addEventListener("click", () =>
-  studentPost("/redo", { session: state.student.session }, "Modification rétablie")
+  studentPost("/redo", {}, "Modification rétablie")
 );
 el.studentResetBtn.addEventListener("click", () =>
-  studentPost("/reset", { session: state.student.session }, "Dossier étudiant réinitialisé")
+  studentPost("/reset", {}, "Profil réinitialisé")
+);
+el.sessionDatesReset.addEventListener("click", () =>
+  apiPost("/session/dates/reset", { session: state.session }).then(() =>
+    toast("Dates de la session rétablies")
+  )
 );
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
