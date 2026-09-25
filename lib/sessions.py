@@ -197,6 +197,16 @@ def compute_week_shift_delta(active_code: str, target_week: int) -> int:
     return (target_start - original_start).days
 
 
+def date_fields(entry: dict) -> list[str]:
+    return [
+        key
+        for key, value in entry.items()
+        if key not in ("abrege", "auLong")
+        and isinstance(value, str)
+        and _DATE_RE.match(value)
+    ]
+
+
 def shift_session_metadata(session_code: str, day_delta: int) -> None:
     """Shift every date field of the session record in _RAW_SESSIONS in place."""
     if day_delta == 0:
@@ -204,12 +214,17 @@ def shift_session_metadata(session_code: str, day_delta: int) -> None:
     for entry in _RAW_SESSIONS:
         if entry["abrege"] != session_code:
             continue
-        for key, value in entry.items():
-            if key in ("abrege", "auLong"):
-                continue
-            if isinstance(value, str) and _DATE_RE.match(value):
-                entry[key] = _shift_date_str(value, day_delta)
+        for key in date_fields(entry):
+            entry[key] = _shift_date_str(entry[key], day_delta)
         return
+
+
+def apply_date_overrides(overrides: dict[str, dict[str, str]]) -> None:
+    for entry in _RAW_SESSIONS:
+        dates = overrides.get(entry["abrege"], {})
+        for key in date_fields(entry):
+            if key in dates:
+                entry[key] = dates[key]
 
 
 reload_sessions()

@@ -24,6 +24,7 @@ const ICONS = {
   hatGraduation: "hat_graduation_20_regular",
   hourglass: "hourglass_20_regular",
   lockClosed: "lock_closed_20_regular",
+  person: "person_20_regular",
   plugDisconnected: "plug_disconnected_20_regular",
   redo: "arrow_redo_20_regular",
   reset: "arrow_reset_20_regular",

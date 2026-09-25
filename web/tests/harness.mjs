@@ -12,6 +12,9 @@ const APP = readFileSync(join(WEB, "assets", "app.js"), "utf8");
 const FIXTURE = JSON.parse(
   readFileSync(join(HERE, "fixtures", "state.json"), "utf8"),
 );
+const STUDENT_FIXTURE = JSON.parse(
+  readFileSync(join(HERE, "fixtures", "student.json"), "utf8"),
+);
 
 const VENDOR_IMPORTS = [
   'import "./vendor/fluent.js";',
@@ -34,6 +37,7 @@ function ignoreRefusedRejections() {
 }
 
 export const baseState = () => clone(FIXTURE);
+export const baseStudent = () => clone(STUDENT_FIXTURE);
 
 export const toMin = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -275,6 +279,76 @@ function createAdmin(options) {
   return admin;
 }
 
+const STUDENT = "/editor/api/student";
+
+function createStudent(options) {
+  const calls = [];
+  const replies = new Map();
+  const original = clone(options.student || STUDENT_FIXTURE);
+  let current = clone(original);
+
+  const edit = (rows, originals, key, value) => {
+    const row = rows.find((candidate) => candidate.key === key);
+    const base = originals.find((candidate) => candidate.key === key).value;
+    row.value = value === null || value === "" ? base : value;
+    row.modified = row.value !== base;
+    current.canUndo = true;
+    current.canRedo = false;
+    current.canReset = [...current.dates, ...current.student].some((r) => r.modified);
+  };
+
+  const student = {
+    calls,
+    get state() {
+      return current;
+    },
+    reply(path, payload) {
+      replies.set(path, { status: 200, payload });
+    },
+    fail(path, message, status = 400) {
+      replies.set(path, { status, payload: { error: message } });
+      refused.add(message);
+      refused.add("Error");
+    },
+    called(path) {
+      return calls.filter((call) => call.path === path);
+    },
+    lastCall(path) {
+      const matching = student.called(path);
+      return matching.length ? matching[matching.length - 1] : null;
+    },
+    handle(href, request) {
+      const [path, query] = href.slice(STUDENT.length).split("?");
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, query: query || "", method: request.method || "GET", body });
+
+      const canned = replies.get(path);
+      if (canned) {
+        if (canned.status === 200) current = clone(canned.payload);
+        return {
+          ok: canned.status === 200,
+          status: canned.status,
+          statusText: "Error",
+          json: async () => clone(canned.payload),
+        };
+      }
+
+      if (path === "/state") {
+        const wanted = new URLSearchParams(query).get("session");
+        if (current.sessions.includes(wanted)) current.session = wanted;
+      } else if (path === "/session-date") {
+        edit(current.dates, original.dates, body.field, body.value);
+      } else if (path === "/profile") {
+        edit(current.student, original.student, body.field, body.value);
+      } else if (path === "/reset") {
+        current = { ...clone(original), canUndo: true };
+      }
+      return { ok: true, status: 200, json: async () => clone(current) };
+    },
+  };
+  return student;
+}
+
 function createServer(initial, options) {
   const calls = [];
   const replies = new Map();
@@ -283,6 +357,7 @@ function createServer(initial, options) {
   const server = {
     calls,
     admin: createAdmin(options),
+    student: createStudent(options),
     get state() {
       return current;
     },
@@ -307,6 +382,7 @@ function createServer(initial, options) {
     fetch: async (url, request = {}) => {
       const href = String(url);
       if (href.startsWith(ADMIN)) return server.admin.handle(href, request);
+      if (href.startsWith(STUDENT)) return server.student.handle(href, request);
       const [rawPath, query] = href.replace("/editor/api", "").split("?");
       const call = {
         path: rawPath,
