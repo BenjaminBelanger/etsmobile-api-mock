@@ -104,7 +104,6 @@ class CoteBody(BaseModel):
 
 
 class StudentFieldBody(BaseModel):
-    session: str = ""
     field: str
     value: bool | str | None = None
 
@@ -283,35 +282,38 @@ def reset(body: SessionBody):
     return _guard(schedule_editor.reset_session, body.session)
 
 
+@router.post("/api/session/date")
+def session_date(body: SessionDateBody):
+    return _guard(
+        schedule_editor.set_session_date, body.session, body.field, body.value
+    )
+
+
+@router.post("/api/session/dates/reset")
+def session_dates_reset(body: SessionBody):
+    return _guard(schedule_editor.reset_session_dates, body.session)
+
+
 @router.get("/api/student/state")
-def student_state(session: str = Query("")):
-    return _guard(student_editor.get_state, session)
+def student_state():
+    return _guard(student_editor.get_state)
 
 
-@router.post("/api/student/profile")
-def student_profile(body: StudentFieldBody):
-    return _guard(
-        student_editor.set_student_field, body.session, body.field, body.value
-    )
-
-
-@router.post("/api/student/session-date")
-def student_session_date(body: SessionDateBody):
-    return _guard(
-        student_editor.set_session_date, body.session, body.field, body.value
-    )
+@router.post("/api/student/set")
+def student_set(body: StudentFieldBody):
+    return _guard(student_editor.set_field, body.field, body.value)
 
 
 @router.post("/api/student/undo")
-def student_undo(body: SessionBody):
-    return _guard(student_editor.undo, body.session)
+def student_undo():
+    return _guard(student_editor.undo)
 
 
 @router.post("/api/student/redo")
-def student_redo(body: SessionBody):
-    return _guard(student_editor.redo, body.session)
+def student_redo():
+    return _guard(student_editor.redo)
 
 
 @router.post("/api/student/reset")
-def student_reset(body: SessionBody):
-    return _guard(student_editor.reset, body.session)
+def student_reset():
+    return _guard(student_editor.reset)

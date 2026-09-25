@@ -404,6 +404,24 @@ describe("editing from the detail panel", () => {
     app.close();
   });
 
+  test("keeps a field being typed when another save redraws the panel", async () => {
+    const app = await mount();
+    await openCourse(app);
+    const typed = field(app, "exam:local");
+    typed.setAttribute("tabindex", "0");
+    typed.focus();
+    typed.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "9", bubbles: true }));
+    typed.value = "B-1519";
+    await commit(app, "course:cote", "A");
+
+    assert.equal(field(app, "exam:local"), typed);
+    assert.equal(typed.value, "B-1519");
+
+    await leave(app, typed);
+    assert.equal(app.server.lastCall("/exam/set").body.local, "B-1519");
+    app.close();
+  });
+
   test("says when a course has no exam", async () => {
     const state = baseState();
     state.courses[1].exam = null;

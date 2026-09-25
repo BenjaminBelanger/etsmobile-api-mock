@@ -151,14 +151,20 @@ def test_the_failures_panel_only_talks_to_routes_the_server_serves():
     assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
 
 
+def test_the_ui_fixture_dates_match_the_served_shape():
+    served = schedule_editor.get_state(SESSION)["dates"]
+    fixture = fixture_state()["dates"]
+
+    assert keys_of(fixture[0]) == keys_of(served[0])
+    assert [row["key"] for row in fixture] == [row["key"] for row in served]
+
+
 def test_the_ui_student_fixture_matches_the_state_the_server_sends():
-    served = student_editor.get_state(SESSION)
+    served = student_editor.get_state()
     fixture = json.loads(STUDENT_FIXTURE.read_text(encoding="utf-8"))
 
     assert keys_of(fixture) == keys_of(served)
-    assert keys_of(fixture["dates"][0]) == keys_of(served["dates"][0])
     assert keys_of(fixture["student"][0]) == keys_of(served["student"][0])
-    assert [row["key"] for row in fixture["dates"]] == [row["key"] for row in served["dates"]]
     assert [row["key"] for row in fixture["student"]] == [
         row["key"] for row in served["student"]
     ]
