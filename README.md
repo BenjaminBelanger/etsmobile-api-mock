@@ -324,9 +324,9 @@ timeout injection) shows as *en cours* until it does.
 
 Use it to see when and how often the app calls the API:
 
-- Calls with the same endpoint and the same parameters get a `×N` mark, shown
-  in orange on every one after the first. These are calls the app could cache
-  or skip.
+- Calls with the same endpoint and the same parameters are numbered `1/3`,
+  `2/3`, `3/3`, and every one after the first is shown in orange. These are
+  calls the app could cache or skip.
 - The **Par endpoint** panel shows, for each endpoint, the number of calls, how
   many were repeats and the total size, with a total row at the bottom.
 - Type a label such as `notes ouvertes`, then click **Ajouter un marqueur** (or

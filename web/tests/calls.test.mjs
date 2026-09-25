@@ -208,7 +208,7 @@ describe("the call list", () => {
 describe("repeated calls", () => {
   const repeat = (app, id) => rowFor(app, id).querySelector(".repeat");
 
-  test("are flagged with how many identical calls were made", async () => {
+  test("are numbered among the identical calls made", async () => {
     const app = await onCalls([
       callEntry({ id: 1, ...GRADES }),
       callEntry({ id: 2, endpoint: "listeSessions" }),
@@ -216,8 +216,9 @@ describe("repeated calls", () => {
       callEntry({ id: 4, ...GRADES }),
     ]);
 
-    assert.equal(repeat(app, 1).textContent.trim(), "×3");
-    assert.equal(repeat(app, 3).textContent.trim(), "×3");
+    assert.equal(repeat(app, 1).textContent.trim(), "1/3");
+    assert.equal(repeat(app, 3).textContent.trim(), "2/3");
+    assert.equal(repeat(app, 4).textContent.trim(), "3/3");
     assert.equal(repeat(app, 4).title.startsWith("Appel identique 3 sur 3"), true);
     assert.equal(repeat(app, 2), null);
     app.close();

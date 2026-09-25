@@ -2054,7 +2054,7 @@ function callFailureHtml(failure) {
 }
 
 function repeatHtml({ nth, total }) {
-  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">×${total}</span>`;
+  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">${nth}/${total}</span>`;
 }
 
 function callRowHtml(call, repeat) {
