@@ -24,6 +24,22 @@ async function commit(app, key, value) {
   return node;
 }
 
+async function typeInto(app, key, value) {
+  const node = field(app, key);
+  node.dispatchEvent(
+    new app.window.KeyboardEvent("keydown", { key: value.slice(-1), bubbles: true }),
+  );
+  node.value = value;
+  app.fire(node, "change");
+  await flush();
+  return node;
+}
+
+async function leave(app, node) {
+  app.fire(node, "focusout");
+  await flush();
+}
+
 async function check(app, key, checked) {
   const node = field(app, key);
   node.checked = checked;
@@ -317,6 +333,74 @@ describe("editing from the detail panel", () => {
       courseId: COURSE,
       local: "Z-9999",
     });
+    app.close();
+  });
+
+  test("saves a typed exam date once the field is left", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const node = await typeInto(app, "exam:date", "2026-04-22");
+    assert.equal(app.server.called("/exam/set").length, 0);
+
+    await leave(app, node);
+    assert.equal(app.server.called("/exam/set").length, 1);
+    assert.deepEqual(app.server.lastCall("/exam/set").body, {
+      session: "H2026",
+      courseId: COURSE,
+      date: "2026-04-22",
+    });
+    app.close();
+  });
+
+  test("saves a typed exam time only once when Enter leaves the field", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const node = await typeInto(app, "exam:heureDebut", "14:30");
+    node.dispatchEvent(
+      new app.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    app.fire(node, "change");
+    await leave(app, node);
+
+    assert.equal(app.server.called("/exam/set").length, 1);
+    assert.equal(app.server.lastCall("/exam/set").body.heureDebut, "14:30");
+    app.close();
+  });
+
+  test("does not save a field that is left unchanged", async () => {
+    const app = await mount();
+    await openCourse(app);
+    await openEvaluation(app, 0);
+
+    await leave(app, field(app, "exam:date"));
+    await leave(app, field(app, "ev:dateCible"));
+    await leave(app, field(app, "ev:nom"));
+
+    assert.equal(app.server.called("/exam/set").length, 0);
+    assert.equal(app.server.called("/evaluation/set").length, 0);
+    app.close();
+  });
+
+  test("keeps an incomplete date away from the text input and clears it on leave", async () => {
+    const app = await mount();
+    await openCourse(app);
+    const node = field(app, "exam:date");
+    const control = app.document.createElement("span");
+    control.validity = { badInput: true };
+    node.appendChild(control);
+    let reached = 0;
+    control.addEventListener("input", () => {
+      reached += 1;
+    });
+
+    node.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "0", bubbles: true }));
+    control.dispatchEvent(new app.window.Event("input", { bubbles: true, composed: true }));
+    await leave(app, node);
+
+    assert.equal(reached, 0);
+    assert.equal(app.server.lastCall("/exam/set").body.date, "");
     app.close();
   });
 
