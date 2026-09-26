@@ -13,6 +13,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 - [Profiles](#profiles)
 - [Scenarios](#scenarios)
 - [Failure Injection](#failure-injection)
+- [Call Log](#call-log)
 - [Sample Data](#sample-data)
 - [Authentication](#authentication)
 - [Customizing Data](#customizing-data)
@@ -50,8 +51,9 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has two tabs: **Horaire**, the schedule editor described below, and
-**Pannes**, the [failure injection](#failure-injection) panel.
+The page has three tabs: **Horaire**, the schedule editor described below,
+**Pannes**, the [failure injection](#failure-injection) panel, and **Logs**,
+the [call log](#call-log).
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -234,7 +236,8 @@ The mock can simulate broken-server conditions. Set them at startup with flags, 
 
 The **Pannes** tab lists the active injections, lets you edit, add and remove
 them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
-CLI, so both describe the same config.
+CLI, so both describe the same config. The [call log](#call-log) shows which
+calls each injection hit.
 
 <img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
 
@@ -310,6 +313,31 @@ python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail liste
 | `chaos` | Latency + errors + corrupted bodies all at once |
 
 Add new presets by editing `seed/failure_presets.json`.
+
+## Call Log
+
+The **Logs** tab of the web UI lists every call the mock receives under
+`/api/`, with its endpoint, parameters, status, duration, size and any injected
+failure. Use it to see when and how often the app calls the API:
+
+- Repeated calls (same endpoint and parameters) are numbered and shown in
+  orange, since the app could cache or skip them.
+- The **Par endpoint** panel sums the calls, repeats and size per endpoint.
+- Add a marker just before an action in the app to group the calls it triggers.
+- Download the log as JSON, or clear it.
+
+<img width="2556" height="1237" alt="Screenshot 2026-09-26 163013" src="https://github.com/user-attachments/assets/1535a18b-acfa-4144-8044-c738316bffd9" />
+
+The log is kept in memory (the last 100,000 entries) and resets when the server
+restarts.
+
+It can also be read and cleared through the admin endpoint:
+
+```bash
+curl http://localhost:8080/admin/calls              # list the log
+curl "http://localhost:8080/admin/calls?after=42"   # only entries newer than id 42
+curl -X DELETE http://localhost:8080/admin/calls    # clear it
+```
 
 ## Sample Data
 

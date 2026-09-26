@@ -31,6 +31,10 @@ const state = {
   staged: [],
   endpoints: [],
   presets: [],
+  calls: [],
+  callsSeq: 0,
+  callsFailed: false,
+  callsGroup: null,
 };
 
 const el = {
@@ -54,6 +58,22 @@ const el = {
   injectionList: document.getElementById("injectionList"),
   injectionEmpty: document.getElementById("injectionEmpty"),
   presetList: document.getElementById("presetList"),
+  callsView: document.getElementById("callsView"),
+  callsToolbar: document.getElementById("callsToolbar"),
+  callsBoard: document.getElementById("callsBoard"),
+  callsTable: document.getElementById("callsTable"),
+  callsOlder: document.getElementById("callsOlder"),
+  callsOlderNote: document.getElementById("callsOlderNote"),
+  callRows: document.getElementById("callRows"),
+  callsEmpty: document.getElementById("callsEmpty"),
+  callsClearBtn: document.getElementById("callsClearBtn"),
+  callsExportBtn: document.getElementById("callsExportBtn"),
+  callsTotal: document.getElementById("callsTotal"),
+  endpointStats: document.getElementById("endpointStats"),
+  endpointStatsRows: document.getElementById("endpointStatsRows"),
+  endpointStatsEmpty: document.getElementById("endpointStatsEmpty"),
+  markerLabel: document.getElementById("markerLabel"),
+  markerAddBtn: document.getElementById("markerAddBtn"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -1940,27 +1960,395 @@ function submitFailure() {
   patchFailures(body, "Panne enregistrée").then(() => el.failureDialog.hide());
 }
 
+const CALLS = "/admin/calls";
+const CALLS_POLL_MS = 1000;
+const CALLS_SHOWN = 1000;
+
+const CALL_FAILURES = {
+  latency: (failure) => `Latence ${fmtDuration(failure.ms)}`,
+  errorRate: () => "Erreur aléatoire",
+  fail: () => "Endpoint en panne",
+  timeout: (failure) => `Expiration après ${decimal(failure.seconds)} s`,
+  malformed: () => "Réponse tronquée",
+  auth: () => "Authentification manquante",
+};
+
+const decimal = (value, digits = 1) =>
+  String(Number(value.toFixed(digits))).replace(".", ",");
+
+function fmtDuration(ms) {
+  if (ms < 10) return `${decimal(ms)} ms`;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${decimal(ms / 1000)} s`;
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${decimal(bytes / 1024)} ko`;
+  return `${decimal(bytes / (1024 * 1024))} Mo`;
+}
+
+const pad = (value, width = 2) => String(value).padStart(width, "0");
+
+function fmtClock(iso) {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(
+    d.getMilliseconds(),
+    3
+  )}`;
+}
+
+const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
+
+const isCall = (entry) => entry.kind === "call";
+const isPending = (entry) => isCall(entry) && entry.status == null;
+
+const callKeys = new WeakMap();
+
+function callKey(call) {
+  if (!callKeys.has(call)) {
+    callKeys.set(call, JSON.stringify([call.endpoint, Object.entries(call.params).sort()]));
+  }
+  return callKeys.get(call);
+}
+
+function repeatsOf(calls) {
+  const totals = new Map();
+  calls.forEach((call) => {
+    const key = callKey(call);
+    totals.set(key, (totals.get(key) || 0) + 1);
+  });
+  const seen = new Map();
+  const firsts = new Map();
+  return new Map(
+    calls.map((call) => {
+      const key = callKey(call);
+      const nth = (seen.get(key) || 0) + 1;
+      seen.set(key, nth);
+      if (nth === 1) firsts.set(key, call.id);
+      return [call.id, { nth, total: totals.get(key), group: String(firsts.get(key)) }];
+    })
+  );
+}
+
+function markerSections(entries) {
+  const sections = new Map();
+  let current = null;
+  entries.forEach((entry) => {
+    if (!isCall(entry)) {
+      current = { calls: 0, bytes: 0 };
+      sections.set(entry.id, current);
+    } else if (current) {
+      current.calls += 1;
+      current.bytes += entry.bytes || 0;
+    }
+  });
+  return sections;
+}
+
+function statusHtml(status) {
+  if (status == null) return `<span class="status is-pending">en cours</span>`;
+  const tone = status >= 500 ? "error" : status >= 400 ? "warn" : "ok";
+  return `<span class="status status--${tone}">${status}</span>`;
+}
+
+const paramsHtml = (params) =>
+  Object.entries(params)
+    .map(
+      ([key, value]) =>
+        `<span class="param"><span class="param__key">${escapeHtml(key)}=</span>${escapeHtml(
+          value
+        )}</span>`
+    )
+    .join(" ");
+
+function callFailureHtml(failure) {
+  const label = CALL_FAILURES[failure.kind]?.(failure) ?? failure.kind;
+  return `<span class="call-failure">${escapeHtml(label)}</span>`;
+}
+
+function repeatHtml({ nth, total }) {
+  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">${nth}/${total}</span>`;
+}
+
+function callRowHtml(call, repeat) {
+  const pending = call.status == null;
+  const classes = ["call", repeat.nth > 1 ? "is-repeat" : "", pending ? "is-pending" : ""];
+  const group = repeat.total > 1 ? ` data-group="${repeat.group}"` : "";
+  return `<tr class="${classes.join(" ").trim()}" data-id="${call.id}"${group}>
+      <td class="calls__time">${fmtClock(call.time)}</td>
+      <td class="calls__endpoint" title="${escapeHtml(call.path)}"><span class="calls__name">${escapeHtml(
+        call.endpoint || call.path
+      )}</span>${repeat.total > 1 ? repeatHtml(repeat) : ""}</td>
+      <td class="calls__params">${paramsHtml(call.params)}</td>
+      <td class="calls__num calls__status">${statusHtml(call.status)}</td>
+      <td class="calls__num calls__duration">${pending ? "" : fmtDuration(call.durationMs)}</td>
+      <td class="calls__num calls__size">${pending ? "" : fmtBytes(call.bytes)}</td>
+      <td class="calls__failures">${call.failures.map(callFailureHtml).join(", ")}</td>
+    </tr>`;
+}
+
+function markerRowHtml(marker, section) {
+  const summary = section.calls
+    ? `${plural(section.calls, "appel")} · ${fmtBytes(section.bytes)}`
+    : "aucun appel";
+  return `<tr class="marker" data-id="${marker.id}">
+      <td class="calls__time">${fmtClock(marker.time)}</td>
+      <td colspan="5"><span class="marker__label">${escapeHtml(
+        marker.label
+      )}</span><span class="marker__summary">${summary}</span></td>
+      <td class="marker__actions"><button type="button" class="marker__x" data-remove-marker="${
+        marker.id
+      }" title="Retirer le marqueur" aria-label="Retirer ${escapeHtml(marker.label)}">${icon(
+        "dismiss",
+        12
+      )}</button></td>
+    </tr>`;
+}
+
+function endpointStats(calls, repeats) {
+  const rows = new Map();
+  calls.forEach((call) => {
+    const row = rows.get(call.endpoint) || {
+      endpoint: call.endpoint,
+      calls: 0,
+      repeated: 0,
+      done: 0,
+      bytes: 0,
+    };
+    row.calls += 1;
+    if (repeats.get(call.id).nth > 1) row.repeated += 1;
+    if (call.status != null) {
+      row.done += 1;
+      row.bytes += call.bytes;
+    }
+    rows.set(call.endpoint, row);
+  });
+  return [...rows.values()].sort(
+    (a, b) => b.calls - a.calls || a.endpoint.localeCompare(b.endpoint)
+  );
+}
+
+const statCells = (row) => `
+      <td class="endpoint-stats__num">${row.calls}</td>
+      <td class="endpoint-stats__num endpoint-stats__repeated">${row.repeated || ""}</td>
+      <td class="endpoint-stats__num">${row.done ? fmtBytes(row.bytes) : ""}</td>`;
+
+function renderEndpointStats(calls, repeats) {
+  const rows = endpointStats(calls, repeats);
+  const total = rows.reduce(
+    (sum, row) => ({
+      calls: sum.calls + row.calls,
+      repeated: sum.repeated + row.repeated,
+      done: sum.done + row.done,
+      bytes: sum.bytes + row.bytes,
+    }),
+    { calls: 0, repeated: 0, done: 0, bytes: 0 }
+  );
+  el.endpointStats.hidden = !total.calls;
+  el.endpointStatsEmpty.hidden = total.calls > 0;
+  el.endpointStatsRows.innerHTML = rows
+    .map(
+      (row) => `<tr data-endpoint="${escapeHtml(row.endpoint)}">
+        <th scope="row" title="${escapeHtml(row.endpoint)}">${escapeHtml(row.endpoint)}</th>${statCells(
+          row
+        )}
+      </tr>`
+    )
+    .join("");
+  el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
+}
+
+function olderNote(count) {
+  const s = count > 1 ? "s" : "";
+  return `${count} entrée${s} plus ancienne${s} masquée${s}. Toujours dans les statistiques et l'export.`;
+}
+
+function markCallGroup() {
+  el.callRows
+    .querySelectorAll("tr[data-group]")
+    .forEach((row) => row.classList.toggle("is-grouped", row.dataset.group === state.callsGroup));
+}
+
+function hoverCallGroup(group) {
+  if (state.callsGroup === group) return;
+  state.callsGroup = group;
+  markCallGroup();
+}
+
+function renderCalls(stick) {
+  const board = el.callsBoard;
+  const atBottom = stick || board.scrollHeight - board.scrollTop - board.clientHeight < 24;
+  const entries = state.calls;
+  const calls = entries.filter(isCall);
+  const repeats = repeatsOf(calls);
+  const sections = markerSections(entries);
+  const shown = entries.slice(-CALLS_SHOWN);
+  const older = entries.length - shown.length;
+  el.callRows.innerHTML = shown
+    .map((entry) =>
+      isCall(entry)
+        ? callRowHtml(entry, repeats.get(entry.id))
+        : markerRowHtml(entry, sections.get(entry.id))
+    )
+    .join("");
+  el.callsOlder.hidden = !older;
+  el.callsOlderNote.textContent = older ? olderNote(older) : "";
+  markCallGroup();
+  el.callsTable.hidden = !entries.length;
+  el.callsEmpty.hidden = entries.length > 0;
+  el.callsClearBtn.disabled = !entries.length;
+  el.callsExportBtn.disabled = !entries.length;
+  renderEndpointStats(calls, repeats);
+  if (atBottom) board.scrollTop = board.scrollHeight;
+}
+
+function applyCalls({ entries, firstId }, after, stick) {
+  const known = state.calls.filter((entry) => entry.id <= after);
+  const kept = known.filter((entry) => entry.id >= firstId);
+  const replaced = state.calls.slice(known.length);
+  const changed =
+    kept.length !== known.length || JSON.stringify(entries) !== JSON.stringify(replaced);
+  state.calls = [...kept, ...entries];
+  if (changed || stick) renderCalls(stick);
+}
+
+let callsTimer = null;
+
+function scheduleCallsPoll() {
+  clearTimeout(callsTimer);
+  callsTimer =
+    state.view === "calls" && !document.hidden
+      ? setTimeout(() => loadCalls(), CALLS_POLL_MS)
+      : null;
+}
+
+async function loadCalls(stick) {
+  const seq = ++state.callsSeq;
+  const pending = state.calls.find(isPending);
+  const last = state.calls.at(-1);
+  const after = pending ? pending.id - 1 : last ? last.id : 0;
+  try {
+    const res = await fetch(`${CALLS}?after=${after}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    if (seq !== state.callsSeq) return;
+    applyCalls(data, after, stick);
+    if (state.callsFailed) {
+      state.callsFailed = false;
+      setStatus("Prêt.", false);
+    }
+  } catch (err) {
+    if (seq !== state.callsSeq) return;
+    if (!state.callsFailed) {
+      state.callsFailed = true;
+      setStatus("Impossible de lire le journal des appels.", false, true);
+    }
+  }
+  scheduleCallsPoll();
+}
+
+async function changeCalls(path, options, message, stick = true) {
+  setStatus("Enregistrement…", true);
+  let saved = false;
+  try {
+    const res = await fetch(`${CALLS}${path}`, options);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    setStatus("Enregistré.", false);
+    toast(message);
+    saved = true;
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+  }
+  await loadCalls(stick);
+  return saved;
+}
+
+function exportCalls() {
+  if (!state.calls.length) return;
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(
+    now.getHours()
+  )}${pad(now.getMinutes())}`;
+  const body = JSON.stringify({ entries: state.calls, firstId: state.calls[0].id }, null, 2);
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `api-calls-${stamp}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url));
+}
+
+function addMarker() {
+  const typed = String(el.markerLabel.value || "").trim();
+  const markers = state.calls.filter((entry) => !isCall(entry));
+  const labels = new Set(markers.map((marker) => marker.label));
+  let number = markers.length + 1;
+  while (labels.has(`Marqueur ${number}`)) number += 1;
+  const label = typed || `Marqueur ${number}`;
+  changeCalls(
+    "/marker",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    },
+    "Marqueur ajouté"
+  ).then((saved) => {
+    if (saved) el.markerLabel.value = "";
+  });
+}
+
+async function removeMarker(button) {
+  const id = Number(button.dataset.removeMarker);
+  button.disabled = true;
+  const removed = await changeCalls(
+    `/marker/${id}`,
+    { method: "DELETE" },
+    "Marqueur retiré",
+    false
+  );
+  if (removed) state.calls = state.calls.filter((entry) => entry.id !== id);
+  renderCalls();
+}
+
+const VIEWS = {
+  schedule: {
+    tab: "viewSchedule",
+    title: "Horaire",
+    panes: [el.scheduleView, el.scheduleControls, el.scheduleToolbar],
+  },
+  failures: {
+    tab: "viewFailures",
+    title: "Pannes",
+    panes: [el.failuresView, el.failuresToolbar],
+  },
+  calls: {
+    tab: "viewCalls",
+    title: "Logs",
+    panes: [el.callsView, el.callsToolbar],
+  },
+};
+
 function setView(view) {
-  if (view !== "schedule" && view !== "failures") return;
-  const tabId = view === "schedule" ? "viewSchedule" : "viewFailures";
-  if (el.viewToggle.activeid !== tabId) el.viewToggle.activeid = tabId;
+  const target = VIEWS[view];
+  if (!target) return;
+  if (el.viewToggle.activeid !== target.tab) el.viewToggle.activeid = target.tab;
   if (state.view === view) return;
   state.view = view;
-  const schedule = view === "schedule";
-  el.scheduleView.hidden = !schedule;
-  el.scheduleControls.hidden = !schedule;
-  el.scheduleToolbar.hidden = !schedule;
-  el.failuresView.hidden = schedule;
-  el.failuresToolbar.hidden = schedule;
-  document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
-  if (schedule) {
-    if (state.data) {
-      renderScaffold();
-      renderBlocks(false);
-    }
-  } else {
-    loadFailures();
+  Object.entries(VIEWS).forEach(([name, { panes }]) =>
+    panes.forEach((pane) => (pane.hidden = name !== view))
+  );
+  document.title = `${target.title} - ÉTS Mock`;
+  if (view === "schedule" && state.data) {
+    renderScaffold();
+    renderBlocks(false);
   }
+  if (view === "failures") loadFailures();
+  if (view === "calls") loadCalls(true);
+  else scheduleCallsPoll();
 }
 paintIcons();
 
@@ -2022,6 +2410,29 @@ el.failuresResetBtn.addEventListener("click", () =>
 );
 el.failuresUndoBtn.addEventListener("click", undoFailures);
 el.failuresRedoBtn.addEventListener("click", redoFailures);
+el.callsClearBtn.addEventListener("click", () =>
+  changeCalls("", { method: "DELETE" }, "Journal effacé")
+);
+el.callsExportBtn.addEventListener("click", exportCalls);
+el.markerAddBtn.addEventListener("click", addMarker);
+el.markerLabel.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  addMarker();
+});
+el.callRows.addEventListener("mouseover", (e) =>
+  hoverCallGroup(e.target.closest("tr[data-group]")?.dataset.group ?? null)
+);
+el.callRows.addEventListener("mouseleave", () => hoverCallGroup(null));
+el.callRows.addEventListener("click", (e) => {
+  const button = e.target.closest("[data-remove-marker]");
+  if (button) removeMarker(button);
+});
+document.addEventListener("visibilitychange", () => {
+  if (state.view !== "calls") return;
+  if (document.hidden) scheduleCallsPoll();
+  else loadCalls();
+});
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -2065,6 +2476,7 @@ const TEXT_ENTRY =
   'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
 
 document.addEventListener("keydown", (e) => {
+  if (state.view === "calls") return;
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||

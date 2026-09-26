@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from lib import failures
+from lib import call_log, failures
 from lib._paths import ROOT
 from lib.data_store import (
     ACTIVE_SESSION,
@@ -58,9 +58,11 @@ async def http_exception_handler(_request: Request, exc: HTTPException):
 
 
 app.middleware("http")(failures.failure_middleware)
+app.add_middleware(call_log.CallLogMiddleware)
 
 app.include_router(router)
 app.include_router(failures.router)
+app.include_router(call_log.router)
 app.include_router(editor_router)
 app.mount(
     "/editor/assets",
