@@ -399,45 +399,30 @@ The mock server requires no authentication, so you can skip past or stub out the
 
 ### Doing it automatically
 
-`start.py --app` applies steps 2-4 for you, then puts the app back the way it
-was when the server stops. Give the path once; it is remembered for every
-later run:
+`start.py --app` applies steps 2-4 when the server starts and undoes them when
+it stops (Ctrl+C, closed terminal, `SIGTERM`/`SIGHUP`). The path is remembered:
 
 ```bash
-python start.py --app ../Notre-Dame --platform ios   # first run: configure, run, revert on exit
-python start.py                                      # any later day: same app, same platform
-python start.py --profile semester-off               # flags reuse it too
+python start.py --app ../Notre-Dame --platform ios   # first run
+python start.py                                      # later runs: same app, same platform
 python start.py --no-app                             # this run only: leave the app alone
 ```
-
-The app is patched before the server starts and restored when it stops: server
-up means the app is configured, server down means the app is back to normal.
-Only the lines listed in steps 2-4 are touched, so your own work in those files
-is kept, including edits made while the server runs. Nothing is ever committed
-on the app side.
 
 | Flag | Description |
 |------|-------------|
 | `--app PATH` | Flutter repo to configure (default: the saved app) |
 | `--no-app` | Start the server without touching the saved app |
-| `--platform android\|ios` | Host to write into the app: `10.0.2.2:8080` (default) or `localhost:8080` |
-| `--host HOST` | Explicit host for a physical device (`:8080` is added when no port is given) |
-| `--revert-app` | Restore the app and exit, for a run that did not revert (killed process, crash) |
+| `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
+| `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
+| `--revert-app` | Restore the app and exit, after a run that didn't (killed, crashed) |
 
-The path, platform and host are saved in `mock.config.json` (git-ignored) each
-time the app is configured, and a flag always wins over the saved value. The
-interactive menu offers the saved app as its default, so pressing Enter
-configures it again. To forget the app, delete `mock.config.json`:
-
-```json
-{
-  "app": "C:/Users/you/projects/Notre-Dame",
-  "platform": "ios"
-}
-```
-
-The lines in steps 2-4 are restored from the app's last commit. If one of them
-can't be matched to that commit (for example a second `SignetsClient(dio)`
-call), the run stops before touching anything. The same check runs when the
-server stops: a file it can't match is left as is and listed so you can check
-it.
+- Only the lines from steps 2-4 change, and they are restored exactly as they
+  were, uncommitted edits included. The app doesn't need to be a git repo.
+- Starting a second `start.py` hands the app over to it.
+- The app, platform, host and original lines are kept in `mock.config.json`
+  (git-ignored). Flags override saved values. Delete it to forget the app, but
+  not while a server runs.
+- A file whose mock lines were added or removed during the run is left as is:
+  fix it, then run `--revert-app`.
+- An app already pointed at a local server (steps applied by hand) is refused
+  until the production values are back.

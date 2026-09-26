@@ -1,7 +1,5 @@
 import json
-import os
 import re
-import subprocess
 from pathlib import Path
 
 from ._api import API_PREFIX, SERVER_PORT
@@ -20,8 +18,8 @@ URLS = "lib/domain/constants/urls.dart"
 REQUEST_BUILDER = "lib/data/services/signets-api/request_builder_service.dart"
 LOCATOR = "lib/locator.dart"
 
+_HOST = re.compile(r"(?:[A-Za-z0-9._-]+|\[[0-9A-Fa-f:.]+\])(?::(?P<port>\d{1,5}))?")
 _SIGNETS_HOST = re.compile(r"(signetsAPI\s*=\s*)(['\"])[^'\"]*\2")
-_HTTPS_CALL = re.compile(r"Uri\.https\(")
 _URI_CALL = re.compile(r"Uri\.https?\(")
 _SIGNETS_CLIENT = re.compile(
     r"SignetsClient\(\s*dio\s*(?:,\s*baseUrl:\s*(['\"])[^'\"]*\1\s*)?\)"
@@ -32,9 +30,19 @@ class AppError(Exception):
     pass
 
 
+def check_host(host: str) -> str:
+    match = _HOST.fullmatch(host)
+    if match is None or not 0 < int(match["port"] or SERVER_PORT) < 65536:
+        raise AppError(
+            f"hôte invalide « {host} »: un nom ou une adresse, avec ou sans "
+            "port et sans http:// (ex: 192.168.1.10 ou 192.168.1.10:8080)."
+        )
+    return host if match["port"] else f"{host}:{SERVER_PORT}"
+
+
 def resolve_host(platform: str | None, host: str | None) -> str:
-    if host:
-        return host if ":" in host else f"{host}:{SERVER_PORT}"
+    if host is not None:
+        return check_host(host)
     return f"{PLATFORM_HOSTS[platform or DEFAULT_PLATFORM]}:{SERVER_PORT}"
 
 
@@ -42,90 +50,74 @@ def base_url(host: str) -> str:
     return f"http://{host}{API_PREFIX}/"
 
 
-def _patch_host(text: str, host: str) -> str:
-    patched, count = _SIGNETS_HOST.subn(lambda m: f'{m.group(1)}"{host}"', text)
-    if not count:
-        raise AppError(f"{URLS}: aucune constante signetsAPI trouvée.")
-    return patched
-
-
-def _patch_scheme(text: str, _host: str) -> str:
-    patched, count = _HTTPS_CALL.subn("Uri.http(", text)
-    if not count and "Uri.http(" not in text:
-        raise AppError(f"{REQUEST_BUILDER}: aucun appel Uri.https trouvé.")
-    return patched
-
-
-def _patch_client(text: str, host: str) -> str:
-    patched, count = _SIGNETS_CLIENT.subn(
-        lambda _: f"SignetsClient(dio, baseUrl: '{base_url(host)}')", text
-    )
-    if not count:
-        raise AppError(f"{LOCATOR}: aucun appel SignetsClient(dio) trouvé.")
-    return patched
-
-
 PATCHES = (
-    (URLS, _SIGNETS_HOST, _patch_host),
-    (REQUEST_BUILDER, _URI_CALL, _patch_scheme),
-    (LOCATOR, _SIGNETS_CLIENT, _patch_client),
+    (
+        URLS,
+        _SIGNETS_HOST,
+        lambda match, host: f'{match.group(1)}"{host}"',
+        "aucune constante signetsAPI trouvée.",
+    ),
+    (
+        REQUEST_BUILDER,
+        _URI_CALL,
+        lambda match, host: "Uri.http(",
+        "aucun appel Uri.https trouvé.",
+    ),
+    (
+        LOCATOR,
+        _SIGNETS_CLIENT,
+        lambda match, host: f"SignetsClient(dio, baseUrl: '{base_url(host)}')",
+        "aucun appel SignetsClient(dio) trouvé.",
+    ),
 )
 
-TARGETS = tuple(name for name, _, _ in PATCHES)
+TARGETS = tuple(target for target, *_ in PATCHES)
 
-
-def _git(cwd: Path, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        ["git", "-C", str(cwd), *args],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
-
-
-def _head(root: Path, name: str) -> str | None:
-    shown = subprocess.run(
-        ["git", "-C", str(root), "cat-file", "--filters", f"HEAD:{name}"],
-        capture_output=True,
-    )
-    return shown.stdout.decode("utf-8") if shown.returncode == 0 else None
+_PATTERNS = {target: pattern for target, pattern, *_ in PATCHES}
 
 
 def _read(file: Path) -> str:
-    return file.read_bytes().decode("utf-8")
+    try:
+        return file.read_bytes().decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise AppError(f"lecture impossible de {file}: {exc}") from None
 
 
 def _write(file: Path, text: str) -> None:
-    file.write_bytes(text.encode("utf-8"))
+    try:
+        file.write_bytes(text.encode("utf-8"))
+    except OSError as exc:
+        raise AppError(f"écriture impossible de {file}: {exc}") from None
 
 
-def _restore(text: str, original: str, pattern: re.Pattern) -> str | None:
-    originals = [match.group(0) for match in pattern.finditer(original)]
-    if len(originals) != sum(1 for _ in pattern.finditer(text)):
-        return None
-    pieces = iter(originals)
-    return pattern.sub(lambda _: next(pieces), text)
+def _lines(text: str, pattern: re.Pattern) -> list[str]:
+    return [match.group(0) for match in pattern.finditer(text)]
 
 
-def _repo(path: Path) -> tuple[Path, list[str]]:
-    top = _git(path, "rev-parse", "--show-toplevel")
-    if top.returncode != 0:
-        raise AppError(
-            f"{path} n'est pas un dépôt git; le retour en arrière a besoin de "
-            "la version commitée des fichiers."
-        )
-    root = Path(top.stdout.strip())
-    prefix = os.path.relpath(path, root).replace(os.sep, "/")
-    names = [name if prefix == "." else f"{prefix}/{name}" for name in TARGETS]
-    return root, names
+def _originals(current: list[str], recorded: list | None) -> list[str]:
+    if recorded and [patched for _, patched in recorded] == current:
+        return [original for original, _ in recorded]
+    return current
 
 
-def _originals(path: Path) -> list[tuple[Path, re.Pattern, str | None]]:
-    root, names = _repo(path)
-    return [
-        (path / target, pattern, _head(root, name))
-        for name, (target, pattern, _) in zip(names, PATCHES)
-    ]
+def _points_at_a_local_server(line: str) -> bool:
+    return any(mark in line for mark in ("Uri.http(", "http://", f":{SERVER_PORT}"))
+
+
+def _put_back(file: Path, pattern: re.Pattern, recorded: list) -> bool:
+    text = _read(file)
+    if len(_lines(text, pattern)) != len(recorded):
+        raise AppError(f"{file}: les lignes du mock ont changé.")
+    originals = iter(original for original, _ in recorded)
+    original = pattern.sub(lambda _: next(originals), text)
+    if original == text:
+        return False
+    _write(file, original)
+    return True
+
+
+def _key(path) -> str:
+    return str(Path(path).expanduser().resolve())
 
 
 def resolve_path(raw) -> Path:
@@ -145,42 +137,110 @@ def resolve_path(raw) -> Path:
     return path
 
 
-def configure(path: Path, host: str) -> list[str]:
-    stuck = [
-        target
-        for target, (file, pattern, head) in zip(TARGETS, _originals(path))
-        if head is None or _restore(_read(file), head, pattern) is None
-    ]
-    if stuck:
+def configure(
+    path: Path, host: str, owner: str, settings: dict | None = None
+) -> list[str]:
+    config = load_config()
+    previous = config.get("patched", {}).get(_key(path), {}).get("lines", {})
+
+    lines, updates, local = {}, {}, []
+    for target, pattern, replace, missing in PATCHES:
+        text = _read(path / target)
+        current = _lines(text, pattern)
+        if not current:
+            raise AppError(f"{target}: {missing}")
+        updated = pattern.sub(lambda match: replace(match, host), text)
+        originals = _originals(current, previous.get(target))
+        if any(map(_points_at_a_local_server, originals)):
+            local.append(target)
+        lines[target] = [
+            list(pair) for pair in zip(originals, _lines(updated, pattern))
+        ]
+        if updated != text:
+            updates[target] = (text, updated)
+    if local:
         raise AppError(
-            "impossible de retrouver la version commitée des lignes à modifier "
-            "dans:\n"
-            + "\n".join(f"    {name}" for name in stuck)
-            + "\n  Commitez-les ou remisez-les: le retour en arrière en a besoin."
+            "ces fichiers pointent déjà vers un serveur local, sans modification "
+            "enregistrée par start.py pour les remettre:\n"
+            + "\n".join(f"    {name}" for name in local)
+            + "\n  Remettez-y les valeurs de production (etsmobileapi.etsmtl.ca, "
+            "Uri.https, SignetsClient(dio)) puis relancez."
         )
 
-    updates = {}
-    for target, _, patch in PATCHES:
-        text = _read(path / target)
-        updated = patch(text, host)
-        if updated != text:
-            updates[target] = updated
-    for target, updated in updates.items():
-        _write(path / target, updated)
+    save_config(
+        {
+            **config,
+            **(settings or {}),
+            "patched": {
+                **config.get("patched", {}),
+                _key(path): {"owner": owner, "lines": lines},
+            },
+        }
+    )
+
+    written = []
+    try:
+        for target, (_, updated) in updates.items():
+            _write(path / target, updated)
+            written.append(target)
+    except AppError:
+        for target in written:
+            _write(path / target, updates[target][0])
+        save_config(config)
+        raise
     return list(updates)
 
 
-def revert(path: Path) -> tuple[list[str], list[str]]:
+def revert(path, owner: str | None = None) -> tuple[list[str], list[str]]:
+    key = _key(path)
+    config = load_config()
+    records = config.get("patched", {})
+    record = records.get(key)
+    if record is None:
+        raise AppError(f"aucune modification du mock enregistrée pour {key}.")
+    if owner is not None and record["owner"] != owner:
+        raise AppError(
+            "un autre lancement de start.py l'a reprise; il la remettra à son "
+            "état d'origine à son arrêt."
+        )
+
     restored, stuck = [], []
-    for target, (file, pattern, head) in zip(TARGETS, _originals(path)):
-        text = _read(file)
-        original = None if head is None else _restore(text, head, pattern)
-        if original is None:
+    for target, recorded in record["lines"].items():
+        try:
+            changed = _put_back(Path(key) / target, _PATTERNS[target], recorded)
+        except AppError:
             stuck.append(target)
-        elif original != text:
-            _write(file, original)
+            continue
+        if changed:
             restored.append(target)
+
+    if stuck:
+        record["lines"] = {target: record["lines"][target] for target in stuck}
+    else:
+        del records[key]
+    if not records:
+        config.pop("patched", None)
+    save_config(config)
     return restored, stuck
+
+
+def _is_record(record) -> bool:
+    return (
+        isinstance(record, dict)
+        and isinstance(record.get("owner"), str)
+        and isinstance(record.get("lines"), dict)
+        and all(
+            target in _PATTERNS
+            and isinstance(pairs, list)
+            and all(
+                isinstance(pair, list)
+                and len(pair) == 2
+                and all(isinstance(line, str) for line in pair)
+                for pair in pairs
+            )
+            for target, pairs in record["lines"].items()
+        )
+    )
 
 
 def load_config() -> dict:
@@ -204,6 +264,9 @@ def load_config() -> dict:
             f"{CONFIG_FILE.name}: plateforme inconnue « {config['platform']} » "
             f"({', '.join(sorted(PLATFORM_HOSTS))})."
         )
+    patched = config.get("patched", {})
+    if not isinstance(patched, dict) or not all(map(_is_record, patched.values())):
+        raise AppError(f"{CONFIG_FILE.name}: « patched » invalide.")
     return config
 
 
@@ -213,5 +276,5 @@ def save_config(config: dict) -> None:
         CONFIG_FILE.write_text(
             json.dumps(kept, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-    except OSError:
-        pass
+    except OSError as exc:
+        raise AppError(f"écriture impossible de {CONFIG_FILE.name}: {exc}") from None

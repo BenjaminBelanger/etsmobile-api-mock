@@ -1,9 +1,13 @@
 import argparse
+import contextlib
+import ctypes
 import json
 import os
 import signal
 import subprocess
 import sys
+import threading
+import uuid
 
 from lib import flutter_app
 from lib._api import SERVER_HOST, SERVER_PORT
@@ -12,6 +16,14 @@ from lib._paths import SEED
 OVERRIDES_FILENAME = "schedule_overrides.json"
 
 DEFAULT_PROFILE = "normal"
+
+CTRL_CLOSE_EVENT = 2
+CTRL_LOGOFF_EVENT = 5
+CTRL_SHUTDOWN_EVENT = 6
+CONSOLE_CLOSE_EVENTS = (CTRL_CLOSE_EVENT, CTRL_LOGOFF_EVENT, CTRL_SHUTDOWN_EVENT)
+
+CLOSE_SIGNALS = ("SIGTERM", "SIGHUP", "SIGBREAK")
+STOP_SIGNALS = ("SIGINT", *CLOSE_SIGNALS)
 
 TIME_CHOICES = ("morning", "afternoon", "evening")
 
@@ -166,6 +178,14 @@ def _bounded_int(low: int, high: int):
         return val
 
     return parse
+
+
+def _app_host(raw: str) -> str:
+    try:
+        flutter_app.check_host(raw)
+    except flutter_app.AppError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+    return raw
 
 
 def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
@@ -345,6 +365,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     app.add_argument(
         "--host",
+        type=_app_host,
         metavar="HÔTE",
         help=(
             "Hôte à écrire dans l'app pour un appareil physique "
@@ -758,7 +779,7 @@ def _prompt_app_path(saved: str | None) -> str | None:
         return _ask_app_path()
 
 
-def _setup_app(args: argparse.Namespace, interactive: bool) -> str | None:
+def _setup_app(args: argparse.Namespace, interactive: bool) -> tuple[str, str] | None:
     if args.no_app:
         return None
 
@@ -776,9 +797,17 @@ def _setup_app(args: argparse.Namespace, interactive: bool) -> str | None:
         config["platform"], config["host"] = args.platform, args.host
     path = flutter_app.resolve_path(raw)
     host = flutter_app.resolve_host(config.get("platform"), config.get("host"))
-    patched = flutter_app.configure(path, host)
-    config["app"] = str(path)
-    flutter_app.save_config(config)
+    owner = uuid.uuid4().hex
+    patched = flutter_app.configure(
+        path,
+        host,
+        owner,
+        {
+            "app": str(path),
+            "platform": config.get("platform"),
+            "host": config.get("host"),
+        },
+    )
 
     print(f"\nApp Flutter configurée: {path}")
     print(f"  Hôte     : {host}")
@@ -789,16 +818,16 @@ def _setup_app(args: argparse.Namespace, interactive: bool) -> str | None:
         f"  Mémorisée dans {flutter_app.CONFIG_FILE.name}; "
         "--no-app pour démarrer sans elle."
     )
-    return str(path)
+    return str(path), owner
 
 
-def _revert_app(raw: str | None) -> None:
+def _revert_app(raw: str | None, owner: str | None = None) -> None:
     try:
         target = raw or flutter_app.load_config().get("app")
         if target is None:
             print("Aucune app mémorisée; utilisez --app CHEMIN.")
             return
-        restored, stuck = flutter_app.revert(flutter_app.resolve_path(target))
+        restored, stuck = flutter_app.revert(target, owner)
     except flutter_app.AppError as exc:
         print(f"App Flutter: {exc}")
         return
@@ -808,10 +837,71 @@ def _revert_app(raw: str | None) -> None:
         print("App Flutter déjà à son état d'origine.")
     if stuck:
         print(
-            "App Flutter: ces fichiers ne correspondent plus à la version "
-            "commitée et pointent peut-être encore vers le mock, à vérifier:\n"
+            "App Flutter: impossible de remettre ces fichiers, qui pointent "
+            "peut-être encore vers le mock (lignes du mock ajoutées ou retirées, "
+            "ou fichier illisible):\n"
             + "\n".join(f"    {name}" for name in stuck)
+            + "\n  Corrigez-les puis lancez « python start.py --revert-app »."
         )
+
+
+class _AppRevert:
+    def __init__(self, path: str, owner: str) -> None:
+        self._path = path
+        self._owner = owner
+        self._lock = threading.Lock()
+        self._pending = True
+
+    def __call__(self) -> None:
+        with self._lock:
+            if self._pending:
+                self._pending = False
+                _revert_app(self._path, self._owner)
+
+
+@contextlib.contextmanager
+def _handling(handler, names: tuple[str, ...]):
+    signals = [getattr(signal, name) for name in names if hasattr(signal, name)]
+    previous = {sig: signal.signal(sig, handler) for sig in signals}
+    try:
+        yield
+    finally:
+        for sig, old in previous.items():
+            signal.signal(sig, old)
+
+
+def _exit_on_signal(signum: int, _frame) -> None:
+    raise SystemExit(128 + signum)
+
+
+@contextlib.contextmanager
+def _reverting_on_console_close(revert: _AppRevert):
+    if os.name != "nt":
+        yield
+        return
+
+    def on_event(event: int) -> bool:
+        if event not in CONSOLE_CLOSE_EVENTS:
+            return False
+        revert()
+        return True
+
+    handler = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_uint)(on_event)
+    kernel32 = ctypes.windll.kernel32
+    kernel32.SetConsoleCtrlHandler(handler, True)
+    try:
+        yield
+    finally:
+        kernel32.SetConsoleCtrlHandler(handler, False)
+
+
+def _serve_with_app(config: tuple, revert: _AppRevert) -> None:
+    with _handling(_exit_on_signal, CLOSE_SIGNALS), _reverting_on_console_close(revert):
+        try:
+            _start_server(*config)
+        finally:
+            with _handling(signal.SIG_IGN, STOP_SIGNALS):
+                revert()
 
 
 def _build_env(overrides: dict) -> dict:
@@ -871,19 +961,19 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     try:
-        app_path = _setup_app(args, interactive)
+        app = _setup_app(args, interactive)
     except flutter_app.AppError as exc:
         print(f"\nApp Flutter: {exc}")
         print("  (--no-app pour démarrer le serveur sans toucher à l'app)")
         return
 
     try:
-        _start_server(*config)
+        if app is None:
+            _start_server(*config)
+        else:
+            _serve_with_app(config, _AppRevert(*app))
     except KeyboardInterrupt:
         pass
-    finally:
-        if app_path is not None:
-            _revert_app(app_path)
 
 
 if __name__ == "__main__":
