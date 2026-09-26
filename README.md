@@ -317,84 +317,23 @@ Add new presets by editing `seed/failure_presets.json`.
 ## Call Log
 
 The **Logs** tab of the web UI lists every call the mock receives under
-`/api/`, oldest first, and refreshes itself every second. Each row shows the
-time, endpoint, parameters, status, duration, response size and the injected
-failure, if any. A call that has not answered yet (for example one held by a
-timeout injection) shows as *en cours* until it does.
+`/api/`, with its endpoint, parameters, status, duration, size and any injected
+failure. Use it to see when and how often the app calls the API:
 
-Use it to see when and how often the app calls the API:
+- Repeated calls (same endpoint and parameters) are numbered and shown in
+  orange, since the app could cache or skip them.
+- The **Par endpoint** panel sums the calls, repeats and size per endpoint.
+- Add a marker just before an action in the app to group the calls it triggers.
+- Download the log as JSON, or clear it.
 
-- Calls with the same endpoint and the same parameters are numbered `1/3`,
-  `2/3`, `3/3`, and every one after the first is shown in orange. These are
-  calls the app could cache or skip. Hover one of them to highlight the others.
-- The **Par endpoint** panel shows, for each endpoint, the number of calls, how
-  many were repeats and the total size, with a total row at the bottom.
-- Type a label such as `notes ouvertes`, then click **Ajouter un marqueur** (or
-  press Enter) just before doing something in the app. The calls that follow
-  are grouped under the marker with their count and size, so you can see which
-  calls that one action triggers. An empty label gives a numbered marker. The
-  cross at the end of a marker row removes it; the calls under it stay.
-- The download button saves the log as a JSON file in the same format as the
-  endpoint below, for example to compare the calls an action makes before and
-  after a change in the app.
-- The trash button clears the log.
-
-The log is kept in memory. It holds the last 100,000 entries (about 90 MB at
-most) and starts over when the server restarts. The tab shows the latest 1000
-to stay responsive; older entries are still counted in the per-endpoint stats
-and the repeat numbers, and included in the download.
-
-### Runtime access via admin endpoint
+The log is kept in memory (the last 100,000 entries) and resets when the server
+restarts. It is also available from `/admin/calls`:
 
 ```bash
-# List the log
-curl http://localhost:8080/admin/calls
-
-# Only the entries newer than id 42
-curl "http://localhost:8080/admin/calls?after=42"
-
-# Add a marker
-curl -X POST http://localhost:8080/admin/calls/marker \
-  -H 'Content-Type: application/json' \
-  -d '{"label": "notes ouvertes"}'
-
-# Remove the marker with id 7
-curl -X DELETE http://localhost:8080/admin/calls/marker/7
-
-# Clear the log
-curl -X DELETE http://localhost:8080/admin/calls
+curl http://localhost:8080/admin/calls              # list the log
+curl "http://localhost:8080/admin/calls?after=42"   # only entries newer than id 42
+curl -X DELETE http://localhost:8080/admin/calls    # clear it
 ```
-
-```json
-{
-  "entries": [
-    {"id": 7, "time": "2026-09-25T14:26:32.391+00:00", "kind": "marker", "label": "notes ouvertes"},
-    {
-      "id": 8,
-      "time": "2026-09-25T14:26:32.407+00:00",
-      "kind": "call",
-      "endpoint": "listeElementsEvaluation",
-      "path": "/api/Etudiant/listeElementsEvaluation",
-      "params": {"session": "H2026", "sigle": "LOG430", "groupe": "01"},
-      "status": 200,
-      "durationMs": 84.3,
-      "bytes": 244,
-      "failures": [{"kind": "latency", "ms": 82}]
-    }
-  ],
-  "firstId": 1
-}
-```
-
-- `time` is when the call came in, in UTC.
-- `durationMs` includes injected latency and timeouts. `bytes` is the size of
-  the body actually sent, so a truncated body counts its truncated size.
-- `status`, `durationMs` and `bytes` are `null` while the call is running.
-- `failures` lists what failure injection did to the call: `latency` (with
-  `ms`), `errorRate`, `fail`, `timeout` (with `seconds`), `malformed` or `auth`.
-- `firstId` is the id of the oldest entry still kept, or the next id when the
-  log is empty. A client that polls with `after` can drop the entries it holds
-  below that id, since they were cleared or pushed out.
 
 ## Sample Data
 
