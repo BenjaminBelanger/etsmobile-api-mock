@@ -216,6 +216,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --app ../Notre-Dame --platform ios")
     lines.append("  python start.py --no-app")
     lines.append("  python start.py --revert-app")
+    lines.append("  python start.py --forget-app")
     return "\n".join(lines)
 
 
@@ -340,7 +341,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "Pointe l'app ÉTSMobile vers le mock au démarrage, puis la remet à son "
         "état d'origine à l'arrêt du serveur. Le chemin, la plateforme et l'hôte "
         f"sont mémorisés dans {flutter_app.CONFIG_FILE.name}: les lancements "
-        "suivants reconfigurent la même app sans --app.",
+        "suivants reconfigurent la même app sans --app, jusqu'à --forget-app.",
     )
     which_app = app.add_mutually_exclusive_group()
     which_app.add_argument(
@@ -353,6 +354,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-app",
         action="store_true",
         help="Démarre le serveur sans toucher à l'app mémorisée.",
+    )
+    which_app.add_argument(
+        "--forget-app",
+        action="store_true",
+        help="Remet l'app à son état d'origine si besoin, l'oublie et quitte.",
     )
     app.add_argument(
         "--platform",
@@ -816,9 +822,22 @@ def _setup_app(args: argparse.Namespace, interactive: bool) -> tuple[str, str] |
         print(f"  Modifiés : {', '.join(patched)}")
     print(
         f"  Mémorisée dans {flutter_app.CONFIG_FILE.name}; "
-        "--no-app pour démarrer sans elle."
+        "--no-app pour démarrer sans elle, --forget-app pour l'oublier."
     )
     return str(path), owner
+
+
+def _print_revert(restored: list[str], stuck: list[str], retry: str) -> None:
+    if restored:
+        print(f"App Flutter remise à son état d'origine: {', '.join(restored)}")
+    if stuck:
+        print(
+            "App Flutter: impossible de remettre ces fichiers, qui pointent "
+            "peut-être encore vers le mock (lignes du mock ajoutées ou retirées, "
+            "ou fichier illisible):\n"
+            + "\n".join(f"    {name}" for name in stuck)
+            + f"\n  Corrigez-les puis lancez « python start.py {retry} »."
+        )
 
 
 def _revert_app(raw: str | None, owner: str | None = None) -> None:
@@ -831,18 +850,23 @@ def _revert_app(raw: str | None, owner: str | None = None) -> None:
     except flutter_app.AppError as exc:
         print(f"App Flutter: {exc}")
         return
-    if restored:
-        print(f"App Flutter remise à son état d'origine: {', '.join(restored)}")
-    elif not stuck:
+    if not restored and not stuck:
         print("App Flutter déjà à son état d'origine.")
-    if stuck:
-        print(
-            "App Flutter: impossible de remettre ces fichiers, qui pointent "
-            "peut-être encore vers le mock (lignes du mock ajoutées ou retirées, "
-            "ou fichier illisible):\n"
-            + "\n".join(f"    {name}" for name in stuck)
-            + "\n  Corrigez-les puis lancez « python start.py --revert-app »."
-        )
+    _print_revert(restored, stuck, "--revert-app")
+
+
+def _forget_app() -> None:
+    try:
+        app, restored, stuck = flutter_app.forget()
+    except flutter_app.AppError as exc:
+        print(f"App Flutter: {exc}")
+        return
+    if app is None:
+        print("Aucune app mémorisée.")
+        return
+    _print_revert(restored, stuck, "--forget-app")
+    if not stuck:
+        print(f"App Flutter oubliée: {app}")
 
 
 class _AppRevert:
@@ -949,6 +973,10 @@ def _start_server(
 
 def main(argv: list[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
+
+    if args.forget_app:
+        _forget_app()
+        return
 
     if args.revert_app:
         _revert_app(args.app)

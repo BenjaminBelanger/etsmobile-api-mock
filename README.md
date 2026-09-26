@@ -400,7 +400,7 @@ The mock server requires no authentication, so you can skip past or stub out the
 ### Doing it automatically
 
 `start.py --app` applies steps 2-4 when the server starts and undoes them when
-it stops (Ctrl+C, closed terminal, `SIGTERM`/`SIGHUP`). The path is remembered:
+it stops. Give the path once; later runs reuse it:
 
 ```bash
 python start.py --app ../Notre-Dame --platform ios   # first run
@@ -415,14 +415,26 @@ python start.py --no-app                             # this run only: leave the 
 | `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
 | `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
 | `--revert-app` | Restore the app and exit, after a run that didn't (killed, crashed) |
+| `--forget-app` | Restore the app if needed, forget it and exit |
 
-- Only the lines from steps 2-4 change, and they are restored exactly as they
-  were, uncommitted edits included. The app doesn't need to be a git repo.
-- Starting a second `start.py` hands the app over to it.
-- The app, platform, host and original lines are kept in `mock.config.json`
-  (git-ignored). Flags override saved values. Delete it to forget the app, but
-  not while a server runs.
-- A file whose mock lines were added or removed during the run is left as is:
-  fix it, then run `--revert-app`.
-- An app already pointed at a local server (steps applied by hand) is refused
-  until the production values are back.
+**What is undone.** Only the lines from steps 2-4 change. When the server
+stops, they go back to exactly what they were before the run, uncommitted
+changes included. Everything else in those files is left alone.
+
+**When.** On Ctrl+C, closing the terminal, or `SIGTERM`/`SIGHUP`. If the process
+was killed some other way, run `python start.py --revert-app`. Starting a second
+`start.py` while one is running hands the app over: the second one undoes the
+changes when it stops.
+
+**Stop using it.** Run `python start.py --forget-app`. Later runs leave the app
+alone.
+
+**Saved settings.** `mock.config.json` (git-ignored) holds the path, platform
+and host, plus the original lines while a server runs. A flag always overrides
+the saved value.
+
+**Edge cases.**
+- A line from steps 2-4 was added or removed while the server ran: that file is
+  left as is and listed. Fix it, then run `python start.py --revert-app`.
+- The app already points at a local server before the first run (steps 2-4
+  applied by hand): the run stops. Put the production values back first.

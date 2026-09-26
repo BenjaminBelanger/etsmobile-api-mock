@@ -224,6 +224,22 @@ def revert(path, owner: str | None = None) -> tuple[list[str], list[str]]:
     return restored, stuck
 
 
+def forget() -> tuple[str | None, list[str], list[str]]:
+    config = load_config()
+    app = config.get("app")
+    if app is None:
+        return None, [], []
+    restored, stuck = [], []
+    if _key(app) in config.get("patched", {}):
+        restored, stuck = revert(app)
+        config = load_config()
+    if not stuck:
+        save_config(
+            {k: v for k, v in config.items() if k not in ("app", "platform", "host")}
+        )
+    return app, restored, stuck
+
+
 def _is_record(record) -> bool:
     return (
         isinstance(record, dict)

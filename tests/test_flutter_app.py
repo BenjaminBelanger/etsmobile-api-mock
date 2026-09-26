@@ -515,6 +515,46 @@ def test_revert_app_flag_says_when_nothing_was_recorded(saved_app, capsys):
     assert "aucune modification" in capsys.readouterr().out
 
 
+def test_forget_app_leaves_later_runs_alone(saved_app, monkeypatch, capsys):
+    seen = record_urls(monkeypatch, saved_app)
+    start.main(["--profile", "normal", "--platform", "ios"])
+
+    start.main(["--forget-app"])
+    start.main(["--profile", "normal"])
+
+    assert 'signetsAPI = "localhost:8080"' in seen[0]
+    assert seen[1] == URLS_SOURCE
+    assert flutter_app.load_config() == {}
+    assert "oubliée" in capsys.readouterr().out
+
+
+def test_forget_app_reverts_a_run_that_did_not(saved_app):
+    flutter_app.configure(saved_app, "10.0.2.2:8080", "crashed")
+
+    start.main(["--forget-app"])
+
+    assert_untouched(saved_app)
+    assert flutter_app.load_config() == {}
+
+
+def test_forget_app_keeps_an_app_it_could_not_put_back(saved_app, capsys):
+    flutter_app.configure(saved_app, "10.0.2.2:8080", "crashed")
+    locator = saved_app / flutter_app.LOCATOR
+    doubled = locator.read_text(encoding="utf-8") + "final other = SignetsClient(dio);\n"
+    locator.write_text(doubled, encoding="utf-8")
+
+    start.main(["--forget-app"])
+
+    assert flutter_app.load_config()["app"] == str(saved_app)
+    assert "python start.py --forget-app" in capsys.readouterr().out
+
+
+def test_forget_app_without_a_saved_app_says_so(capsys):
+    start.main(["--forget-app"])
+
+    assert "Aucune app" in capsys.readouterr().out
+
+
 def test_the_app_is_saved_for_the_next_run(app, monkeypatch):
     record_urls(monkeypatch, app)
 
@@ -553,9 +593,10 @@ def test_no_app_leaves_the_saved_app_alone(saved_app, monkeypatch):
     assert flutter_app.load_config() == {"app": str(saved_app)}
 
 
-def test_app_and_no_app_cannot_be_combined(app):
+@pytest.mark.parametrize("flag", ["--no-app", "--forget-app"])
+def test_app_cannot_be_combined_with_no_app_or_forget_app(app, flag):
     with pytest.raises(SystemExit):
-        start._build_parser().parse_args(["--app", str(app), "--no-app"])
+        start._build_parser().parse_args(["--app", str(app), flag])
 
 
 def test_platform_without_any_app_does_not_start_the_server(monkeypatch):
