@@ -454,6 +454,14 @@ def test_the_gap_shift_moves_only_by_what_is_missing():
     assert sessions.compute_gap_shift_delta("H2025", "É2025", days_off) == 0
 
 
+@pytest.mark.parametrize(
+    "delta,expected",
+    [(0, 0), (3, 0), (4, 7), (-3, 0), (-4, -7), (14, 14), (-86, -84), (-88, -91)],
+)
+def test_the_week_shift_rounds_to_the_nearest_whole_week(delta, expected):
+    assert sessions.nearest_week_shift(delta) == expected
+
+
 def test_a_negative_gap_is_refused():
     with pytest.raises(ValueError, match="gap_days must be >= 0"):
         sessions.compute_gap_shift_delta("H2025", "É2025", -1)

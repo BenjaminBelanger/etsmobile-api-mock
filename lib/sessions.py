@@ -219,6 +219,12 @@ def compute_gap_shift_delta(active_code: str, next_code: str, gap_days: int) -> 
     return (target_start - next_start).days
 
 
+def nearest_week_shift(day_delta: int) -> int:
+    """Round a day shift to the nearest whole week so every date keeps its weekday."""
+    remainder = day_delta % 7
+    return day_delta - remainder if remainder <= 3 else day_delta + 7 - remainder
+
+
 def shift_session_metadata(session_code: str, day_delta: int) -> None:
     """Shift every date field of the session record in _RAW_SESSIONS in place."""
     if day_delta == 0:

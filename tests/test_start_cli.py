@@ -424,7 +424,7 @@ def test_the_prompted_next_session_is_optional(monkeypatch, raw, expected):
     assert start._prompt_next_session() == expected
 
 
-@pytest.mark.parametrize("raw", ["-1", "181", "abc"])
+@pytest.mark.parametrize("raw", ["-1", "181", "abc", "²"])
 def test_an_impossible_semester_gap_is_asked_again(monkeypatch, raw):
     left = answer(monkeypatch, raw, "7")
     assert start._prompt_next_session() == {"SEMESTER_GAP": "7"}

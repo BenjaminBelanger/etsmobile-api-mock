@@ -293,13 +293,36 @@ def test_between_sessions_ends_the_active_session_yesterday(reconfigure):
     assert served_dates(data_store.ACTIVE_SESSION, "dateFin") == yesterday
 
 
-def test_between_sessions_keeps_the_real_gap(reconfigure):
+@pytest.fixture
+def today(monkeypatch):
+    def apply(iso):
+        frozen = date.fromisoformat(iso)
+
+        class FrozenDate(date):
+            @classmethod
+            def today(cls):
+                return frozen
+
+        monkeypatch.setattr(sessions, "date", FrozenDate)
+        return frozen
+
+    return apply
+
+
+@pytest.mark.parametrize("day", [f"2026-09-{d}" for d in range(21, 28)])
+def test_between_sessions_keeps_the_next_session_weekday_and_about_the_real_gap(
+    reconfigure, today, day
+):
+    today(day)
     reconfigure(BETWEEN_SESSIONS=None)
+    real_start = served_dates(data_store.NEXT_SESSION, "dateDebut")
     real_gap = days_off_before_next()
 
     reconfigure(BETWEEN_SESSIONS="true")
 
-    assert days_off_before_next() == real_gap
+    start = served_dates(data_store.NEXT_SESSION, "dateDebut")
+    assert start.weekday() == real_start.weekday()
+    assert abs(days_off_before_next() - real_gap) <= 3
 
 
 def test_between_sessions_leaves_no_session_running_today(reconfigure):
@@ -395,6 +418,22 @@ def test_no_next_session_serves_nothing_after_the_active_one(reconfigure):
     assert all(sessions.session_rank(code) <= last for code in served)
     assert all(sessions.session_rank(code) <= last for code in course_sessions)
     assert data_store.NEXT_SESSION not in data_store.get_sessions_with_courses()
+
+
+def test_no_next_session_hides_a_saved_edit_of_the_next_session(
+    reconfigure, sandbox_overrides
+):
+    hidden = data_store.NEXT_SESSION
+    write_overrides(sandbox_overrides, hidden, data_store.get_session_courses(hidden))
+
+    reconfigure(NO_NEXT_SESSION="true")
+
+    served = {s["abrege"] for s in data_store.load(SESSIONS.filename)}
+    course_sessions = {c["session"] for c in data_store.load(COURSES.filename)}
+    assert hidden not in served
+    assert hidden not in course_sessions
+    assert hidden not in data_store.get_sessions_with_courses()
+    assert hidden in data_store._load_overrides()
 
 
 def test_between_sessions_without_a_next_session_leaves_no_session_ahead(

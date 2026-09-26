@@ -675,7 +675,7 @@ def _prompt_next_session() -> dict[str, str]:
             return {}
         if raw.lower() == "a":
             return {"NO_NEXT_SESSION": "true"}
-        if raw.isdigit() and int(raw) <= MAX_SEMESTER_GAP:
+        if raw.isdecimal() and int(raw) <= MAX_SEMESTER_GAP:
             return {"SEMESTER_GAP": str(int(raw))}
         print(
             f"  Entrée invalide, entrez un nombre entre 0 et {MAX_SEMESTER_GAP} ou A."
