@@ -326,6 +326,8 @@ failure. Use it to see when and how often the app calls the API:
 - Add a marker just before an action in the app to group the calls it triggers.
 - Download the log as JSON, or clear it.
 
+<img width="2556" height="1237" alt="Screenshot 2026-09-26 163013" src="https://github.com/user-attachments/assets/1535a18b-acfa-4144-8044-c738316bffd9" />
+
 The log is kept in memory (the last 100,000 entries) and resets when the server
 restarts.
 
