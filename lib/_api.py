@@ -1,0 +1,4 @@
+API_PREFIX = "/api/Etudiant"
+
+SERVER_HOST = "0.0.0.0"
+SERVER_PORT = 8080
