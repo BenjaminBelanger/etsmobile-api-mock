@@ -88,7 +88,8 @@ balance and the `masculin` flag. The balance is stored in the API format, so
 `250` becomes `250,00$`. A changed value is marked. Clear the field, or use its
 reset button, to go back to the original value. Edits are saved to
 `seed/student_overrides.json` and can be undone, redone or all reset from the
-toolbar.
+toolbar. `python start.py` clears them at each launch, along with the schedule
+edits.
 
 ### Front-end build
 

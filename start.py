@@ -8,6 +8,7 @@ import sys
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
+STUDENT_OVERRIDES_FILENAME = "student_overrides.json"
 
 DEFAULT_PROFILE = "normal"
 
@@ -568,13 +569,17 @@ def _configure_custom() -> dict | None:
 
 
 def _clear_overrides() -> None:
-    path = SEED / OVERRIDES_FILENAME
-    try:
-        if path.exists():
-            path.unlink()
-            print("Configuration précédente réinitialisée (overrides supprimés).")
-    except OSError:
-        pass
+    cleared = False
+    for name in (OVERRIDES_FILENAME, STUDENT_OVERRIDES_FILENAME):
+        path = SEED / name
+        try:
+            if path.exists():
+                path.unlink()
+                cleared = True
+        except OSError:
+            pass
+    if cleared:
+        print("Configuration précédente réinitialisée (overrides supprimés).")
 
 
 def _stop_existing_servers() -> None:
@@ -709,6 +714,8 @@ def _start_server(
             "*.json",
             "--reload-exclude",
             OVERRIDES_FILENAME,
+            "--reload-exclude",
+            STUDENT_OVERRIDES_FILENAME,
         ],
         env=_build_env(overrides),
     )
