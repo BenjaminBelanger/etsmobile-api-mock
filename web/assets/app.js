@@ -2308,7 +2308,7 @@ const VIEWS = {
   },
   calls: {
     tab: "viewCalls",
-    title: "Appels",
+    title: "Logs",
     panes: [el.callsView, el.callsToolbar],
   },
 };

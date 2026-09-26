@@ -52,7 +52,7 @@ grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
 The page has three tabs: **Horaire**, the schedule editor described below,
-**Pannes**, the [failure injection](#failure-injection) panel, and **Appels**,
+**Pannes**, the [failure injection](#failure-injection) panel, and **Logs**,
 the [call log](#call-log).
 
 Nothing extra is needed to run it. Start the server and open the page:
@@ -316,7 +316,7 @@ Add new presets by editing `seed/failure_presets.json`.
 
 ## Call Log
 
-The **Appels** tab of the web UI lists every call the mock receives under
+The **Logs** tab of the web UI lists every call the mock receives under
 `/api/`, oldest first, and refreshes itself every second. Each row shows the
 time, endpoint, parameters, status, duration, response size and the injected
 failure, if any. A call that has not answered yet (for example one held by a

@@ -62,7 +62,7 @@ describe("the calls tab", () => {
     assert.equal(app.byId("scheduleToolbar").hidden, true);
     assert.equal(app.byId("failuresView").hidden, true);
     assert.equal(app.byId("failuresToolbar").hidden, true);
-    assert.equal(app.document.title, "Appels - ÉTS Mock");
+    assert.equal(app.document.title, "Logs - ÉTS Mock");
     app.close();
   });
 
