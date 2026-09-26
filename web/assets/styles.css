@@ -729,14 +729,14 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   color: var(--colorNeutralForeground3);
 }
 
+#sessionDatesReset { margin-block: -3px; }
 #sessionDatesReset[hidden] { display: none; }
 .session-dates { display: flex; flex-direction: column; gap: 10px; }
 
-.layout--single { grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; }
-.profile { justify-self: start; width: min(100%, 600px); }
+.layout--single { grid-template-columns: minmax(0, 1fr); }
 
 .fields {
-  list-style: none; margin: 0; padding: 0;
+  list-style: none; margin: 0; padding: 6px 0;
   display: grid;
   grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 28px;
   column-gap: 12px;
@@ -746,8 +746,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  min-height: 52px;
-  padding: 6px 0;
+  min-height: 48px;
+  padding: 6px 12px 6px 16px;
 }
 .field + .field { border-top: 1px solid var(--line); }
 .field__label {
@@ -756,7 +756,7 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   font-size: var(--fontSizeBase300);
   font-weight: var(--fontWeightSemibold);
 }
-.field__input { width: 100%; min-width: 0; max-width: none; }
+.field__input { width: min(100%, 240px); min-width: 0; max-width: none; }
 .field__input.is-pinned::part(root) { border-bottom-color: var(--colorCompoundBrandStroke); }
 .field .check { justify-self: start; }
 .field__reset { grid-column: 3; justify-self: end; }
