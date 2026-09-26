@@ -400,12 +400,12 @@ The mock server requires no authentication, so you can skip past or stub out the
 ### Doing it automatically
 
 `start.py --app` applies steps 2-4 when the server starts and undoes them when
-it stops. Give the path once; later runs reuse it:
+it stops. Later runs reuse it:
 
 ```bash
 python start.py --app ../Notre-Dame --platform ios   # first run
-python start.py                                      # later runs: same app, same platform
-python start.py --no-app                             # this run only: leave the app alone
+python start.py                                      # later runs: same app and platform
+python start.py --no-app                             # this run only: don't modify app
 ```
 
 | Flag | Description |
@@ -414,26 +414,26 @@ python start.py --no-app                             # this run only: leave the 
 | `--no-app` | Start the server without touching the saved app |
 | `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
 | `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
-| `--revert-app` | Restore the app and exit, after a run that didn't (killed, crashed) |
+| `--revert-app` | Restore the app and exit, after a run that didn't |
 | `--forget-app` | Restore the app if needed, forget it and exit |
 
-**What is undone.** Only the lines from steps 2-4 change. When the server
-stops, they go back to exactly what they were before the run, uncommitted
+**What is undone:** When the server
+stops, lines from steps 2-4 change. They go back to exactly what they were before the run, uncommitted
 changes included. Everything else in those files is left alone.
 
-**When.** On Ctrl+C, closing the terminal, or `SIGTERM`/`SIGHUP`. If the process
+**When:** On Ctrl+C or closing the terminal. If the process
 was killed some other way, run `python start.py --revert-app`. Starting a second
 `start.py` while one is running hands the app over: the second one undoes the
 changes when it stops.
 
-**Stop using it.** Run `python start.py --forget-app`. Later runs leave the app
+**Stop using it:** Run `python start.py --forget-app`. Later runs leave the app
 alone.
 
-**Saved settings.** `mock.config.json` (git-ignored) holds the path, platform
+**Saved settings:** `mock.config.json` holds the path, platform
 and host, plus the original lines while a server runs. A flag always overrides
 the saved value.
 
-**Edge cases.**
+**Special cases:**
 - A line from steps 2-4 was added or removed while the server ran: that file is
   left as is and listed. Fix it, then run `python start.py --revert-app`.
 - The app already points at a local server before the first run (steps 2-4
