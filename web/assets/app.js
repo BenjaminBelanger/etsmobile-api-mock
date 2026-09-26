@@ -2125,7 +2125,7 @@ function profileInput(row, label) {
         <span>${row.value ? "Oui" : "Non"}</span>
       </label>`;
   }
-  const title = row.modified ? ` title="${ORIGINAL_HINT}"` : "";
+  const title = row.modified ? ` title="${escapeHtml(`${row.key} · ${ORIGINAL_HINT}`)}"` : "";
   return `<fluent-text-input class="field__input${row.modified ? " is-pinned" : ""}" control-size="small"
       appearance="filled-lighter" data-key="${key}" value="${escapeHtml(row.value)}"
       aria-label="${label}"${title}></fluent-text-input>`;
@@ -2134,14 +2134,13 @@ function profileInput(row, label) {
 function profileRowHtml(row) {
   const label = escapeHtml(profileLabel(row.key));
   const key = escapeHtml(row.key);
-  const name = label === key ? "" : `<span class="field__label">${label}</span>`;
   const reset = row.modified
     ? `<fluent-button class="field__reset" appearance="subtle" size="small" icon-only
         data-reset="${key}" title="Rétablir la valeur d'origine"
         aria-label="Rétablir : ${label}">${icon("reset", 16)}</fluent-button>`
     : "";
-  return `<li class="field${row.modified ? " is-modified" : ""}">
-      <span class="field__name">${name}<code class="field__key">${key}</code></span>
+  return `<li class="field${row.modified ? " is-modified" : ""}" title="${key}">
+      <span class="field__label">${label}</span>
       ${profileInput(row, label)}
       ${reset}
     </li>`;
