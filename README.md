@@ -14,6 +14,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 - [Session Calendar](#session-calendar)
 - [Scenarios](#scenarios)
 - [Failure Injection](#failure-injection)
+- [Call Log](#call-log)
 - [Sample Data](#sample-data)
 - [Authentication](#authentication)
 - [Customizing Data](#customizing-data)
@@ -39,6 +40,10 @@ python start.py --between-sessions --semester-gap 10
 
 `python start.py --help` lists every profile, scenario and day code.
 
+The server runs on its own: nothing else has to be configured to use it. To also
+point the Flutter app at the mock while it runs, see
+[Connecting the Flutter App](#connecting-the-flutter-app).
+
 ## Schedule Editor UI
 
 <img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/2da27859-d13a-4df2-87f5-cb596055f1f6" />
@@ -48,8 +53,9 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has two tabs: **Horaire**, the schedule editor described below, and
-**Pannes**, the [failure injection](#failure-injection) panel.
+The page has three tabs: **Horaire**, the schedule editor described below,
+**Pannes**, the [failure injection](#failure-injection) panel, and **Logs**,
+the [call log](#call-log).
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -247,7 +253,8 @@ The mock can simulate broken-server conditions. Set them at startup with flags, 
 
 The **Pannes** tab lists the active injections, lets you edit, add and remove
 them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
-CLI, so both describe the same config.
+CLI, so both describe the same config. The [call log](#call-log) shows which
+calls each injection hit.
 
 <img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
 
@@ -323,6 +330,31 @@ python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail liste
 | `chaos` | Latency + errors + corrupted bodies all at once |
 
 Add new presets by editing `seed/failure_presets.json`.
+
+## Call Log
+
+The **Logs** tab of the web UI lists every call the mock receives under
+`/api/`, with its endpoint, parameters, status, duration, size and any injected
+failure. Use it to see when and how often the app calls the API:
+
+- Repeated calls (same endpoint and parameters) are numbered and shown in
+  orange, since the app could cache or skip them.
+- The **Par endpoint** panel sums the calls, repeats and size per endpoint.
+- Add a marker just before an action in the app to group the calls it triggers.
+- Download the log as JSON, or clear it.
+
+<img width="2556" height="1237" alt="Screenshot 2026-09-26 163013" src="https://github.com/user-attachments/assets/1535a18b-acfa-4144-8044-c738316bffd9" />
+
+The log is kept in memory (the last 100,000 entries) and resets when the server
+restarts.
+
+It can also be read and cleared through the admin endpoint:
+
+```bash
+curl http://localhost:8080/admin/calls              # list the log
+curl "http://localhost:8080/admin/calls?after=42"   # only entries newer than id 42
+curl -X DELETE http://localhost:8080/admin/calls    # clear it
+```
 
 ## Sample Data
 
@@ -408,3 +440,46 @@ The mock server requires no authentication, so you can skip past or stub out the
 |----------|-------------|
 | Android emulator | `10.0.2.2:8080` |
 | iOS emulator | `localhost:8080` |
+| Physical device | Your machine's LAN address, e.g. `192.168.1.10:8080` |
+
+### Doing it automatically
+
+`start.py --app` applies steps 2-4 when the server starts and undoes them when
+it stops. Later runs reuse it:
+
+```bash
+python start.py --app ../Notre-Dame --platform ios   # first run
+python start.py                                      # later runs: same app and platform
+python start.py --no-app                             # this run only: don't modify app
+```
+
+| Flag | Description |
+|------|-------------|
+| `--app PATH` | Flutter repo to configure (default: the saved app) |
+| `--no-app` | Start the server without touching the saved app |
+| `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
+| `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
+| `--revert-app` | Restore the app and exit, after a run that didn't |
+| `--forget-app` | Restore the app if needed, forget it and exit |
+
+**What is undone:** When the server
+stops, lines from steps 2-4 change. They go back to exactly what they were before the run, uncommitted
+changes included. Everything else in those files is left alone.
+
+**When:** On Ctrl+C or closing the terminal. If the process
+was killed some other way, run `python start.py --revert-app`. Starting a second
+`start.py` while one is running hands the app over: the second one undoes the
+changes when it stops.
+
+**Stop using it:** Run `python start.py --forget-app`. Later runs leave the app
+alone.
+
+**Saved settings:** `mock.config.json` holds the path, platform
+and host, plus the original lines while a server runs. A flag always overrides
+the saved value.
+
+**Special cases:**
+- A line from steps 2-4 was added or removed while the server ran: that file is
+  left as is and listed. Fix it, then run `python start.py --revert-app`.
+- The app already points at a local server before the first run (steps 2-4
+  applied by hand): the run stops. Put the production values back first.

@@ -105,6 +105,14 @@ def _matches(name: str, endpoints: set[str]) -> bool:
     return "*" in endpoints or name in endpoints
 
 
+def injected_failures(scope) -> list[dict]:
+    return scope.setdefault("state", {}).setdefault("injectedFailures", [])
+
+
+def _inject(request: Request, kind: str, **detail) -> None:
+    injected_failures(request.scope).append({"kind": kind, **detail})
+
+
 def load_from_env() -> FailureConfig:
     global _config
     cfg = FailureConfig()
@@ -199,12 +207,13 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
     return _config
 
 
-async def _maybe_sleep_latency(cfg: FailureConfig) -> None:
+async def _maybe_sleep_latency(request: Request, cfg: FailureConfig) -> None:
     lo, hi = cfg.latency_ms
     if hi <= 0:
         return
     ms = random.randint(lo, hi) if hi > lo else lo
     if ms > 0:
+        _inject(request, "latency", ms=ms)
         await asyncio.sleep(ms / 1000.0)
 
 
@@ -233,26 +242,31 @@ async def failure_middleware(request: Request, call_next):
     name = endpoint_name(path)
 
     if cfg.auth_required and not request.headers.get("authorization", "").strip():
+        _inject(request, "auth")
         return JSONResponse({"error": "Authentification requise."}, status_code=401)
 
     if _matches(name, cfg.fail_endpoints):
+        _inject(request, "fail")
         return JSONResponse(
             {"error": f"Endpoint '{name}' is configured to fail."},
             status_code=503,
         )
 
     if _matches(name, cfg.timeout_endpoints):
+        _inject(request, "timeout", seconds=cfg.timeout_duration_s)
         await asyncio.sleep(cfg.timeout_duration_s)
         return JSONResponse({"error": f"Endpoint '{name}' timed out."}, status_code=504)
 
     if cfg.error_rate > 0.0 and random.random() < cfg.error_rate:
+        _inject(request, "errorRate")
         return JSONResponse({"error": "Random failure injected."}, status_code=500)
 
-    await _maybe_sleep_latency(cfg)
+    await _maybe_sleep_latency(request, cfg)
 
     response = await call_next(request)
 
     if cfg.malformed and 200 <= response.status_code < 300:
+        _inject(request, "malformed")
         response = await _truncate_response(response)
 
     return response
