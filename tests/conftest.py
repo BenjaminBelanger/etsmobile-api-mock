@@ -8,24 +8,35 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lib import data_store, schedule_editor  # noqa: E402
+from lib import data_store, schedule_editor, student_editor  # noqa: E402
 
 SESSION = "H2026"
 
 _REAL_OVERRIDES = data_store.overrides_path()
+_REAL_STUDENT_OVERRIDES = data_store.student_overrides_path()
 
 
 @pytest.fixture(autouse=True)
 def sandbox_overrides(tmp_path, monkeypatch):
     sandbox = tmp_path / "schedule_overrides.json"
+    student_sandbox = tmp_path / "student_overrides.json"
     monkeypatch.setattr(data_store, "overrides_path", lambda: sandbox)
+    monkeypatch.setattr(data_store, "student_overrides_path", lambda: student_sandbox)
     assert data_store.overrides_path() != _REAL_OVERRIDES
+    assert data_store.student_overrides_path() != _REAL_STUDENT_OVERRIDES
     schedule_editor.clear_cache()
+    student_editor.clear_history()
     data_store.reload()
     yield sandbox
     schedule_editor.clear_cache()
+    student_editor.clear_history()
     monkeypatch.undo()
     data_store.reload()
+
+
+@pytest.fixture
+def student_overrides_file():
+    return data_store.student_overrides_path()
 
 
 @pytest.fixture
