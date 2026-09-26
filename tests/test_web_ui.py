@@ -164,10 +164,15 @@ def test_the_calls_view_only_talks_to_routes_the_server_serves():
     from lib import call_log
 
     script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
-    served = {route.path.replace("/admin/calls", "") for route in call_log.router.routes}
+
+    def shape(path):
+        return re.sub(r"\$?\{\w+\}", "{}", path)
+
+    served = {shape(route.path.replace("/admin/calls", "")) for route in call_log.router.routes}
 
     called = set(re.findall(r'\$\{CALLS\}(/\w+)?', script))
-    called |= set(re.findall(r'changeCalls\(\s*"([^"]*)"', script))
+    called |= set(re.findall(r'changeCalls\(\s*["`]([^"`]*)["`]', script))
+    called = {shape(path) for path in called}
 
     assert called
     assert called <= served, f"the UI calls routes the server does not serve: {called - served}"

@@ -2084,9 +2084,15 @@ function markerRowHtml(marker, section) {
     : "aucun appel";
   return `<tr class="marker" data-id="${marker.id}">
       <td class="calls__time">${fmtClock(marker.time)}</td>
-      <td colspan="6"><span class="marker__label">${escapeHtml(
+      <td colspan="5"><span class="marker__label">${escapeHtml(
         marker.label
       )}</span><span class="marker__summary">${summary}</span></td>
+      <td class="marker__actions"><button type="button" class="marker__x" data-remove-marker="${
+        marker.id
+      }" title="Retirer le marqueur" aria-label="Retirer ${escapeHtml(marker.label)}">${icon(
+        "dismiss",
+        12
+      )}</button></td>
     </tr>`;
 }
 
@@ -2223,7 +2229,7 @@ async function loadCalls(stick) {
   scheduleCallsPoll();
 }
 
-async function changeCalls(path, options, message) {
+async function changeCalls(path, options, message, stick = true) {
   setStatus("Enregistrement…", true);
   let saved = false;
   try {
@@ -2237,7 +2243,7 @@ async function changeCalls(path, options, message) {
     setStatus("Erreur.", false, true);
     toast(err.message || "Échec de l'opération", true);
   }
-  await loadCalls(true);
+  await loadCalls(stick);
   return saved;
 }
 
@@ -2258,8 +2264,11 @@ function exportCalls() {
 
 function addMarker() {
   const typed = String(el.markerLabel.value || "").trim();
-  const count = state.calls.filter((entry) => !isCall(entry)).length;
-  const label = typed || `Marqueur ${count + 1}`;
+  const markers = state.calls.filter((entry) => !isCall(entry));
+  const labels = new Set(markers.map((marker) => marker.label));
+  let number = markers.length + 1;
+  while (labels.has(`Marqueur ${number}`)) number += 1;
+  const label = typed || `Marqueur ${number}`;
   changeCalls(
     "/marker",
     {
@@ -2271,6 +2280,19 @@ function addMarker() {
   ).then((saved) => {
     if (saved) el.markerLabel.value = "";
   });
+}
+
+async function removeMarker(button) {
+  const id = Number(button.dataset.removeMarker);
+  button.disabled = true;
+  const removed = await changeCalls(
+    `/marker/${id}`,
+    { method: "DELETE" },
+    "Marqueur retiré",
+    false
+  );
+  if (removed) state.calls = state.calls.filter((entry) => entry.id !== id);
+  renderCalls();
 }
 
 const VIEWS = {
@@ -2383,6 +2405,10 @@ el.callRows.addEventListener("mouseover", (e) =>
   hoverCallGroup(e.target.closest("tr[data-group]")?.dataset.group ?? null)
 );
 el.callRows.addEventListener("mouseleave", () => hoverCallGroup(null));
+el.callRows.addEventListener("click", (e) => {
+  const button = e.target.closest("[data-remove-marker]");
+  if (button) removeMarker(button);
+});
 document.addEventListener("visibilitychange", () => {
   if (state.view !== "calls") return;
   if (document.hidden) scheduleCallsPoll();

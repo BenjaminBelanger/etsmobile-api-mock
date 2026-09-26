@@ -226,6 +226,32 @@ def test_a_marker_needs_a_label(client, payload):
     assert entries(client) == []
 
 
+def test_a_marker_can_be_removed_without_touching_the_calls_around_it(client):
+    client.get(ENDPOINT)
+    marker = client.post("/admin/calls/marker", json={"label": "notes ouvertes"}).json()
+    client.get(GRADES)
+
+    response = client.delete(f"/admin/calls/marker/{marker['id']}")
+
+    assert response.status_code == 200
+    assert response.json() == marker
+    assert [entry["kind"] for entry in entries(client)] == ["call", "call"]
+
+
+def test_removing_a_missing_marker_is_refused(client):
+    client.get(ENDPOINT)
+    call = only_call(client)
+    marker = client.post("/admin/calls/marker", json={"label": "notes ouvertes"}).json()
+    client.delete(f"/admin/calls/marker/{marker['id']}")
+
+    for entry_id in (marker["id"], call["id"]):
+        response = client.delete(f"/admin/calls/marker/{entry_id}")
+
+        assert response.status_code == 404
+        assert response.json()["error"] == "Marqueur introuvable"
+    assert entries(client) == [call]
+
+
 def test_only_newer_entries_are_sent_when_asked(client):
     client.get(ENDPOINT)
     first = only_call(client)

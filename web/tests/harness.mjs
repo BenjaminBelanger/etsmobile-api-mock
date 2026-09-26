@@ -386,6 +386,14 @@ function createCallLog(options) {
         entries.push(marker);
         return reply(marker);
       }
+      const removing = path.match(/^\/marker\/(\d+)$/);
+      if (removing) {
+        const id = Number(removing[1]);
+        const marker = entries.find((entry) => entry.id === id && entry.kind === "marker");
+        if (!marker) return reply({ error: "Marqueur introuvable" }, 404);
+        entries = entries.filter((entry) => entry !== marker);
+        return reply(marker);
+      }
       if (method === "DELETE") entries = [];
       const after = Number(new URLSearchParams(query).get("after") || 0);
       return reply({

@@ -690,7 +690,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   color: var(--colorNeutralForeground1);
   white-space: nowrap;
 }
-.chip__x {
+.chip__x,
+.marker__x {
   display: grid; place-items: center;
   width: 18px; height: 18px;
   padding: 0;
@@ -702,7 +703,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   transition: background var(--durationFaster) var(--curveEasyEase),
               color var(--durationFaster) var(--curveEasyEase);
 }
-.chip__x:hover { background: var(--colorPaletteRedBackground3); color: #fff; }
+.chip__x:hover,
+.marker__x:hover { background: var(--colorPaletteRedBackground3); color: #fff; }
 .chip--add {
   gap: 4px;
   padding: 0 10px 0 7px;
@@ -829,6 +831,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   color: var(--colorNeutralForeground1);
 }
 .marker__summary { margin-left: 10px; color: var(--colorNeutralForeground3); }
+.calls .marker__actions { padding-top: 0; padding-bottom: 0; vertical-align: middle; }
+.marker__x { margin-left: auto; }
 
 .endpoint-stats {
   width: 100%;

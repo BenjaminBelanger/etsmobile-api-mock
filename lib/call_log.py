@@ -2,7 +2,7 @@ import time
 from collections import deque
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from starlette.datastructures import QueryParams
 
@@ -48,6 +48,14 @@ def finish_call(entry: dict, status: int, size: int, seconds: float) -> None:
 
 def add_marker(label: str) -> dict:
     return _append({"kind": "marker", "label": label})
+
+
+def remove_marker(entry_id: int) -> dict | None:
+    for entry in _entries:
+        if entry["id"] == entry_id and entry["kind"] == "marker":
+            _entries.remove(entry)
+            return entry
+    return None
 
 
 def clear() -> None:
@@ -112,3 +120,11 @@ class MarkerCreate(BaseModel):
 @router.post("/marker")
 async def post_marker(payload: MarkerCreate):
     return add_marker(payload.label)
+
+
+@router.delete("/marker/{entry_id}")
+async def delete_marker(entry_id: int):
+    removed = remove_marker(entry_id)
+    if removed is None:
+        raise HTTPException(status_code=404, detail="Marqueur introuvable")
+    return removed

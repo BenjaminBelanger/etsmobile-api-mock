@@ -393,6 +393,48 @@ describe("markers", () => {
     assert.equal(app.byId("markerLabel").value, "notes ouvertes");
     app.close();
   });
+
+  test("can be removed, leaving the calls they grouped", async () => {
+    const app = await onCalls([
+      callEntry({ id: 1 }),
+      markerEntry({ id: 2, label: "notes ouvertes" }),
+      callEntry({ id: 3, ...GRADES }),
+    ]);
+
+    await app.click(rowFor(app, 2).querySelector(".marker__x"));
+
+    assert.equal(app.server.callLog.called("/marker/2", "DELETE").length, 1);
+    assert.deepEqual(rowIds(app), [1, 3]);
+    assert.equal(app.toast().text, "Marqueur retiré");
+
+    app.server.callLog.add(callEntry({ id: 4 }));
+    await refresh(app);
+
+    assert.deepEqual(rowIds(app), [1, 3, 4]);
+    app.close();
+  });
+
+  test("stay when the server refuses to remove them", async () => {
+    const app = await onCalls([markerEntry({ id: 1 })]);
+    app.server.callLog.fail("DELETE", "/marker/1", { error: "Marqueur introuvable" }, 404);
+
+    await app.click(rowFor(app, 1).querySelector(".marker__x"));
+
+    assert.equal(app.toast().intent, "error");
+    assert.equal(app.toast().text, "Marqueur introuvable");
+    assert.deepEqual(rowIds(app), [1]);
+    assert.equal(rowFor(app, 1).querySelector(".marker__x").disabled, false);
+    app.close();
+  });
+
+  test("are not numbered like one still in the list", async () => {
+    const app = await onCalls([markerEntry({ id: 2, label: "Marqueur 2" })]);
+
+    await app.click(app.byId("markerAddBtn"));
+
+    assert.equal(app.server.callLog.called("/marker")[0].body.label, "Marqueur 3");
+    app.close();
+  });
 });
 
 describe("per-endpoint stats", () => {
