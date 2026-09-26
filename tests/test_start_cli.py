@@ -417,6 +417,28 @@ def test_the_overrides_file_is_cleared_before_starting(tmp_path, monkeypatch, ca
     assert "réinitialisée" in capsys.readouterr().out
 
 
+def test_the_student_overrides_file_is_cleared_before_starting(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    stale = tmp_path / start.STUDENT_OVERRIDES_FILENAME
+    stale.write_text("{}", encoding="utf-8")
+
+    start._clear_overrides()
+
+    assert not stale.exists()
+    assert "réinitialisée" in capsys.readouterr().out
+
+
+def test_clearing_both_overrides_files_announces_it_once(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    for name in (start.OVERRIDES_FILENAME, start.STUDENT_OVERRIDES_FILENAME):
+        (tmp_path / name).write_text("{}", encoding="utf-8")
+
+    start._clear_overrides()
+
+    assert list(tmp_path.iterdir()) == []
+    assert capsys.readouterr().out.count("réinitialisée") == 1
+
+
 def test_clearing_a_missing_overrides_file_is_quiet(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(start, "SEED", tmp_path)
     start._clear_overrides()
@@ -438,7 +460,8 @@ def test_the_server_is_started_with_the_configured_environment(monkeypatch, tmp_
     assert "main:app" in command
     assert "--port" in command and "8080" in command
     assert "--reload" in command
-    assert command[command.index("--reload-exclude") + 1] == start.OVERRIDES_FILENAME
+    excluded = [command[i + 1] for i, arg in enumerate(command) if arg == "--reload-exclude"]
+    assert excluded == [start.OVERRIDES_FILENAME, start.STUDENT_OVERRIDES_FILENAME]
     assert env["PROFILE"] == "semester-off"
 
 
