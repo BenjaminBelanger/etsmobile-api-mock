@@ -729,6 +729,38 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   color: var(--colorNeutralForeground3);
 }
 
+#sessionDatesReset[hidden] { display: none; }
+.session-dates { display: flex; flex-direction: column; gap: 10px; }
+
+.layout--single { grid-template-columns: minmax(0, 1fr); align-content: start; overflow: auto; }
+.profile { justify-self: start; width: min(100%, 600px); }
+
+.fields {
+  list-style: none; margin: 0; padding: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 190px) minmax(0, 1fr) 28px;
+  column-gap: 12px;
+}
+.field {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  min-height: 52px;
+  padding: 6px 0;
+}
+.field + .field { border-top: 1px solid var(--line); }
+.field__label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fontSizeBase300);
+  font-weight: var(--fontWeightSemibold);
+}
+.field__input { width: 100%; min-width: 0; max-width: none; }
+.field__input.is-pinned::part(root) { border-bottom-color: var(--colorCompoundBrandStroke); }
+.field .check { justify-self: start; }
+.field__reset { grid-column: 3; justify-self: end; }
+
 .presets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .preset {
   display: flex; flex-direction: column; gap: 2px;
@@ -928,6 +960,12 @@ fluent-dialog::part(dialog) { max-width: 536px; }
     scroll-snap-type: x proximity;
   }
   .toolbar > * { flex: 0 0 auto; scroll-snap-align: start; }
+
+  .fields { grid-template-columns: minmax(0, 1fr) 28px; }
+  .field { row-gap: 6px; }
+  .field__label { grid-column: 1 / -1; }
+  .field__input, .field .check { grid-column: 1; }
+  .field__reset { grid-column: 2; }
 
   .injections { grid-template-columns: minmax(0, 1fr); }
   .injection { grid-template-columns: 20px minmax(0, 1fr) 28px; gap: 8px 12px; }

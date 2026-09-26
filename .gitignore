@@ -10,6 +10,7 @@ env/
 .venv/
 
 seed/schedule_overrides.json
+seed/student_overrides.json
 mock.config.json
 node_modules/
 .pytest-tmp/

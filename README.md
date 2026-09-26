@@ -50,8 +50,9 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has two tabs: **Horaire**, the schedule editor described below, and
-**Pannes**, the [failure injection](#failure-injection) panel.
+The page has three tabs: **Horaire**, the schedule editor described below,
+**Pannes**, the [failure injection](#failure-injection) panel, and
+**Étudiant**, described in [Student tab](#student-tab).
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -69,6 +70,30 @@ The toolbar switches between two scopes:
 
 An occurrence with a week-specific change is marked as modified and can only be
 dragged in **This occurrence**; reset it to put it back on the series slot.
+
+### Session dates
+
+The **Dates de la session** panel, at the top of the sidebar, edits the date
+fields that `listeSessions` serves for the displayed session. The start, end
+of classes and end of session come first. The other dates (ChemiNot,
+cancellation deadlines, ASEQ) are under **Autres dates**. Only the dates can
+be changed, not the field names; hover a date to see its field name.
+
+The week picker, the séances, the final exams and the evaluation dates follow
+the new dates, and a warning shows when an end date falls before its start. A
+changed date is marked. Clear it, or use the panel's reset button, to go back
+to the original dates. Date edits belong to the session's history, so undo,
+redo and **Réinitialiser la session** cover them too.
+
+### Student tab
+
+The **Étudiant** tab edits the profile served by `infoEtudiant`: name, codes,
+balance and the `masculin` flag. The balance is stored in the API format, so
+`250` becomes `250,00$`. A changed value is marked. Clear the field, or use its
+reset button, to go back to the original value. Edits are saved to
+`seed/student_overrides.json` and can be undone, redone or all reset from the
+toolbar. `python start.py` clears them at each launch, along with the schedule
+edits.
 
 ### Front-end build
 
@@ -327,7 +352,7 @@ No authentication is required. The server accepts any `Authorization: Bearer <to
 ## Customizing Data
 
 - **Course data**: Edit `seed/courses.json` and restart (or let `--reload` handle it)
-- **Sessions, student info, programs, replaced days**: Edit directly in `seed/`
+- **Sessions, student info, programs, replaced days**: Edit directly in `seed/`, or change [session dates](#session-dates) and the [student profile](#student-tab) from the editor
 - **Professors**: Edit `seed/professors.json`
 - **Random generation pools**: Edit `seed/pools.json` (rooms, eval templates, schedule slots, course catalog)
 - **Profiles**: Edit `seed/profiles.json`

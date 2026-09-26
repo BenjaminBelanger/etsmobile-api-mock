@@ -16,6 +16,7 @@
           <fluent-tablist id="viewToggle" appearance="subtle" size="small" activeid="viewSchedule" aria-label="Vue">
             <fluent-tab id="viewSchedule" data-view="schedule">Horaire</fluent-tab>
             <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
+            <fluent-tab id="viewStudent" data-view="student">Étudiant</fluent-tab>
           </fluent-tablist>
 
           <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
@@ -81,6 +82,17 @@
             Ajouter une panne
           </fluent-button>
         </div>
+
+        <div class="toolbar" id="studentToolbar" hidden>
+          <fluent-button id="studentUndoBtn" appearance="subtle" icon-only data-icon="undo" aria-label="Annuler" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="studentUndoBtn">Annuler (Ctrl+Z)</fluent-tooltip>
+
+          <fluent-button id="studentRedoBtn" appearance="subtle" icon-only data-icon="redo" aria-label="Rétablir" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="studentRedoBtn">Rétablir (Ctrl+Y)</fluent-tooltip>
+
+          <fluent-button id="studentResetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Tout réinitialiser" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="studentResetBtn">Tout réinitialiser</fluent-tooltip>
+        </div>
       </header>
 
       <main class="layout" id="scheduleView">
@@ -94,6 +106,15 @@
         </section>
 
         <aside class="sidebar">
+          <section class="panel" id="sessionPanel" hidden>
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="calendar" data-icon-size="16"></span>
+              <h2>Dates de la session</h2>
+              <fluent-button id="sessionDatesReset" class="detail__act" appearance="subtle" size="small" icon-only data-icon="reset" data-icon-size="16" title="Rétablir les dates" aria-label="Rétablir les dates" hidden></fluent-button>
+            </header>
+            <div class="session-dates" id="sessionDates"></div>
+          </section>
+
           <section class="panel" id="detailPanel" hidden>
             <header class="panel__head">
               <span class="panel__icon" data-icon="book" data-icon-size="16"></span>
@@ -132,6 +153,16 @@
             <ul class="presets" id="presetList"></ul>
           </section>
         </aside>
+      </main>
+
+      <main class="layout layout--single" id="studentView" hidden>
+        <section class="panel profile">
+          <header class="panel__head">
+            <span class="panel__icon" data-icon="person" data-icon-size="16"></span>
+            <h2>Profil</h2>
+          </header>
+          <ul class="fields" id="profileFields"></ul>
+        </section>
       </main>
 
       <footer class="statusbar">

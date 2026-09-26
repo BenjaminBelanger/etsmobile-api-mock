@@ -31,6 +31,8 @@ const state = {
   staged: [],
   endpoints: [],
   presets: [],
+  student: null,
+  otherDatesOpen: false,
 };
 
 const el = {
@@ -54,6 +56,15 @@ const el = {
   injectionList: document.getElementById("injectionList"),
   injectionEmpty: document.getElementById("injectionEmpty"),
   presetList: document.getElementById("presetList"),
+  studentView: document.getElementById("studentView"),
+  studentToolbar: document.getElementById("studentToolbar"),
+  studentUndoBtn: document.getElementById("studentUndoBtn"),
+  studentRedoBtn: document.getElementById("studentRedoBtn"),
+  studentResetBtn: document.getElementById("studentResetBtn"),
+  profileFields: document.getElementById("profileFields"),
+  sessionPanel: document.getElementById("sessionPanel"),
+  sessionDates: document.getElementById("sessionDates"),
+  sessionDatesReset: document.getElementById("sessionDatesReset"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -205,6 +216,11 @@ function defaultWeekIndex(semester) {
   const today = todayWeekIndex(semester);
   return today != null ? today : semester.weeks[0].index;
 }
+function closestWeekIndex(semester, start) {
+  if (!semester || !semester.weeks.length) return null;
+  const reached = semester.weeks.filter((w) => w.start <= start);
+  return (reached.length ? reached[reached.length - 1] : semester.weeks[0]).index;
+}
 
 const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
 
@@ -256,6 +272,7 @@ async function apiPost(path, body) {
 
 function applyState(data, opts) {
   const prevSession = state.session;
+  const shownStart = prevSession === data.session ? currentWeek()?.start : null;
   state.session = data.session;
   state.data = data;
   const meta = data.meta;
@@ -266,13 +283,9 @@ function applyState(data, opts) {
   state.days = meta.days;
   assignTints(data.courses || []);
   state.semester = meta.semester || null;
-  if (
-    prevSession !== data.session ||
-    state.weekIndex == null ||
-    !weekExists(state.weekIndex)
-  ) {
-    state.weekIndex = defaultWeekIndex(state.semester);
-  }
+  state.weekIndex = shownStart
+    ? closestWeekIndex(state.semester, shownStart)
+    : defaultWeekIndex(state.semester);
   if (prevSession !== data.session) {
     state.detailCourseId = null;
     state.evalIndex = null;
@@ -281,6 +294,7 @@ function applyState(data, opts) {
   renderWeekPicker();
   renderScaffold();
   renderBlocks(opts && opts.animate);
+  renderSessionDates();
   renderDetail();
   renderTrash(data.trash);
   renderCatalog(meta.catalog);
@@ -748,9 +762,9 @@ function propInput(key, label, value, type, opts = {}) {
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
-  const title = pinned
-    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
-    : "";
+  const hint = opts.hint || "Valeur modifiée, videz le champ pour rétablir la valeur générée";
+  const tips = [opts.tip, pinned && hint].filter(Boolean);
+  const title = tips.length ? ` title="${escapeHtml(tips.join(" · "))}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
@@ -897,8 +911,6 @@ function detailHtml(course) {
       <section class="detail__section">${examHtml(course.exam)}</section>`;
 }
 
-let renderingDetail = false;
-
 function renderDetail() {
   const courses = detailCourses();
   const course = currentDetail();
@@ -913,18 +925,7 @@ function renderDetail() {
     state.evalIndex = evals.length ? evals.length - 1 : null;
   }
   fillDetailSelect(courses, course.courseId);
-
-  const active = document.activeElement;
-  const focusKey = el.detail.contains(active) ? active.dataset.key : null;
-  const html = detailHtml(course);
-  renderingDetail = true;
-  el.detail.innerHTML = html;
-  renderingDetail = false;
-  wireDetail(course);
-  if (focusKey) {
-    const node = el.detail.querySelector(`[data-key="${focusKey}"]`);
-    if (node) node.focus();
-  }
+  redraw(el.detail, detailHtml(course), () => wireDetail(course));
 }
 
 function wireDetail(course) {
@@ -972,14 +973,49 @@ function wireDetail(course) {
   });
 }
 
+let redrawing = false;
+const typingIn = new WeakSet();
+
+function keepCaret(previous, fresh) {
+  const from = previous.control;
+  if (from?.selectionStart == null || !fresh.control) return;
+  fresh.control.setSelectionRange(from.selectionStart, from.selectionEnd, from.selectionDirection);
+}
+
+function keepFocus(container, previous) {
+  const fresh = container.querySelector(`[data-key="${previous.dataset.key}"]`);
+  if (!fresh) return;
+  if (!typingIn.has(previous)) {
+    fresh.focus();
+    keepCaret(previous, fresh);
+    return;
+  }
+  ["class", "title"].forEach((name) => {
+    if (fresh.hasAttribute(name)) previous.setAttribute(name, fresh.getAttribute(name));
+    else previous.removeAttribute(name);
+  });
+  fresh.replaceWith(previous);
+  previous.focus();
+}
+
+function redraw(container, html, wire) {
+  const active = document.activeElement;
+  const focused = container.contains(active) && active.dataset.key ? active : null;
+  redrawing = true;
+  container.innerHTML = html;
+  redrawing = false;
+  wire();
+  if (focused) keepFocus(container, focused);
+}
+
 function wireTextField(node, commit) {
   let saved = node.value;
-  let typing = false;
   let incomplete = false;
   const save = () => {
-    typing = false;
+    if (redrawing) return;
+    typingIn.delete(node);
     const value = incomplete ? "" : node.value;
-    if (renderingDetail || value === saved) return;
+    if (value === saved) return;
     saved = value;
     commit(value);
   };
@@ -991,17 +1027,115 @@ function wireTextField(node, commit) {
     },
     true,
   );
-  node.addEventListener("pointerdown", () => {
-    typing = false;
-  });
+  node.addEventListener("pointerdown", () => typingIn.delete(node));
   node.addEventListener("keydown", (e) => {
     if (e.key === "Enter") node.blur();
-    else typing = true;
+    else typingIn.add(node);
   });
   node.addEventListener("change", () => {
-    if (!typing) save();
+    if (!typingIn.has(node)) save();
   });
   node.addEventListener("focusout", save);
+}
+
+const MAIN_DATES = ["dateDebut", "dateFinCours", "dateFin"];
+
+const DATE_LABELS = {
+  dateDebut: "Début de la session",
+  dateFin: "Fin de la session",
+  dateFinCours: "Fin des cours",
+  dateDebutChemiNot: "Début ChemiNot",
+  dateFinChemiNot: "Fin ChemiNot",
+  dateDebutAnnulationAvecRemboursement: "Début de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursement: "Fin de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursementNouveauxEtudiants:
+    "Fin de l'annulation avec remboursement (nouveaux étudiants)",
+  dateDebutAnnulationSansRemboursementNouveauxEtudiants:
+    "Début de l'annulation sans remboursement (nouveaux étudiants)",
+  dateFinAnnulationSansRemboursementNouveauxEtudiants:
+    "Fin de l'annulation sans remboursement (nouveaux étudiants)",
+  dateLimitePourAnnulerASEQ: "Date limite pour annuler l'ASEQ",
+};
+
+const DATE_ORDER = [
+  ["dateDebut", "dateFinCours"],
+  ["dateFinCours", "dateFin"],
+  ["dateDebutChemiNot", "dateFinChemiNot"],
+  ["dateDebutAnnulationAvecRemboursement", "dateFinAnnulationAvecRemboursement"],
+  [
+    "dateDebutAnnulationSansRemboursementNouveauxEtudiants",
+    "dateFinAnnulationSansRemboursementNouveauxEtudiants",
+  ],
+];
+
+const ORIGINAL_HINT = "Valeur modifiée, videz le champ pour rétablir la valeur d'origine";
+
+const dateLabel = (key) => DATE_LABELS[key] || key;
+
+function dateWarnings(dates) {
+  const values = Object.fromEntries(dates.map((row) => [row.key, row.value]));
+  return DATE_ORDER.filter(
+    ([start, end]) => values[start] && values[end] && values[end] < values[start]
+  ).map(([start, end]) => `« ${dateLabel(end)} » précède « ${dateLabel(start)} »`);
+}
+
+function dateField(row) {
+  return propInput(`date:${row.key}`, escapeHtml(dateLabel(row.key)), row.value, "date", {
+    pinned: row.modified,
+    wide: true,
+    hint: ORIGINAL_HINT,
+    tip: row.key,
+  });
+}
+
+function sessionDatesHtml(dates) {
+  const main = MAIN_DATES.map((key) => dates.find((row) => row.key === key)).filter(Boolean);
+  const others = dates.filter((row) => !MAIN_DATES.includes(row.key));
+  const open = state.otherDatesOpen;
+  const othersPinned = others.some((row) => row.modified);
+  const toggle = others.length
+    ? `<button type="button" class="stats${open ? " is-open" : ""}${
+        othersPinned ? " is-pinned" : ""
+      }" data-act="toggleDates" aria-expanded="${open}"${
+        othersPinned ? ' title="Contient des dates modifiées"' : ""
+      }>${icon("chevronRight", 16)}<span>Autres dates</span></button>`
+    : "";
+  const rest =
+    open && others.length ? `<div class="props__grid">${others.map(dateField).join("")}</div>` : "";
+  const warnings = dateWarnings(dates);
+  const warn = warnings.length
+    ? `<div class="detail__warn">${warnings
+        .map((line) => `<span>${escapeHtml(line)}</span>`)
+        .join("")}</div>`
+    : "";
+  return `<div class="props__grid">${main.map(dateField).join("")}</div>${toggle}${rest}${warn}`;
+}
+
+function wireSessionDates() {
+  el.sessionDates.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
+    wireTextField(node, (value) => commitSessionDate(field, value));
+  });
+  const toggle = el.sessionDates.querySelector('[data-act="toggleDates"]');
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    state.otherDatesOpen = !state.otherDatesOpen;
+    renderSessionDates();
+    el.sessionDates.querySelector('[data-act="toggleDates"]').focus();
+  });
+}
+
+function renderSessionDates() {
+  const dates = (state.data && state.data.dates) || [];
+  el.sessionPanel.hidden = !dates.length;
+  el.sessionDatesReset.hidden = !dates.some((row) => row.modified);
+  redraw(el.sessionDates, sessionDatesHtml(dates), wireSessionDates);
+}
+
+function commitSessionDate(field, value) {
+  apiPost("/session/date", { session: state.session, field, value }).catch(() =>
+    renderSessionDates()
+  );
 }
 
 function commitField(course, key, value) {
@@ -1940,26 +2074,141 @@ function submitFailure() {
   patchFailures(body, "Panne enregistrée").then(() => el.failureDialog.hide());
 }
 
+const STUDENT_API = `${API}/student`;
+
+const PROFILE_LABELS = {
+  nom: "Nom",
+  prenom: "Prénom",
+  codePerm: "Code permanent",
+  codeUniversel: "Code universel",
+  soldeTotal: "Solde",
+  masculin: "Masculin",
+};
+
+const profileLabel = (key) => PROFILE_LABELS[key] || key;
+
+async function loadStudent() {
+  try {
+    const res = await fetch(`${STUDENT_API}/state`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applyStudent(data);
+  } catch (err) {
+    setStatus("Impossible de lire le profil étudiant.", false, true);
+    toast(err.message || "Serveur injoignable", true);
+  }
+}
+
+async function studentPost(path, body, message) {
+  setStatus("Enregistrement…", true);
+  try {
+    const res = await fetch(`${STUDENT_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applyStudent(data);
+    setStatus("Enregistré.", false);
+    if (message) toast(message);
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+    renderStudent();
+  }
+}
+
+function applyStudent(data) {
+  state.student = data;
+  renderStudent();
+}
+
+function profileInput(row, label) {
+  const key = `student:${row.key}`;
+  if (typeof row.value === "boolean") {
+    return `<label class="check">
+        <input type="checkbox" data-key="${key}" aria-label="${label}"${row.value ? " checked" : ""} />
+        <span>${row.value ? "Oui" : "Non"}</span>
+      </label>`;
+  }
+  const title = row.modified ? ` title="${escapeHtml(`${row.key} · ${ORIGINAL_HINT}`)}"` : "";
+  return `<fluent-text-input class="field__input${row.modified ? " is-pinned" : ""}" control-size="small"
+      appearance="filled-lighter" data-key="${key}" value="${escapeHtml(row.value)}"
+      aria-label="${label}"${title}></fluent-text-input>`;
+}
+
+function profileRowHtml(row) {
+  const label = escapeHtml(profileLabel(row.key));
+  const key = escapeHtml(row.key);
+  const reset = row.modified
+    ? `<fluent-button class="field__reset" appearance="subtle" size="small" icon-only
+        data-reset="${key}" title="Rétablir la valeur d'origine"
+        aria-label="Rétablir : ${label}">${icon("reset", 16)}</fluent-button>`
+    : "";
+  return `<li class="field${row.modified ? " is-modified" : ""}" title="${key}">
+      <span class="field__label">${label}</span>
+      ${profileInput(row, label)}
+      ${reset}
+    </li>`;
+}
+
+function wireProfile() {
+  el.profileFields.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
+    if (node.type === "checkbox") {
+      node.addEventListener("change", () => commitProfile(field, node.checked));
+      return;
+    }
+    wireTextField(node, (value) => commitProfile(field, value));
+  });
+  el.profileFields.querySelectorAll("[data-reset]").forEach((node) => {
+    node.addEventListener("click", () =>
+      commitProfile(node.dataset.reset, null, "Valeur d'origine rétablie")
+    );
+  });
+}
+
+function renderStudent() {
+  const data = state.student;
+  if (!data) return;
+  redraw(el.profileFields, data.student.map(profileRowHtml).join(""), wireProfile);
+  el.studentUndoBtn.disabled = !data.canUndo;
+  el.studentRedoBtn.disabled = !data.canRedo;
+  el.studentResetBtn.disabled = !data.canReset;
+}
+
+function commitProfile(field, value, message) {
+  studentPost("/set", { field, value }, message);
+}
+
+const VIEWS = {
+  schedule: {
+    tab: "viewSchedule",
+    title: "Horaire",
+    parts: ["scheduleView", "scheduleControls", "scheduleToolbar"],
+  },
+  failures: { tab: "viewFailures", title: "Pannes", parts: ["failuresView", "failuresToolbar"] },
+  student: { tab: "viewStudent", title: "Étudiant", parts: ["studentView", "studentToolbar"] },
+};
+
 function setView(view) {
-  if (view !== "schedule" && view !== "failures") return;
-  const tabId = view === "schedule" ? "viewSchedule" : "viewFailures";
-  if (el.viewToggle.activeid !== tabId) el.viewToggle.activeid = tabId;
+  const target = VIEWS[view];
+  if (!target) return;
+  if (el.viewToggle.activeid !== target.tab) el.viewToggle.activeid = target.tab;
   if (state.view === view) return;
   state.view = view;
-  const schedule = view === "schedule";
-  el.scheduleView.hidden = !schedule;
-  el.scheduleControls.hidden = !schedule;
-  el.scheduleToolbar.hidden = !schedule;
-  el.failuresView.hidden = schedule;
-  el.failuresToolbar.hidden = schedule;
-  document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
-  if (schedule) {
-    if (state.data) {
-      renderScaffold();
-      renderBlocks(false);
-    }
-  } else {
+  Object.entries(VIEWS).forEach(([name, { parts }]) =>
+    parts.forEach((part) => (el[part].hidden = name !== view))
+  );
+  document.title = `${target.title} - ÉTS Mock`;
+  if (view === "failures") {
     loadFailures();
+  } else if (view === "student") {
+    loadStudent();
+  } else if (state.data) {
+    renderScaffold();
+    renderBlocks(false);
   }
 }
 paintIcons();
@@ -2022,6 +2271,20 @@ el.failuresResetBtn.addEventListener("click", () =>
 );
 el.failuresUndoBtn.addEventListener("click", undoFailures);
 el.failuresRedoBtn.addEventListener("click", redoFailures);
+el.studentUndoBtn.addEventListener("click", () =>
+  studentPost("/undo", {}, "Modification annulée")
+);
+el.studentRedoBtn.addEventListener("click", () =>
+  studentPost("/redo", {}, "Modification rétablie")
+);
+el.studentResetBtn.addEventListener("click", () =>
+  studentPost("/reset", {}, "Profil réinitialisé")
+);
+el.sessionDatesReset.addEventListener("click", () =>
+  apiPost("/session/dates/reset", { session: state.session }).then(() =>
+    toast("Dates de la session rétablies")
+  )
+);
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -2072,9 +2335,11 @@ document.addEventListener("keydown", (e) => {
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
   const editingText = !!document.activeElement?.closest?.(TEXT_ENTRY);
   const mod = e.ctrlKey || e.metaKey;
-  const failures = state.view === "failures";
-  const undoBtn = failures ? el.failuresUndoBtn : el.undoBtn;
-  const redoBtn = failures ? el.failuresRedoBtn : el.redoBtn;
+  const [undoBtn, redoBtn] = {
+    schedule: [el.undoBtn, el.redoBtn],
+    failures: [el.failuresUndoBtn, el.failuresRedoBtn],
+    student: [el.studentUndoBtn, el.studentRedoBtn],
+  }[state.view];
   if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
@@ -2083,7 +2348,7 @@ document.addEventListener("keydown", (e) => {
   } else if (mod && !editingText && e.key.toLowerCase() === "y") {
     e.preventDefault();
     if (!redoBtn.disabled) redoBtn.click();
-  } else if (failures) {
+  } else if (state.view !== "schedule") {
     return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
     if (occurrenceMode()) {

@@ -6,9 +6,16 @@ from pathlib import Path
 from . import profiles, scenarios, sessions
 from ._paths import SEED
 from .compute import build_all_course_data
-from .resource_specs import COURSES, GENERATED_FILENAMES, PROGRAMS, SESSIONS
+from .resource_specs import (
+    COURSES,
+    GENERATED_FILENAMES,
+    PROGRAMS,
+    SESSIONS,
+    STUDENT_INFO,
+)
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
+STUDENT_OVERRIDES_FILENAME = "student_overrides.json"
 
 DEFAULT_PROFILE = "normal"
 DEFAULT_SCENARIO = "none"
@@ -88,6 +95,8 @@ _professors = None
 _pools = None
 _programs = None
 _generated = None
+_base_sessions: dict[str, dict] = {}
+_student_overrides: dict = {}
 _cache: dict[str, object] = {}
 
 
@@ -95,14 +104,25 @@ def overrides_path() -> Path:
     return SEED / OVERRIDES_FILENAME
 
 
-def _load_overrides() -> dict:
-    path = overrides_path()
+def student_overrides_path() -> Path:
+    return SEED / STUDENT_OVERRIDES_FILENAME
+
+
+def _read_overrides(path: Path) -> dict:
     if not path.exists():
         return {}
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return {}
+
+
+def _load_overrides() -> dict:
+    return _read_overrides(overrides_path())
+
+
+def load_student_overrides() -> dict:
+    return _read_overrides(student_overrides_path())
 
 
 def _apply_overrides(built_courses: list[dict]) -> list[dict]:
@@ -119,6 +139,7 @@ def _apply_overrides(built_courses: list[dict]) -> list[dict]:
 
 def _initialize():
     global _seed_courses, _base_courses, _professors, _pools, _programs, _generated
+    global _base_sessions, _student_overrides
     _refresh_config()
     _seed_courses = json.loads((SEED / COURSES.filename).read_text(encoding="utf-8"))
     _professors = json.loads((SEED / "professors.json").read_text(encoding="utf-8"))
@@ -129,6 +150,11 @@ def _initialize():
         delta = sessions.compute_week_shift_delta(ACTIVE_SESSION, SEMESTER_WEEK)
         sessions.shift_session_metadata(ACTIVE_SESSION, delta)
         sessions.shift_session_metadata(NEXT_SESSION, delta)
+    _student_overrides = load_student_overrides()
+    _base_sessions = {s["abrege"]: dict(s) for s in sessions.get_raw_sessions()}
+    sessions.apply_date_overrides(
+        {code: entry.get("dates", {}) for code, entry in _load_overrides().items()}
+    )
     _seed_courses = _build_courses(_seed_courses, _pools, _professors)
     _seed_courses = _seed_courses + sessions.generate_random_courses(
         NEXT_SESSION, _seed_courses, _pools, _professors
@@ -175,6 +201,8 @@ def load(name: str):
         data = [dict(s) for s in sessions.get_raw_sessions()]
     elif name == PROGRAMS.filename:
         data = copy.deepcopy(_programs)
+    elif name == STUDENT_INFO.filename:
+        data = get_student_info()
     else:
         data = json.loads((SEED / name).read_text(encoding="utf-8"))
     if SCENARIO_NAME != DEFAULT_SCENARIO:
@@ -212,6 +240,18 @@ def resolve_default_session() -> str:
     if ACTIVE_SESSION in available:
         return ACTIVE_SESSION
     return available[0] if available else ACTIVE_SESSION
+
+
+def get_student_info(*, base: bool = False) -> dict:
+    info = json.loads((SEED / STUDENT_INFO.filename).read_text(encoding="utf-8"))
+    if base:
+        return info
+    return {key: _student_overrides.get(key, value) for key, value in info.items()}
+
+
+def get_base_session(code: str) -> dict | None:
+    entry = _base_sessions.get(code)
+    return dict(entry) if entry else None
 
 
 def get_pools() -> dict:
