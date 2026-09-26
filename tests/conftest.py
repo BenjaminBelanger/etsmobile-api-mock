@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from lib import data_store, schedule_editor, student_editor  # noqa: E402
+from lib import data_store, schedule_editor, snapshots, student_editor  # noqa: E402
 
 SESSION = "H2026"
 
@@ -30,8 +30,16 @@ def sandbox_overrides(tmp_path, monkeypatch):
     yield sandbox
     schedule_editor.clear_cache()
     student_editor.clear_history()
+    data_store.set_setup(None)
     monkeypatch.undo()
     data_store.reload()
+
+
+@pytest.fixture(autouse=True)
+def sandbox_snapshots(tmp_path, monkeypatch):
+    folder = tmp_path / "snapshots"
+    monkeypatch.setattr(snapshots, "snapshots_dir", lambda: folder)
+    return folder
 
 
 @pytest.fixture

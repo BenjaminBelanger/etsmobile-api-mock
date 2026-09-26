@@ -20,12 +20,23 @@ STUDENT_OVERRIDES_FILENAME = "student_overrides.json"
 DEFAULT_PROFILE = "normal"
 DEFAULT_SCENARIO = "none"
 
+SETUP_ENV = (
+    "PROFILE",
+    "SCENARIO",
+    "SEMESTER_WEEK",
+    "COURSE_COUNT",
+    "SCHEDULE_DAYS",
+    "TIME_PREFERENCE",
+)
+
 ACTIVE_SESSION = ""
 NEXT_SESSION = ""
 PROFILE_NAME = DEFAULT_PROFILE
 SCENARIO_NAME = DEFAULT_SCENARIO
 GENERATION_CONFIG = None
 SEMESTER_WEEK: int | None = None
+
+_runtime_setup: dict[str, str] | None = None
 
 _EMPTY_EVALUATION_SUMMARY = {
     "noteACeJour": "",
@@ -53,14 +64,32 @@ def _parse_semester_week(raw: str) -> int | None:
     return week
 
 
+def setup_env() -> dict[str, str]:
+    if _runtime_setup is not None:
+        return dict(_runtime_setup)
+    return {name: os.environ[name] for name in SETUP_ENV if name in os.environ}
+
+
+def runtime_setup() -> dict[str, str] | None:
+    return None if _runtime_setup is None else dict(_runtime_setup)
+
+
+def set_setup(env: dict[str, str] | None) -> None:
+    global _runtime_setup
+    _runtime_setup = None if env is None else {
+        name: str(value) for name, value in env.items() if name in SETUP_ENV
+    }
+
+
 def _refresh_config():
     global ACTIVE_SESSION, NEXT_SESSION, PROFILE_NAME, SCENARIO_NAME, GENERATION_CONFIG, SEMESTER_WEEK
 
+    env = setup_env()
     ACTIVE_SESSION = sessions.compute_active_session()
     NEXT_SESSION = sessions.compute_next_session(ACTIVE_SESSION)
-    PROFILE_NAME = os.environ.get("PROFILE", DEFAULT_PROFILE)
-    SCENARIO_NAME = os.environ.get("SCENARIO", DEFAULT_SCENARIO)
-    SEMESTER_WEEK = _parse_semester_week(os.environ.get("SEMESTER_WEEK", ""))
+    PROFILE_NAME = env.get("PROFILE", DEFAULT_PROFILE)
+    SCENARIO_NAME = env.get("SCENARIO", DEFAULT_SCENARIO)
+    SEMESTER_WEEK = _parse_semester_week(env.get("SEMESTER_WEEK", ""))
 
     valid_profiles = profiles.get_valid_profiles()
     if PROFILE_NAME not in valid_profiles:
@@ -76,7 +105,7 @@ def _refresh_config():
             f"Valid scenarios: {', '.join(sorted(valid_scenarios))}"
         )
 
-    GENERATION_CONFIG = profiles.get_generation_config(PROFILE_NAME)
+    GENERATION_CONFIG = profiles.get_generation_config(PROFILE_NAME, env)
 
 
 def _build_courses(seed_courses, pools, professors):
@@ -144,12 +173,7 @@ def _initialize():
     _seed_courses = json.loads((SEED / COURSES.filename).read_text(encoding="utf-8"))
     _professors = json.loads((SEED / "professors.json").read_text(encoding="utf-8"))
     _pools = json.loads((SEED / "pools.json").read_text(encoding="utf-8"))
-    sessions.ensure_session_metadata(ACTIVE_SESSION)
-    sessions.ensure_session_metadata(NEXT_SESSION)
-    if SEMESTER_WEEK is not None:
-        delta = sessions.compute_week_shift_delta(ACTIVE_SESSION, SEMESTER_WEEK)
-        sessions.shift_session_metadata(ACTIVE_SESSION, delta)
-        sessions.shift_session_metadata(NEXT_SESSION, delta)
+    sessions.prepare(ACTIVE_SESSION, NEXT_SESSION, SEMESTER_WEEK)
     _student_overrides = load_student_overrides()
     _base_sessions = {s["abrege"]: dict(s) for s in sessions.get_raw_sessions()}
     sessions.apply_date_overrides(

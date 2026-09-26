@@ -181,6 +181,32 @@ def ensure_session_metadata(session_code: str) -> None:
         _RAW_SESSIONS.append(_clone_session_dates(session_code))
 
 
+def session_metadata(session_code: str) -> dict | None:
+    entry = _get_session_by_code(session_code)
+    return dict(entry) if entry else None
+
+
+def week_index(session_start: date, day: date) -> int:
+    start_monday = session_start - timedelta(days=session_start.weekday())
+    day_monday = day - timedelta(days=day.weekday())
+    return (day_monday - start_monday).days // 7 + 1
+
+
+def week_count(entry: dict) -> int:
+    return week_index(
+        date.fromisoformat(entry["dateDebut"]), date.fromisoformat(entry["dateFin"])
+    )
+
+
+def prepare(active_code: str, next_code: str, semester_week: int | None) -> None:
+    ensure_session_metadata(active_code)
+    ensure_session_metadata(next_code)
+    if semester_week is not None:
+        delta = compute_week_shift_delta(active_code, semester_week)
+        shift_session_metadata(active_code, delta)
+        shift_session_metadata(next_code, delta)
+
+
 def compute_week_shift_delta(active_code: str, target_week: int) -> int:
     """Day delta that makes today fall in target_week of active_code.
     Preserves the original weekday of the session's dateDebut."""

@@ -1,9 +1,11 @@
+import json
+
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import schedule_editor, student_editor
+from . import schedule_editor, snapshot_editor, snapshots, student_editor
 from ._paths import ROOT
 
 WEB_DIR = ROOT / "web"
@@ -114,10 +116,38 @@ class SessionDateBody(BaseModel):
     value: str | None = None
 
 
+class SnapshotRef(BaseModel):
+    scope: str
+    id: str
+
+
+class SnapshotSaveBody(BaseModel):
+    name: str
+    scope: str = "personal"
+    overwrite: bool = False
+
+
+class SnapshotLoadBody(SnapshotRef):
+    dates: str = snapshots.DEFAULT_DATE_MODE
+    failures: bool = True
+
+
+class SnapshotMoveBody(SnapshotRef):
+    to: str
+
+
+class SnapshotImportBody(BaseModel):
+    snapshot: dict
+    scope: str = "personal"
+    overwrite: bool = False
+
+
 def _guard(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
-    except schedule_editor.EditorError as exc:
+    except snapshots.SnapshotConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (schedule_editor.EditorError, snapshots.SnapshotError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
@@ -317,3 +347,45 @@ def student_redo():
 @router.post("/api/student/reset")
 def student_reset():
     return _guard(student_editor.reset)
+
+
+@router.get("/api/snapshots")
+def snapshot_list():
+    return _guard(snapshot_editor.get_state)
+
+
+@router.post("/api/snapshots/save")
+def snapshot_save(body: SnapshotSaveBody):
+    return _guard(snapshot_editor.save, body.name, body.scope, body.overwrite)
+
+
+@router.post("/api/snapshots/load")
+def snapshot_load(body: SnapshotLoadBody):
+    return _guard(snapshot_editor.load, body.scope, body.id, body.dates, body.failures)
+
+
+@router.post("/api/snapshots/delete")
+def snapshot_delete(body: SnapshotRef):
+    return _guard(snapshot_editor.delete, body.scope, body.id)
+
+
+@router.post("/api/snapshots/move")
+def snapshot_move(body: SnapshotMoveBody):
+    return _guard(snapshot_editor.move, body.scope, body.id, body.to)
+
+
+@router.post("/api/snapshots/import")
+def snapshot_import(body: SnapshotImportBody):
+    return _guard(
+        snapshot_editor.import_snapshot, body.snapshot, body.scope, body.overwrite
+    )
+
+
+@router.get("/api/snapshots/export")
+def snapshot_export(scope: str = Query(...), id: str = Query(...)):
+    snapshot = _guard(snapshots.read, scope, id)
+    return Response(
+        json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{id}.json"'},
+    )

@@ -1,5 +1,6 @@
 import json
 import os
+from collections.abc import Mapping
 
 from ._paths import SEED
 
@@ -69,14 +70,17 @@ def _parse_schedule_days(value: str) -> list[str]:
     return [p.strip() for p in value.split(",") if p.strip()]
 
 
-def get_generation_config(profile_name: str) -> dict | None:
+def get_generation_config(
+    profile_name: str, env: Mapping[str, str] | None = None
+) -> dict | None:
     """Merge the profile's generateCourses block. Returns None if generation is not active."""
     profile = _PROFILES.get(profile_name, {})
     base_config = profile.get("generateCourses")
+    env = os.environ if env is None else env
 
-    env_count = os.environ.get("COURSE_COUNT")
-    env_days = os.environ.get("SCHEDULE_DAYS")
-    env_time = os.environ.get("TIME_PREFERENCE")
+    env_count = env.get("COURSE_COUNT")
+    env_days = env.get("SCHEDULE_DAYS")
+    env_time = env.get("TIME_PREFERENCE")
 
     if (
         base_config is None

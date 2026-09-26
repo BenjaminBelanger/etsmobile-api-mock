@@ -33,6 +33,10 @@ const state = {
   presets: [],
   student: null,
   otherDatesOpen: false,
+  snapshots: null,
+  snapshotTarget: null,
+  snapshotOverwrite: false,
+  snapshotConfirm: null,
 };
 
 const el = {
@@ -104,6 +108,29 @@ const el = {
   toastHost: document.getElementById("toastHost"),
   toast: document.getElementById("toast"),
   toastText: document.getElementById("toastText"),
+  snapshotsView: document.getElementById("snapshotsView"),
+  snapshotsToolbar: document.getElementById("snapshotsToolbar"),
+  snapshotList: document.getElementById("snapshotList"),
+  snapshotEmpty: document.getElementById("snapshotEmpty"),
+  currentSetup: document.getElementById("currentSetup"),
+  snapshotFile: document.getElementById("snapshotFile"),
+  snapshotImportBtn: document.getElementById("snapshotImportBtn"),
+  snapshotSaveBtn: document.getElementById("snapshotSaveBtn"),
+  snapshotSaveDialog: document.getElementById("snapshotSaveDialog"),
+  snapshotSaveForm: document.getElementById("snapshotSaveForm"),
+  snapshotSaveConflict: document.getElementById("snapshotSaveConflict"),
+  snapshotSaveSubmit: document.getElementById("snapshotSaveSubmit"),
+  fSnapshotName: document.getElementById("fSnapshotName"),
+  snapshotLoadDialog: document.getElementById("snapshotLoadDialog"),
+  snapshotLoadTitle: document.getElementById("snapshotLoadTitle"),
+  snapshotLoadForm: document.getElementById("snapshotLoadForm"),
+  snapshotLoadFailures: document.getElementById("snapshotLoadFailures"),
+  snapshotLoadSubmit: document.getElementById("snapshotLoadSubmit"),
+  fSnapshotDates: document.getElementById("fSnapshotDates"),
+  snapshotConfirmDialog: document.getElementById("snapshotConfirmDialog"),
+  snapshotConfirmTitle: document.getElementById("snapshotConfirmTitle"),
+  snapshotConfirmText: document.getElementById("snapshotConfirmText"),
+  snapshotConfirmSubmit: document.getElementById("snapshotConfirmSubmit"),
 };
 
 const toMin = (hhmm) => {
@@ -2175,6 +2202,419 @@ function commitProfile(field, value, message) {
   studentPost("/set", { field, value }, message);
 }
 
+const SNAPSHOT_API = `${API}/snapshots`;
+
+const SNAPSHOT_SCOPES = [
+  { scope: "personal", title: "Personnels", icon: "person", empty: "Aucun instantané personnel." },
+  { scope: "shared", title: "Partagés", icon: "people", empty: "Aucun instantané partagé." },
+];
+
+const DATE_MODES = [
+  {
+    id: "week",
+    title: "Même semaine de session",
+    hint: (item, current) =>
+      `La semaine ${item.anchor.week} de ${item.anchor.session} devient la semaine courante` +
+      (current?.session ? ` de ${current.session}.` : ".") +
+      clampHint(item.anchor.week, current),
+  },
+  {
+    id: "exact",
+    title: "Dates exactes",
+    hint: (item) =>
+      `Les dates telles qu’enregistrées le ${fmtLongDate(item.anchor.date)}. ` +
+      "Réglez l’horloge du téléphone à cette date.",
+  },
+  {
+    id: "setup",
+    title: "Configuration seulement",
+    hint: () =>
+      "Profil, scénario, semaine, options et pannes. L’horaire est régénéré à partir " +
+      "d’aujourd’hui; le profil étudiant est conservé.",
+  },
+];
+
+function clampHint(week, current) {
+  if (week < 1) return " La semaine 1 sera utilisée.";
+  if (current?.weeks && week > current.weeks) {
+    return ` ${current.session} n’a que ${current.weeks} semaines: la semaine ${current.weeks} sera utilisée.`;
+  }
+  return "";
+}
+
+const TIME_LABELS = { morning: "matin", afternoon: "après-midi", evening: "soir" };
+const DAY_ABBR = { 1: "lun", 2: "mar", 3: "mer", 4: "jeu", 5: "ven", 6: "sam" };
+
+const fmtLongDate = (iso) => {
+  const [y, m, d] = iso.split("-").map(Number);
+  return `${d} ${MONTHS_FR[m - 1]} ${y}`;
+};
+
+function fmtSavedAt(item) {
+  const day = (item.savedAt || item.anchor.date).slice(0, 10);
+  const time = (item.savedAt || "").slice(11, 16);
+  return time ? `${fmtLongDate(day)} à ${time.replace(":", " h ")}` : fmtLongDate(day);
+}
+
+function generationParts(setup) {
+  const parts = [];
+  if ("courses" in setup) parts.push(`${setup.courses} cours`);
+  if ("days" in setup) {
+    parts.push(
+      setup.days.length ? setup.days.map((d) => DAY_ABBR[d] || d).join("-") : "tous les jours"
+    );
+  }
+  if ("time" in setup) {
+    parts.push(
+      setup.time
+        ? setup.time.split(",").map((t) => TIME_LABELS[t] || t).join(", ")
+        : "toute la journée"
+    );
+  }
+  return parts;
+}
+
+function setupParts(setup) {
+  const parts = [`profil ${setup.profile}`];
+  if (setup.scenario && setup.scenario !== "none") parts.push(`scénario ${setup.scenario}`);
+  if (setup.semesterWeek) parts.push(`semaine ${setup.semesterWeek} forcée`);
+  return [...parts, ...generationParts(setup)];
+}
+
+const includedFailures = (config) => {
+  const cfg = { ...NO_FAILURES, ...config };
+  return FAILURE_KINDS.filter((kind) => kind.active(cfg)).map((kind) => ({
+    kind,
+    summary: kind.summary(cfg),
+  }));
+};
+
+const plural = (count, one, many) => `${count} ${count > 1 ? many : one}`;
+
+function snapshotTags(item) {
+  const tags = setupParts(item.setup).map((text) => ({ text }));
+  if (item.sessions.length) tags.push({ text: `horaire ${item.sessions.join(", ")}` });
+  if (item.student.length) {
+    tags.push({ text: `profil étudiant (${plural(item.student.length, "champ", "champs")})` });
+  }
+  const failures = includedFailures(item.failures);
+  if (failures.length) {
+    tags.push({
+      text: plural(failures.length, "panne", "pannes"),
+      title: failures.map((f) => `${f.kind.label} : ${f.summary}`).join("\n"),
+      warn: true,
+    });
+  }
+  return tags;
+}
+
+function snapshotHtml(item) {
+  const name = escapeHtml(item.name);
+  const shared = item.scope === "shared";
+  const tags = snapshotTags(item)
+    .map(
+      (tag) => `<span class="tag${tag.warn ? " tag--warn" : ""}"${
+        tag.title ? ` title="${escapeHtml(tag.title)}"` : ""
+      }>${escapeHtml(tag.text)}</span>`
+    )
+    .join("");
+  return `<li class="snapshot" data-scope="${item.scope}" data-id="${escapeHtml(item.id)}">
+      <div class="snapshot__main">
+        <span class="snapshot__name">${name}</span>
+        <span class="snapshot__meta">${escapeHtml(item.anchor.session)} · semaine ${item.anchor.week} · ${escapeHtml(fmtSavedAt(item))}</span>
+        <span class="snapshot__tags">${tags}</span>
+      </div>
+      <div class="snapshot__actions">
+        <fluent-button appearance="primary" size="small" data-act="load">Charger</fluent-button>
+        <fluent-button appearance="subtle" size="small" icon-only data-act="export"
+          title="Exporter" aria-label="Exporter : ${name}">${icon("download", 16)}</fluent-button>
+        <fluent-button appearance="subtle" size="small" icon-only data-act="move"
+          title="${shared ? "Rendre personnel" : "Partager"}"
+          aria-label="${shared ? "Rendre personnel" : "Partager"} : ${name}">${icon(shared ? "person" : "people", 16)}</fluent-button>
+        <fluent-button appearance="subtle" size="small" icon-only data-act="delete"
+          title="Supprimer" aria-label="Supprimer : ${name}">${icon("delete", 16)}</fluent-button>
+      </div>
+    </li>`;
+}
+
+function renderSnapshotList() {
+  const items = state.snapshots?.snapshots || [];
+  el.snapshotEmpty.hidden = items.length > 0;
+  el.snapshotList.hidden = !items.length;
+  el.snapshotList.innerHTML = items.length
+    ? SNAPSHOT_SCOPES.map(({ scope, title, icon: iconName, empty }) => {
+        const group = items.filter((item) => item.scope === scope);
+        const body = group.length
+          ? `<ul class="snapshot-group__list">${group.map(snapshotHtml).join("")}</ul>`
+          : `<p class="snapshot-group__empty">${empty}</p>`;
+        return `<section class="snapshot-group" data-group="${scope}">
+            <h2 class="snapshot-group__title">${icon(iconName, 16)}${title}<span class="snapshot-group__count">${group.length}</span></h2>
+            ${body}
+          </section>`;
+      }).join("")
+    : "";
+  el.snapshotList.querySelectorAll(".snapshot").forEach((row) => {
+    const item = items.find((i) => i.scope === row.dataset.scope && i.id === row.dataset.id);
+    row.querySelectorAll("[data-act]").forEach((node) =>
+      node.addEventListener("click", () => runSnapshotAction(item, node.dataset.act))
+    );
+  });
+}
+
+function weekText(current) {
+  if (current.week == null) return current.session;
+  if (current.week < 1) return `${current.session} · avant le début`;
+  if (current.weeks && current.week > current.weeks) return `${current.session} · après la fin`;
+  return `${current.session} · semaine ${current.week}${current.weeks ? ` sur ${current.weeks}` : ""}`;
+}
+
+function renderCurrentSetup() {
+  const current = state.snapshots?.current;
+  if (!current) return;
+  const setup = current.setup;
+  const failures = includedFailures(current.failures);
+  const rows = [
+    ["Session", weekText(current)],
+    ["Profil", setup.profile],
+    ["Scénario", setup.scenario && setup.scenario !== "none" ? setup.scenario : "aucun"],
+    ["Semaine", setup.semesterWeek ? `semaine ${setup.semesterWeek} forcée` : "dates réelles"],
+  ];
+  const generation = generationParts(setup);
+  if (generation.length) rows.push(["Génération", generation.join(" · ")]);
+  rows.push(["Pannes", failures.length ? failures.map((f) => f.summary).join(" · ") : "aucune"]);
+  el.currentSetup.innerHTML = rows
+    .map(([label, value]) => `<dt>${label}</dt><dd>${escapeHtml(value)}</dd>`)
+    .join("");
+}
+
+function applySnapshots(data) {
+  state.snapshots = { snapshots: data.snapshots || [], current: data.current || null };
+  renderSnapshotList();
+  renderCurrentSetup();
+}
+
+async function snapshotRequest(path, body, { quiet409 = false } = {}) {
+  setStatus("Enregistrement…", true);
+  try {
+    const res = await fetch(`${SNAPSHOT_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (res.status === 409 && quiet409) {
+      setStatus("Prêt.", false);
+      return { conflict: true };
+    }
+    if (!res.ok) throw new Error(failureError(data, res));
+    applySnapshots(data);
+    setStatus("Enregistré.", false);
+    return { data };
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+    return { error: err };
+  }
+}
+
+async function loadSnapshots() {
+  try {
+    const res = await fetch(SNAPSHOT_API);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applySnapshots(data);
+  } catch (err) {
+    setStatus("Impossible de lire les instantanés.", false, true);
+    toast(err.message || "Serveur injoignable", true);
+  }
+}
+
+const checkedValue = (root, name) => root.querySelector(`input[name="${name}"]:checked`)?.value;
+
+function setSaveConflict(message) {
+  state.snapshotOverwrite = !!message;
+  el.snapshotSaveConflict.hidden = !message;
+  el.snapshotSaveConflict.textContent = message || "";
+  el.snapshotSaveSubmit.textContent = message ? "Remplacer" : "Enregistrer";
+}
+
+function openSnapshotSave() {
+  el.fSnapshotName.value = "";
+  setSaveConflict(null);
+  el.snapshotSaveDialog.show();
+  setTimeout(() => el.fSnapshotName.focus(), 40);
+}
+
+async function submitSnapshotSave() {
+  const name = String(el.fSnapshotName.value || "").trim();
+  if (!name) {
+    toast("Un nom est requis", true);
+    el.fSnapshotName.focus();
+    return;
+  }
+  const scope = checkedValue(el.snapshotSaveForm, "snapshotScope") || "personal";
+  const result = await snapshotRequest(
+    "/save",
+    { name, scope, overwrite: state.snapshotOverwrite },
+    { quiet409: true }
+  );
+  if (result.conflict) {
+    const where = scope === "shared" ? "partagé" : "personnel";
+    setSaveConflict(`Un instantané ${where} porte déjà ce nom. Enregistrez à nouveau pour le remplacer.`);
+    return;
+  }
+  if (result.data) {
+    el.snapshotSaveDialog.hide();
+    toast(`Instantané « ${name} » enregistré`);
+  }
+}
+
+function choiceHtml(name, value, title, hint, checked) {
+  return `<label class="choice">
+      <input type="radio" name="${name}" value="${value}"${checked ? " checked" : ""} />
+      <span class="choice__text">
+        <span class="choice__title">${title}</span>
+        <span class="choice__hint">${escapeHtml(hint)}</span>
+      </span>
+    </label>`;
+}
+
+function snapshotFailuresHtml(item) {
+  const failures = includedFailures(item.failures);
+  const list = failures.length
+    ? `<ul class="snapshot-failures__list">${failures
+        .map(
+          ({ kind, summary }) => `<li>${icon(kind.icon, 16)}<span>${kind.label}</span>
+            <span class="snapshot-failures__value">${escapeHtml(summary)}</span></li>`
+        )
+        .join("")}</ul>`
+    : `<p class="snapshot-failures__none">Aucune panne dans cet instantané: les pannes actives seront retirées.</p>`;
+  return `<label class="check">
+      <input type="checkbox" id="fSnapshotFailures" checked />
+      <span>Appliquer les pannes enregistrées</span>
+    </label>
+    ${list}`;
+}
+
+function openSnapshotLoad(item) {
+  state.snapshotTarget = item;
+  el.snapshotLoadTitle.textContent = `Charger « ${item.name} »`;
+  const current = state.snapshots?.current;
+  el.fSnapshotDates.innerHTML =
+    `<legend class="choices__legend">Dates</legend>` +
+    DATE_MODES.map((mode, i) =>
+      choiceHtml("snapshotDates", mode.id, mode.title, mode.hint(item, current), i === 0)
+    ).join("");
+  el.snapshotLoadFailures.innerHTML = snapshotFailuresHtml(item);
+  const toggle = el.snapshotLoadFailures.querySelector("#fSnapshotFailures");
+  toggle.addEventListener("change", () =>
+    el.snapshotLoadFailures.classList.toggle("is-off", !toggle.checked)
+  );
+  el.snapshotLoadDialog.show();
+}
+
+async function refreshAfterSnapshot() {
+  state.failuresPast = [];
+  state.failuresFuture = [];
+  state.student = null;
+  const [schedule] = await Promise.all([apiGet(""), loadFailures()]);
+  state.session = null;
+  applyState(schedule);
+}
+
+async function submitSnapshotLoad() {
+  const item = state.snapshotTarget;
+  if (!item) return;
+  const dates = checkedValue(el.snapshotLoadForm, "snapshotDates") || "week";
+  const failures = !!el.snapshotLoadFailures.querySelector("#fSnapshotFailures")?.checked;
+  const result = await snapshotRequest("/load", { scope: item.scope, id: item.id, dates, failures });
+  if (!result.data) return;
+  el.snapshotLoadDialog.hide();
+  try {
+    await refreshAfterSnapshot();
+  } catch (err) {
+    toast(err.message || "Serveur injoignable", true);
+  }
+  const notices = result.data.notices || [];
+  setStatus(notices.length ? notices.join(" ") : `Instantané « ${item.name} » chargé.`, false);
+  toast(`Instantané « ${item.name} » chargé`);
+}
+
+function askSnapshot({ title, text, action, run }) {
+  el.snapshotConfirmTitle.textContent = title;
+  el.snapshotConfirmText.textContent = text;
+  el.snapshotConfirmSubmit.textContent = action;
+  state.snapshotConfirm = run;
+  el.snapshotConfirmDialog.show();
+}
+
+function downloadSnapshot(item) {
+  const link = document.createElement("a");
+  link.href = `${SNAPSHOT_API}/export?scope=${encodeURIComponent(item.scope)}&id=${encodeURIComponent(item.id)}`;
+  link.download = `${item.id}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+async function moveSnapshot(item) {
+  const to = item.scope === "shared" ? "personal" : "shared";
+  const result = await snapshotRequest("/move", { scope: item.scope, id: item.id, to });
+  if (result.data) {
+    toast(to === "shared" ? `« ${item.name} » partagé` : `« ${item.name} » rendu personnel`);
+  }
+}
+
+function runSnapshotAction(item, action) {
+  if (!item) return;
+  if (action === "load") openSnapshotLoad(item);
+  else if (action === "export") downloadSnapshot(item);
+  else if (action === "move") moveSnapshot(item);
+  else if (action === "delete") {
+    askSnapshot({
+      title: `Supprimer « ${item.name} » ?`,
+      text: `Le fichier snapshots/${item.scope}/${item.id}.json sera supprimé.`,
+      action: "Supprimer",
+      run: () =>
+        snapshotRequest("/delete", { scope: item.scope, id: item.id }).then((result) => {
+          if (result.data) toast("Instantané supprimé");
+        }),
+    });
+  }
+}
+
+async function importSnapshot(snapshot, overwrite = false) {
+  const result = await snapshotRequest(
+    "/import",
+    { snapshot, scope: "personal", overwrite },
+    { quiet409: true }
+  );
+  if (result.conflict) {
+    askSnapshot({
+      title: `Remplacer « ${snapshot.name} » ?`,
+      text: "Un instantané personnel porte déjà ce nom. Il sera remplacé par le fichier importé.",
+      action: "Remplacer",
+      run: () => importSnapshot(snapshot, true),
+    });
+  } else if (result.data) {
+    toast(`Instantané « ${snapshot.name} » importé`);
+  }
+}
+
+async function readSnapshotFile() {
+  const file = el.snapshotFile.files?.[0];
+  el.snapshotFile.value = "";
+  if (!file) return;
+  let snapshot;
+  try {
+    snapshot = JSON.parse(await file.text());
+  } catch {
+    toast("Ce fichier n'est pas un instantané JSON valide", true);
+    return;
+  }
+  importSnapshot(snapshot);
+}
+
 const VIEWS = {
   schedule: {
     tab: "viewSchedule",
@@ -2183,6 +2623,11 @@ const VIEWS = {
   },
   failures: { tab: "viewFailures", title: "Pannes", parts: ["failuresView", "failuresToolbar"] },
   student: { tab: "viewStudent", title: "Étudiant", parts: ["studentView", "studentToolbar"] },
+  snapshots: {
+    tab: "viewSnapshots",
+    title: "Instantanés",
+    parts: ["snapshotsView", "snapshotsToolbar"],
+  },
 };
 
 function setView(view) {
@@ -2199,6 +2644,8 @@ function setView(view) {
     loadFailures();
   } else if (view === "student") {
     loadStudent();
+  } else if (view === "snapshots") {
+    loadSnapshots();
   } else if (state.data) {
     renderScaffold();
     renderBlocks(false);
@@ -2273,6 +2720,41 @@ el.studentRedoBtn.addEventListener("click", () =>
 el.studentResetBtn.addEventListener("click", () =>
   studentPost("/reset", {}, "Profil réinitialisé")
 );
+el.snapshotSaveBtn.addEventListener("click", openSnapshotSave);
+el.snapshotSaveSubmit.addEventListener("click", submitSnapshotSave);
+el.snapshotSaveForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitSnapshotSave();
+});
+el.snapshotSaveForm.addEventListener("input", () => setSaveConflict(null));
+el.snapshotSaveForm.addEventListener("change", () => setSaveConflict(null));
+el.fSnapshotName.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  submitSnapshotSave();
+});
+el.snapshotSaveDialog
+  .querySelectorAll("[data-close-snapshot-save]")
+  .forEach((n) => n.addEventListener("click", () => el.snapshotSaveDialog.hide()));
+el.snapshotLoadSubmit.addEventListener("click", submitSnapshotLoad);
+el.snapshotLoadForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitSnapshotLoad();
+});
+el.snapshotLoadDialog
+  .querySelectorAll("[data-close-snapshot-load]")
+  .forEach((n) => n.addEventListener("click", () => el.snapshotLoadDialog.hide()));
+el.snapshotConfirmDialog
+  .querySelectorAll("[data-close-snapshot-confirm]")
+  .forEach((n) => n.addEventListener("click", () => el.snapshotConfirmDialog.hide()));
+el.snapshotConfirmSubmit.addEventListener("click", () => {
+  const run = state.snapshotConfirm;
+  state.snapshotConfirm = null;
+  el.snapshotConfirmDialog.hide();
+  if (run) run();
+});
+el.snapshotImportBtn.addEventListener("click", () => el.snapshotFile.click());
+el.snapshotFile.addEventListener("change", readSnapshotFile);
 el.sessionDatesReset.addEventListener("click", () =>
   apiPost("/session/dates/reset", { session: state.session }).then(() =>
     toast("Dates de la session rétablies")
@@ -2332,7 +2814,8 @@ document.addEventListener("keydown", (e) => {
     schedule: [el.undoBtn, el.redoBtn],
     failures: [el.failuresUndoBtn, el.failuresRedoBtn],
     student: [el.studentUndoBtn, el.studentRedoBtn],
-  }[state.view];
+  }[state.view] || [];
+  if (!undoBtn) return;
   if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {

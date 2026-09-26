@@ -1,3 +1,6 @@
+import json
+import pathlib
+
 import pytest
 
 import start
@@ -461,8 +464,223 @@ def test_the_server_is_started_with_the_configured_environment(monkeypatch, tmp_
     assert "--port" in command and "8080" in command
     assert "--reload" in command
     excluded = [command[i + 1] for i, arg in enumerate(command) if arg == "--reload-exclude"]
-    assert excluded == [start.OVERRIDES_FILENAME, start.STUDENT_OVERRIDES_FILENAME]
+    assert excluded == [
+        start.OVERRIDES_FILENAME,
+        start.STUDENT_OVERRIDES_FILENAME,
+        str(start.snapshots.snapshots_dir()),
+    ]
     assert env["PROFILE"] == "semester-off"
+
+
+ROOT = pathlib.Path(start.__file__).resolve().parent
+
+
+def reload_options(monkeypatch, tmp_path):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
+    runs = []
+    monkeypatch.setattr(start.subprocess, "run", lambda cmd, env=None: runs.append(cmd))
+    start._start_server({}, "normal", "none", None)
+
+    command = runs[0]
+    return {
+        name: [command[i + 1] for i, arg in enumerate(command) if arg == name]
+        for name in ("--reload-include", "--reload-exclude")
+    }
+
+
+def test_saving_a_snapshot_does_not_restart_the_server(monkeypatch, tmp_path):
+    from uvicorn.config import Config
+    from uvicorn.supervisors.watchfilesreload import FileFilter
+
+    options = reload_options(monkeypatch, tmp_path)
+    watches = FileFilter(
+        Config(
+            "main:app",
+            reload=True,
+            reload_includes=options["--reload-include"],
+            reload_excludes=options["--reload-exclude"],
+        )
+    )
+    folder = start.snapshots.snapshots_dir()
+
+    assert not watches(folder / "shared" / "demo.json")
+    assert not watches(folder / "personal" / "demo.json")
+    assert not watches(ROOT / "seed" / start.OVERRIDES_FILENAME)
+    assert not watches(ROOT / "seed" / start.STUDENT_OVERRIDES_FILENAME)
+    assert watches(ROOT / "seed" / "courses.json")
+    assert watches(ROOT / "main.py")
+
+
+def test_reload_options_survive_the_glob_expansion_of_the_uvicorn_cli(
+    monkeypatch, tmp_path
+):
+    import glob
+
+    start.snapshots.write("shared", snapshot_body())
+    options = reload_options(monkeypatch, tmp_path)
+    cwd = start.snapshots.snapshots_dir().parent
+
+    for value in options["--reload-include"] + options["--reload-exclude"]:
+        assert glob.glob(value, root_dir=cwd) in ([], [value]), value
+    assert glob.glob("snapshots/*/*.json", root_dir=cwd)
+
+
+def snapshot_body(**changes):
+    body = {
+        "format": start.snapshots.FORMAT,
+        "name": "Examen final",
+        "savedAt": "2026-09-25T10:00",
+        "anchor": {"session": "A2026", "week": 4, "date": "2026-09-25"},
+        "setup": {
+            "profile": "generated-busy",
+            "scenario": "friday-off",
+            "semesterWeek": 3,
+            "courses": 2,
+            "time": "",
+        },
+        "failures": {"latencyMs": "100-800", "errorRate": 0.3},
+        "sessions": {},
+        "student": {"prenom": "Marie"},
+    }
+    body.update(changes)
+    return body
+
+
+@pytest.fixture
+def saved_snapshot():
+    start.snapshots.write("shared", snapshot_body())
+    return "shared/examen-final"
+
+
+def test_a_snapshot_turns_its_setup_into_the_env_vars(saved_snapshot, monkeypatch):
+    started = []
+    monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
+
+    start.main(["--snapshot", "Examen final", "--snapshot-dates", "setup"])
+
+    overrides, display, scenario, week, plan = started[0]
+    assert overrides == {
+        "PROFILE": "generated-busy",
+        "SCENARIO": "friday-off",
+        "SEMESTER_WEEK": "3",
+        "COURSE_COUNT": "2",
+        "TIME_PREFERENCE": "",
+        "LATENCY_MS": "100-800",
+        "ERROR_RATE": "0.3",
+    }
+    assert display == "generated-busy + instantané « Examen final »"
+    assert (scenario, week) == ("friday-off", 3)
+    assert plan.student == {"prenom": "Marie"}
+
+
+def test_the_preset_flag_is_an_alias_of_the_snapshot_flag(saved_snapshot, monkeypatch):
+    started = []
+    monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
+
+    start.main(["--preset", saved_snapshot, "--snapshot-dates", "setup"])
+
+    assert started[0][0]["PROFILE"] == "generated-busy"
+
+
+def test_the_snapshot_pannes_can_be_skipped(saved_snapshot, monkeypatch):
+    started = []
+    monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
+
+    start.main(["--snapshot", saved_snapshot, "--no-snapshot-failures"])
+
+    overrides = started[0][0]
+    assert not set(overrides) & set(start.FAILURE_ENV.values())
+    assert started[0][4].failures is None
+
+
+def test_a_snapshot_is_written_after_the_old_overrides_are_cleared(
+    saved_snapshot, monkeypatch, tmp_path
+):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: None)
+    (tmp_path / start.STUDENT_OVERRIDES_FILENAME).write_text('{"nom": "Old"}', encoding="utf-8")
+    plan = start.snapshots.plan(start.snapshots.read("shared", "examen-final"), "setup")
+
+    start._start_server({}, "normal", "none", None, plan)
+
+    saved = json.loads((tmp_path / start.STUDENT_OVERRIDES_FILENAME).read_text("utf-8"))
+    assert saved == {"prenom": "Marie"}
+    assert not (tmp_path / start.OVERRIDES_FILENAME).exists()
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("--snapshot", "missing"),
+        ("--snapshot", "examen-final", "--profile", "normal"),
+        ("--snapshot", "examen-final", "--failures", "flaky"),
+        ("--snapshot", "examen-final", "--snapshot-dates", "tomorrow"),
+        ("--snapshot-dates", "exact"),
+        ("--no-snapshot-failures",),
+    ],
+)
+def test_snapshot_flag_mistakes_are_rejected(saved_snapshot, argv, monkeypatch):
+    monkeypatch.setattr(start, "_start_server", lambda *a: pytest.fail("nothing should start"))
+    with pytest.raises(SystemExit) as exc:
+        start.main(list(argv))
+    assert exc.value.code == 2
+
+
+def test_a_name_in_both_scopes_must_be_qualified(saved_snapshot, monkeypatch, capsys):
+    start.snapshots.write("personal", snapshot_body())
+    monkeypatch.setattr(start, "_start_server", lambda *a: pytest.fail("nothing should start"))
+
+    with pytest.raises(SystemExit):
+        start.main(["--snapshot", "examen-final"])
+
+    assert "personal/examen-final ou shared/examen-final" in capsys.readouterr().err
+
+
+def test_the_help_lists_the_saved_snapshots(saved_snapshot, capsys):
+    with pytest.raises(SystemExit):
+        start._build_parser().parse_args(["--help"])
+
+    assert "shared/examen-final" in capsys.readouterr().out
+
+
+def test_the_menu_offers_snapshots_only_when_there_are_some(monkeypatch, capsys):
+    answer(monkeypatch, "0")
+    start._select_profile()
+    assert "instantané" not in capsys.readouterr().out
+
+    start.snapshots.write("shared", snapshot_body())
+    answer(monkeypatch, "i")
+    assert start._select_profile() == "__snapshot__"
+
+
+def test_the_menu_loads_a_snapshot_with_the_chosen_dates(saved_snapshot, monkeypatch):
+    left = answer(monkeypatch, "i", "1", "3", "n")
+
+    overrides, display, scenario, week, plan = start._config_from_menu()
+
+    assert left == []
+    assert overrides["PROFILE"] == "generated-busy"
+    assert "LATENCY_MS" not in overrides
+    assert plan.failures is None
+    assert plan.schedule == {}
+    assert week == 3
+
+
+def test_the_menu_applies_the_pannes_by_default(saved_snapshot, monkeypatch, capsys):
+    answer(monkeypatch, "i", "1", "", "")
+
+    overrides, _, _, _, plan = start._config_from_menu()
+
+    assert overrides["ERROR_RATE"] == "0.3"
+    assert plan.failures == {"latencyMs": "100-800", "errorRate": 0.3}
+    assert "latence 100-800 ms, erreurs aléatoires 30 %" in capsys.readouterr().out
+
+
+def test_leaving_the_snapshot_menu_starts_nothing(saved_snapshot, monkeypatch):
+    answer(monkeypatch, "i", "0")
+    assert start._config_from_menu() is None
 
 
 def test_starting_the_server_announces_the_configuration(monkeypatch, tmp_path, capsys):

@@ -17,6 +17,7 @@
             <fluent-tab id="viewSchedule" data-view="schedule">Horaire</fluent-tab>
             <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
             <fluent-tab id="viewStudent" data-view="student">Étudiant</fluent-tab>
+            <fluent-tab id="viewSnapshots" data-view="snapshots">Instantanés</fluent-tab>
           </fluent-tablist>
 
           <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
@@ -93,6 +94,18 @@
           <fluent-button id="studentResetBtn" appearance="subtle" icon-only data-icon="reset" aria-label="Tout réinitialiser" disabled></fluent-button>
           <fluent-tooltip positioning="below" anchor="studentResetBtn">Tout réinitialiser</fluent-tooltip>
         </div>
+
+        <div class="toolbar" id="snapshotsToolbar" hidden>
+          <input type="file" id="snapshotFile" accept=".json,application/json" hidden />
+          <fluent-button id="snapshotImportBtn" appearance="secondary">
+            <span slot="start" data-icon="upload" data-icon-size="16"></span>
+            Importer
+          </fluent-button>
+          <fluent-button id="snapshotSaveBtn" appearance="primary">
+            <span slot="start" data-icon="save" data-icon-size="16"></span>
+            Enregistrer l’état actuel
+          </fluent-button>
+        </div>
       </header>
 
       <main class="layout" id="scheduleView">
@@ -163,6 +176,25 @@
           </header>
           <ul class="fields" id="profileFields"></ul>
         </section>
+      </main>
+
+      <main class="layout" id="snapshotsView" hidden>
+        <section class="board board--list" id="snapshotsBoard">
+          <div class="snapshots" id="snapshotList"></div>
+          <div class="board__empty" id="snapshotEmpty" hidden>
+            <p>Aucun instantané. Enregistrez l’état actuel pour le retrouver plus tard ou le partager.</p>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <header class="panel__head">
+              <span class="panel__icon" data-icon="settings" data-icon-size="16"></span>
+              <h2>Configuration actuelle</h2>
+            </header>
+            <dl class="setup" id="currentSetup"></dl>
+          </section>
+        </aside>
       </main>
 
       <footer class="statusbar">
@@ -254,6 +286,71 @@
 
         <fluent-button slot="action" appearance="secondary" data-close-failure>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="failureSubmit">Ajouter</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="snapshotSaveDialog" type="modal" aria-label="Enregistrer un instantané">
+      <fluent-dialog-body>
+        <span slot="title">Enregistrer l’état actuel</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-save></fluent-button>
+
+        <form id="snapshotSaveForm" class="form" novalidate>
+          <fluent-field label-position="above">
+            <fluent-label slot="label" required>Nom</fluent-label>
+            <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Examen final demain" aria-label="Nom de l’instantané"></fluent-text-input>
+          </fluent-field>
+
+          <fieldset class="choices" id="fSnapshotScope">
+            <legend class="choices__legend">Visibilité</legend>
+            <label class="choice">
+              <input type="radio" name="snapshotScope" value="personal" checked />
+              <span class="choice__text">
+                <span class="choice__title">Personnel</span>
+                <span class="choice__hint">Dans snapshots/personal, ignoré par git.</span>
+              </span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="snapshotScope" value="shared" />
+              <span class="choice__text">
+                <span class="choice__title">Partagé</span>
+                <span class="choice__hint">Dans snapshots/shared, à committer pour les autres devs.</span>
+              </span>
+            </label>
+          </fieldset>
+        </form>
+        <p class="dialog__hint">Comprend le profil, le scénario, la semaine, les options de génération, l’horaire modifié, le profil étudiant et les pannes actives.</p>
+        <p class="dialog__hint dialog__hint--warn" id="snapshotSaveConflict" hidden></p>
+
+        <fluent-button slot="action" appearance="secondary" data-close-snapshot-save>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="snapshotSaveSubmit">Enregistrer</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="snapshotLoadDialog" type="modal" aria-label="Charger un instantané">
+      <fluent-dialog-body>
+        <span slot="title" id="snapshotLoadTitle">Charger l’instantané</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-load></fluent-button>
+
+        <form id="snapshotLoadForm" class="form" novalidate>
+          <fieldset class="choices" id="fSnapshotDates">
+            <legend class="choices__legend">Dates</legend>
+          </fieldset>
+
+          <div class="snapshot-failures" id="snapshotLoadFailures"></div>
+        </form>
+        <p class="dialog__hint">L’horaire modifié, le profil étudiant et la configuration actuels sont remplacés, et l’historique d’annulation est vidé.</p>
+
+        <fluent-button slot="action" appearance="secondary" data-close-snapshot-load>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="snapshotLoadSubmit">Charger</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="snapshotConfirmDialog" type="alert" aria-label="Confirmer">
+      <fluent-dialog-body>
+        <span slot="title" id="snapshotConfirmTitle"></span>
+        <p class="dialog__text" id="snapshotConfirmText"></p>
+        <fluent-button slot="action" appearance="secondary" data-close-snapshot-confirm>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="snapshotConfirmSubmit"></fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 

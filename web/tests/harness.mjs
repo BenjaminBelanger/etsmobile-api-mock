@@ -341,6 +341,130 @@ function createStudent(options) {
   return student;
 }
 
+const SNAPSHOTS = "/editor/api/snapshots";
+
+export const SNAPSHOT_ITEMS = [
+  {
+    scope: "personal",
+    id: "demo",
+    name: "Démo",
+    savedAt: "2026-09-25T14:03",
+    anchor: { session: "A2026", week: 4, date: "2026-09-25" },
+    setup: { profile: "normal", scenario: "friday-off", semesterWeek: null },
+    failures: { latencyMs: "100-800", errorRate: 0.3 },
+    sessions: ["A2026"],
+    student: ["prenom"],
+  },
+  {
+    scope: "shared",
+    id: "examen-final",
+    name: "Examen final",
+    savedAt: "2026-09-20T09:30",
+    anchor: { session: "A2026", week: 3, date: "2026-09-20" },
+    setup: {
+      profile: "generated-busy",
+      scenario: "none",
+      semesterWeek: 3,
+      courses: 2,
+      days: ["1", "3"],
+      time: "morning",
+    },
+    failures: {},
+    sessions: [],
+    student: [],
+  },
+];
+
+export const CURRENT_SETUP = {
+  session: "A2026",
+  week: 4,
+  weeks: 16,
+  setup: { profile: "normal", scenario: "none", semesterWeek: null },
+  failures: {},
+};
+
+const slug = (name) =>
+  name
+    .normalize("NFKD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+
+function createSnapshots(options) {
+  const calls = [];
+  const once = new Map();
+  let items = clone(options.snapshots || SNAPSHOT_ITEMS);
+  let current = clone(options.current || CURRENT_SETUP);
+
+  const payload = (extra = {}) => ({ snapshots: clone(items), current: clone(current), ...extra });
+  const add = (item) => {
+    items = [...items.filter((i) => !(i.scope === item.scope && i.id === item.id)), item];
+  };
+
+  const snapshots = {
+    calls,
+    get items() {
+      return items;
+    },
+    set current(next) {
+      current = clone(next);
+    },
+    once(path, body, status = 200) {
+      once.set(path, { status, body });
+      if (status !== 200) {
+        refused.add(body && body.error);
+        refused.add("Error");
+      }
+    },
+    called(path) {
+      return calls.filter((call) => call.path === path);
+    },
+    lastCall(path) {
+      const matching = snapshots.called(path);
+      return matching.length ? matching[matching.length - 1] : null;
+    },
+    handle(href, request) {
+      const path = href.slice(SNAPSHOTS.length);
+      const method = request.method || "GET";
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, method, body });
+
+      const canned = once.get(path);
+      if (canned) {
+        once.delete(path);
+        return {
+          ok: canned.status === 200,
+          status: canned.status,
+          statusText: "Error",
+          json: async () => clone(canned.body),
+        };
+      }
+
+      let extra = {};
+      if (path === "/save") {
+        const id = slug(body.name);
+        add({ ...clone(SNAPSHOT_ITEMS[0]), scope: body.scope, id, name: body.name });
+        extra = { saved: { scope: body.scope, id } };
+      } else if (path === "/import") {
+        const id = slug(body.snapshot.name);
+        add({ ...clone(SNAPSHOT_ITEMS[0]), scope: body.scope, id, name: body.snapshot.name });
+        extra = { saved: { scope: body.scope, id } };
+      } else if (path === "/delete") {
+        items = items.filter((i) => !(i.scope === body.scope && i.id === body.id));
+      } else if (path === "/move") {
+        items = items.map((i) =>
+          i.scope === body.scope && i.id === body.id ? { ...i, scope: body.to } : i
+        );
+      } else if (path === "/load") {
+        extra = { notices: clone(options.notices || []) };
+      }
+      return { ok: true, status: 200, json: async () => payload(extra) };
+    },
+  };
+  return snapshots;
+}
+
 function createServer(initial, options) {
   const calls = [];
   const replies = new Map();
@@ -350,6 +474,7 @@ function createServer(initial, options) {
     calls,
     admin: createAdmin(options),
     student: createStudent(options),
+    snapshots: createSnapshots(options),
     get state() {
       return current;
     },
@@ -375,6 +500,7 @@ function createServer(initial, options) {
       const href = String(url);
       if (href.startsWith(ADMIN)) return server.admin.handle(href, request);
       if (href.startsWith(STUDENT)) return server.student.handle(href, request);
+      if (href.startsWith(SNAPSHOTS)) return server.snapshots.handle(href, request);
       const [rawPath, query] = href.replace("/editor/api", "").split("?");
       const call = {
         path: rawPath,

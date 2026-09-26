@@ -5,6 +5,7 @@ import signal
 import subprocess
 import sys
 
+from lib import snapshots
 from lib._paths import SEED
 
 OVERRIDES_FILENAME = "schedule_overrides.json"
@@ -73,6 +74,14 @@ PROFILE_DESCRIPTIONS = {
 
 SCENARIO_DESCRIPTIONS = {
     "none": "Aucune modification au calendrier",
+}
+
+SCOPE_LABELS = {"personal": "personnel", "shared": "partagé"}
+
+DATE_MODE_LABELS = {
+    "week": "Même semaine de session",
+    "exact": "Dates exactes",
+    "setup": "Configuration seulement",
 }
 
 
@@ -167,6 +176,14 @@ def _bounded_int(low: int, high: int):
     return parse
 
 
+def _snapshot_label(item: dict) -> str:
+    anchor = item["anchor"]
+    return (
+        f"{item['name']} ({SCOPE_LABELS[item['scope']]}, {anchor['session']} "
+        f"semaine {anchor['week']}, enregistré le {anchor['date']})"
+    )
+
+
 def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines = ["profils:"]
     for name in profiles:
@@ -181,6 +198,13 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     for name, body in presets.items():
         lines.append(f"  {name:<20}{body.get('description', '')}")
     lines.append("")
+    lines.append("instantanés (onglet Instantanés de l'éditeur):")
+    items = snapshots.list_all()
+    for item in items:
+        lines.append(f"  {item['scope'] + '/' + item['id']:<28}{_snapshot_label(item)}")
+    if not items:
+        lines.append("  (aucun)")
+    lines.append("")
     lines.append("codes de jour:")
     lines.append("  " + ", ".join(f"{c}={n}" for c, n in DAY_NAMES.items()))
     lines.append("")
@@ -191,6 +215,8 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --scenario semaine-relache --semester-week 3")
     lines.append("  python start.py --failures flaky")
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
+    lines.append('  python start.py --snapshot "examen final"')
+    lines.append("  python start.py --snapshot shared/demo --snapshot-dates exact")
     return "\n".join(lines)
 
 
@@ -309,6 +335,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Exige un header Authorization.",
         default=None,
     )
+
+    snapshot = parser.add_argument_group(
+        "instantanés",
+        "Charge un instantané enregistré depuis l'onglet Instantanés de l'éditeur. "
+        "Ne se combine pas avec les options ci-dessus.",
+    )
+    snapshot.add_argument(
+        "--snapshot",
+        "--preset",
+        dest="snapshot",
+        metavar="NOM",
+        help="Instantané à charger (nom, ou shared/nom et personal/nom).",
+        default=None,
+    )
+    snapshot.add_argument(
+        "--snapshot-dates",
+        choices=snapshots.DATE_MODES,
+        help="week: même semaine de session (défaut); exact: dates exactes; "
+        "setup: configuration seulement, l'horaire est régénéré.",
+        default=None,
+    )
+    snapshot.add_argument(
+        "--no-snapshot-failures",
+        dest="snapshot_failures",
+        action="store_false",
+        help="N'applique pas les pannes enregistrées dans l'instantané.",
+        default=None,
+    )
     return parser
 
 
@@ -318,6 +372,12 @@ def _failure_value(key: str, value) -> str:
     if isinstance(value, (list, tuple, set)):
         return ",".join(str(v) for v in value)
     return str(value)
+
+
+def _failure_env(config: dict) -> dict:
+    return {
+        FAILURE_ENV[k]: _failure_value(k, v) for k, v in config.items() if k in FAILURE_ENV
+    }
 
 
 def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
@@ -343,10 +403,7 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
         config.update(overrides)
         label = f"{label} + ajusté" if label else "personnalisées"
 
-    return (
-        {FAILURE_ENV[k]: _failure_value(k, v) for k, v in config.items()},
-        label,
-    )
+    return _failure_env(config), label
 
 
 def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | None]:
@@ -378,6 +435,70 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, int | N
     return overrides, profile_display, args.scenario or "none", args.semester_week
 
 
+def _failure_summary(config: dict) -> str:
+    parts = []
+    if config.get("latencyMs"):
+        parts.append(f"latence {config['latencyMs']} ms")
+    if config.get("errorRate"):
+        parts.append(f"erreurs aléatoires {round(config['errorRate'] * 100)} %")
+    if config.get("failEndpoints"):
+        parts.append(f"en panne: {', '.join(config['failEndpoints'])}")
+    if config.get("timeoutEndpoints"):
+        parts.append(f"figés: {', '.join(config['timeoutEndpoints'])}")
+    if "timeoutDurationS" in config:
+        parts.append(f"délai de {config['timeoutDurationS']} s")
+    if config.get("malformed"):
+        parts.append("réponses tronquées")
+    if config.get("authRequired"):
+        parts.append("authentification requise")
+    return ", ".join(parts)
+
+
+def _snapshot_config(
+    scope: str, snapshot_id: str, mode: str, include_failures: bool
+) -> tuple[dict, str, str, int | None, snapshots.Plan]:
+    snapshot = snapshots.read(scope, snapshot_id)
+    plan = snapshots.plan(snapshot, mode, failures=include_failures)
+    overrides = snapshots.setup_to_env(plan.setup)
+    if plan.failures:
+        overrides.update(_failure_env(plan.failures))
+    display = f"{plan.setup['profile']} + instantané « {snapshot['name']} »"
+    scenario = plan.setup.get("scenario") or "none"
+    return overrides, display, scenario, plan.setup.get("semesterWeek"), plan
+
+
+def _config_from_snapshot(
+    parser: argparse.ArgumentParser, args: argparse.Namespace
+) -> tuple[dict, str, str, int | None, snapshots.Plan]:
+    used = [
+        "--" + name.replace("_", "-")
+        for name in CONFIG_FLAGS
+        if getattr(args, name) is not None
+    ]
+    if used:
+        parser.error(f"--snapshot ne se combine pas avec {', '.join(used)}")
+    matches = snapshots.find(args.snapshot)
+    if not matches:
+        known = ", ".join(f"{i['scope']}/{i['id']}" for i in snapshots.list_all())
+        parser.error(
+            f"instantané introuvable: {args.snapshot!r} "
+            f"(disponibles: {known or 'aucun'})"
+        )
+    if len(matches) > 1:
+        refs = " ou ".join(f"{scope}/{snapshot_id}" for scope, snapshot_id in matches)
+        parser.error(
+            f"plusieurs instantanés correspondent à {args.snapshot!r}: précisez {refs}"
+        )
+    scope, snapshot_id = matches[0]
+    mode = args.snapshot_dates or snapshots.DEFAULT_DATE_MODE
+    try:
+        return _snapshot_config(
+            scope, snapshot_id, mode, args.snapshot_failures is not False
+        )
+    except snapshots.SnapshotError as exc:
+        parser.error(f"instantané illisible: {exc}")
+
+
 def _validate_menu_choice(raw: str, max_choices: int) -> int | None:
     try:
         idx = int(raw)
@@ -398,6 +519,9 @@ def _select_profile() -> str | None:
         label = f"{name}: {desc}" if desc else name
         print(f"  {i}) {label}")
     print("\n  C) Personnalisé (choisir nombre de cours, jours, etc.)")
+    has_snapshots = bool(snapshots.list_all())
+    if has_snapshots:
+        print("  I) Charger un instantané")
     print("  0) Quitter")
 
     while True:
@@ -408,6 +532,8 @@ def _select_profile() -> str | None:
 
         if raw.lower() == "c":
             return "__custom__"
+        if raw.lower() == "i" and has_snapshots:
+            return "__snapshot__"
         if raw == "0":
             return None
         idx = _validate_menu_choice(raw, len(names))
@@ -568,6 +694,77 @@ def _configure_custom() -> dict | None:
     }
 
 
+def _select_snapshot() -> dict | None:
+    items = snapshots.list_all()
+    print("\n=== Instantanés ===\n")
+    for i, item in enumerate(items, 1):
+        print(f"  {i}) {_snapshot_label(item)}")
+    print("\n  0) Annuler")
+
+    while True:
+        try:
+            raw = input("\nChoix: ").strip()
+        except (ValueError, EOFError):
+            return None
+        if raw == "0":
+            return None
+        idx = _validate_menu_choice(raw, len(items))
+        if idx is None:
+            print("  Choix invalide, réessayez.")
+            continue
+        return items[idx - 1]
+
+
+def _prompt_snapshot_dates(item: dict) -> str:
+    anchor = item["anchor"]
+    details = {
+        "week": f"la semaine {anchor['week']} de {anchor['session']} devient la "
+        "semaine courante",
+        "exact": f"dates telles qu'enregistrées le {anchor['date']} (réglez "
+        "l'horloge du téléphone)",
+        "setup": "profil, scénario, semaine, options et pannes; l'horaire est "
+        "régénéré à partir d'aujourd'hui",
+    }
+    print("\n=== Dates de l'instantané ===\n")
+    for i, mode in enumerate(snapshots.DATE_MODES, 1):
+        print(f"  {i}) {DATE_MODE_LABELS[mode]}: {details[mode]}")
+    while True:
+        try:
+            raw = input("\nChoix [1]: ").strip()
+        except EOFError:
+            return snapshots.DEFAULT_DATE_MODE
+        if not raw:
+            return snapshots.DEFAULT_DATE_MODE
+        idx = _validate_menu_choice(raw, len(snapshots.DATE_MODES))
+        if idx is None:
+            print("  Choix invalide, réessayez.")
+            continue
+        return snapshots.DATE_MODES[idx - 1]
+
+
+def _prompt_snapshot_failures(item: dict) -> bool:
+    if not item["failures"]:
+        return False
+    print(f"\n  Pannes enregistrées: {_failure_summary(item['failures'])}")
+    try:
+        confirm = input("  Appliquer les pannes? (O/n): ").strip().lower()
+    except EOFError:
+        confirm = "o"
+    return confirm != "n"
+
+
+def _config_from_snapshot_menu() -> (
+    tuple[dict, str, str, int | None, snapshots.Plan] | None
+):
+    item = _select_snapshot()
+    if item is None:
+        print("Annulé.")
+        return None
+    mode = _prompt_snapshot_dates(item)
+    include_failures = _prompt_snapshot_failures(item)
+    return _snapshot_config(item["scope"], item["id"], mode, include_failures)
+
+
 def _clear_overrides() -> None:
     cleared = False
     for name in (OVERRIDES_FILENAME, STUDENT_OVERRIDES_FILENAME):
@@ -643,11 +840,17 @@ def _stop_existing_servers() -> None:
             pass
 
 
-def _config_from_menu() -> tuple[dict, str, str, int | None] | None:
+def _config_from_menu() -> (
+    tuple[dict, str, str, int | None]
+    | tuple[dict, str, str, int | None, snapshots.Plan]
+    | None
+):
     profile = _select_profile()
     if profile is None:
         print("Au revoir!")
         return None
+    if profile == "__snapshot__":
+        return _config_from_snapshot_menu()
 
     scenario = _select_scenario()
     semester_week = _prompt_semester_week()
@@ -685,7 +888,11 @@ def _build_env(overrides: dict) -> dict:
 
 
 def _start_server(
-    overrides: dict, profile_display: str, scenario: str, semester_week: int | None
+    overrides: dict,
+    profile_display: str,
+    scenario: str,
+    semester_week: int | None,
+    snapshot: snapshots.Plan | None = None,
 ) -> None:
     scenario_display = f" + scénario « {scenario} »" if scenario != "none" else ""
     week_display = f" + semaine {semester_week}" if semester_week is not None else ""
@@ -698,6 +905,17 @@ def _start_server(
 
     _stop_existing_servers()
     _clear_overrides()
+    snapshot_dir = snapshots.snapshots_dir()
+    snapshot_dir.mkdir(exist_ok=True)
+    if snapshot is not None:
+        snapshots.write_overrides(
+            snapshot.schedule,
+            snapshot.student,
+            SEED / OVERRIDES_FILENAME,
+            SEED / STUDENT_OVERRIDES_FILENAME,
+        )
+        for notice in snapshot.notices:
+            print(f"  {notice}")
 
     subprocess.run(
         [
@@ -716,15 +934,22 @@ def _start_server(
             OVERRIDES_FILENAME,
             "--reload-exclude",
             STUDENT_OVERRIDES_FILENAME,
+            "--reload-exclude",
+            str(snapshot_dir),
         ],
         env=_build_env(overrides),
     )
 
 
 def main(argv: list[str] | None = None) -> None:
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    args = parser.parse_args(argv)
 
-    if any(getattr(args, name) is not None for name in CONFIG_FLAGS):
+    if args.snapshot is not None:
+        config = _config_from_snapshot(parser, args)
+    elif args.snapshot_dates is not None or args.snapshot_failures is not None:
+        parser.error("--snapshot-dates et --no-snapshot-failures exigent --snapshot")
+    elif any(getattr(args, name) is not None for name in CONFIG_FLAGS):
         config = _config_from_args(args)
     else:
         config = _config_from_menu()

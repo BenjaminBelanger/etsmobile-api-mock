@@ -33,9 +33,11 @@ To skip the menu, pass the configuration as flags instead:
 python start.py --profile semester-off
 python start.py --courses 2 --days 1,3,5 --time morning
 python start.py --scenario semaine-relache --semester-week 3
+python start.py --snapshot "examen final"
 ```
 
-`python start.py --help` lists every profile, scenario and day code.
+`python start.py --help` lists every profile, scenario, day code and saved
+snapshot.
 
 ## Schedule Editor UI
 
@@ -46,9 +48,10 @@ A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has three tabs: **Horaire**, the schedule editor described below,
-**Pannes**, the [failure injection](#failure-injection) panel, and
-**Étudiant**, described in [Student tab](#student-tab).
+The page has four tabs: **Horaire**, the schedule editor described below,
+**Pannes**, the [failure injection](#failure-injection) panel, **Étudiant**,
+described in [Student tab](#student-tab), and **Instantanés**, described in
+[Snapshots tab](#snapshots-tab).
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -90,6 +93,62 @@ reset button, to go back to the original value. Edits are saved to
 `seed/student_overrides.json` and can be undone, redone or all reset from the
 toolbar. `python start.py` clears them at each launch, along with the schedule
 edits.
+
+### Snapshots tab
+
+The **Instantanés** tab saves the whole mock state under a name, so you can
+load it again later or share it with other devs. A snapshot holds:
+
+- the profile, the scenario, the semester week and the generated-course options,
+- the schedule of the active and next sessions, plus every other edited
+  session (courses, week-specific changes, session dates, grades, exams),
+- the student profile edits,
+- the active Pannes.
+
+**Enregistrer l'état actuel** asks for a name and where to keep it:
+
+- **Personnel** writes `snapshots/personal/<name>.json`, which git ignores.
+- **Partagé** writes `snapshots/shared/<name>.json`. Commit it to share it.
+
+Saving an existing name asks before replacing it. Each snapshot can be exported
+as a file, imported back (imports land in **Personnel**), moved between
+personal and shared, or deleted. Snapshots are only made from the UI: there is
+no need to write or edit their JSON by hand.
+
+**Charger** replaces the current setup, schedule edits, student edits and, by
+default, the Pannes, then clears the undo history. The dialog lists the Pannes
+the snapshot carries; untick them to keep the current ones. The setup changes
+on the running server, no restart needed. A dev-mode code reload of the server
+falls back to the startup settings, but keeps the loaded edits. Dates are
+chosen when loading:
+
+- **Même semaine de session** (default) shifts every date by whole weeks so the
+  week the snapshot was saved in becomes the current week, in the current
+  session. If that session is shorter, the last week is used and the status bar
+  says so; séance changes that no longer fit in the session are dropped.
+- **Dates exactes** keeps every date and session code as saved, including the
+  session calendar. Use it to reproduce a bug with the phone clock set to the
+  save date.
+- **Configuration seulement** only reapplies the profile, scenario, semester
+  week, generation options and Pannes. The schedule is generated again from
+  today; the student edits are kept.
+
+The replaced days served by `lireJoursRemplaces` are never shifted: holidays
+stay on their real dates in every mode.
+
+To start the server straight from a snapshot, pick **I) Charger un instantané**
+in the `python start.py` menu, or pass its name:
+
+```bash
+python start.py --snapshot "examen final"
+python start.py --snapshot shared/demo --snapshot-dates exact
+python start.py --snapshot demo --no-snapshot-failures
+```
+
+`--snapshot-dates` takes `week` (default), `exact` or `setup`. `--preset` is an
+alias of `--snapshot`. A name that exists both as personal and shared needs its
+`personal/` or `shared/` prefix. `--snapshot` cannot be combined with the
+profile, scenario, generation or failure flags.
 
 ### Front-end build
 
