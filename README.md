@@ -327,7 +327,9 @@ failure. Use it to see when and how often the app calls the API:
 - Download the log as JSON, or clear it.
 
 The log is kept in memory (the last 100,000 entries) and resets when the server
-restarts. It is also available from `/admin/calls`:
+restarts.
+
+It can also be read and cleared through the admin endpoint:
 
 ```bash
 curl http://localhost:8080/admin/calls              # list the log
