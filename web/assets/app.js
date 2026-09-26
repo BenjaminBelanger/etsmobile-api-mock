@@ -976,11 +976,18 @@ function wireDetail(course) {
 let redrawing = false;
 const typingIn = new WeakSet();
 
+function keepCaret(previous, fresh) {
+  const from = previous.control;
+  if (from?.selectionStart == null || !fresh.control) return;
+  fresh.control.setSelectionRange(from.selectionStart, from.selectionEnd, from.selectionDirection);
+}
+
 function keepFocus(container, previous) {
   const fresh = container.querySelector(`[data-key="${previous.dataset.key}"]`);
   if (!fresh) return;
   if (!typingIn.has(previous)) {
     fresh.focus();
+    keepCaret(previous, fresh);
     return;
   }
   ["class", "title"].forEach((name) => {

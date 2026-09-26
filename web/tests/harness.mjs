@@ -98,6 +98,14 @@ function defineElements(window) {
   }
 
   class TextInput extends HTMLElement {
+    get control() {
+      if (!this._control) {
+        this._control = this.ownerDocument.createElement("input");
+        this._control.defaultValue = this.value;
+      }
+      return this._control;
+    }
+
     get value() {
       return this._value ?? this.getAttribute("value") ?? "";
     }
