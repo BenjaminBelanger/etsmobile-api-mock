@@ -10,6 +10,6 @@ env/
 .venv/
 
 seed/schedule_overrides.json
-.flutter_app_path
+mock.config.json
 node_modules/
 .pytest-tmp/

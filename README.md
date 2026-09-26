@@ -400,32 +400,44 @@ The mock server requires no authentication, so you can skip past or stub out the
 ### Doing it automatically
 
 `start.py --app` applies steps 2-4 for you, then puts the app back the way it
-was when the server stops:
+was when the server stops. Give the path once; it is remembered for every
+later run:
 
 ```bash
-python start.py --app ../Notre-Dame                      # configure, run, revert on exit
-python start.py --app ../Notre-Dame --platform ios
-python start.py --app ../Notre-Dame --host 192.168.1.10  # physical device
-python start.py --revert-app                             # manual teardown
+python start.py --app ../Notre-Dame --platform ios   # first run: configure, run, revert on exit
+python start.py                                      # any later day: same app, same platform
+python start.py --profile semester-off               # flags reuse it too
+python start.py --no-app                             # this run only: leave the app alone
 ```
 
-The app is patched before the server starts and restored in a `finally`: server
-up means the app is configured, server down means the app is clean. Nothing is
-ever committed on the app side; the teardown is `git checkout --` on the three
-files above.
+The app is patched before the server starts and restored when it stops: server
+up means the app is configured, server down means the app is back to normal.
+Only the lines listed in steps 2-4 are touched, so your own work in those files
+is kept, including edits made while the server runs. Nothing is ever committed
+on the app side.
 
 | Flag | Description |
 |------|-------------|
-| `--app PATH` | Flutter repo to configure (default: the remembered path) |
+| `--app PATH` | Flutter repo to configure (default: the saved app) |
+| `--no-app` | Start the server without touching the saved app |
 | `--platform android\|ios` | Host to write into the app: `10.0.2.2:8080` (default) or `localhost:8080` |
 | `--host HOST` | Explicit host for a physical device (`:8080` is added when no port is given) |
 | `--revert-app` | Restore the app and exit, for a run that did not revert (killed process, crash) |
 
-The interactive menu offers the same thing: it asks for the app path once,
-remembers it in `.flutter_app_path` (git-ignored) and offers it on later runs.
-Its default is to leave the app alone and start the server only; `--app` wins
-over the remembered path.
+The path, platform and host are saved in `mock.config.json` (git-ignored) each
+time the app is configured, and a flag always wins over the saved value. The
+interactive menu offers the saved app as its default, so pressing Enter
+configures it again. To forget the app, delete `mock.config.json`:
 
-The three files have to be a clean git checkout. If any of them carries local
-changes unrelated to the mock, the run stops instead of starting, because the
-teardown would discard them.
+```json
+{
+  "app": "C:/Users/you/projects/Notre-Dame",
+  "platform": "ios"
+}
+```
+
+The lines in steps 2-4 are restored from the app's last commit. If one of them
+can't be matched to that commit (for example a second `SignetsClient(dio)`
+call), the run stops before touching anything. The same check runs when the
+server stops: a file it can't match is left as is and listed so you can check
+it.

@@ -194,6 +194,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
     lines.append("  python start.py --app ../Notre-Dame")
     lines.append("  python start.py --app ../Notre-Dame --platform ios")
+    lines.append("  python start.py --no-app")
     lines.append("  python start.py --revert-app")
     return "\n".join(lines)
 
@@ -317,20 +318,28 @@ def _build_parser() -> argparse.ArgumentParser:
     app = parser.add_argument_group(
         "app flutter",
         "Pointe l'app ÉTSMobile vers le mock au démarrage, puis la remet à son "
-        "état d'origine (git checkout) à l'arrêt du serveur.",
+        "état d'origine à l'arrêt du serveur. Le chemin, la plateforme et l'hôte "
+        f"sont mémorisés dans {flutter_app.CONFIG_FILE.name}: les lancements "
+        "suivants reconfigurent la même app sans --app.",
     )
-    app.add_argument(
+    which_app = app.add_mutually_exclusive_group()
+    which_app.add_argument(
         "--app",
         metavar="CHEMIN",
-        help="Dépôt de l'app Flutter (défaut: le chemin mémorisé).",
+        help="Dépôt de l'app Flutter (défaut: l'app mémorisée).",
         default=None,
+    )
+    which_app.add_argument(
+        "--no-app",
+        action="store_true",
+        help="Démarre le serveur sans toucher à l'app mémorisée.",
     )
     app.add_argument(
         "--platform",
         choices=sorted(flutter_app.PLATFORM_HOSTS),
         help=(
-            "Plateforme visée, détermine l'hôte du mock "
-            f"(défaut: {flutter_app.DEFAULT_PLATFORM})."
+            "Plateforme visée, détermine l'hôte du mock (défaut: la valeur "
+            f"mémorisée, sinon {flutter_app.DEFAULT_PLATFORM})."
         ),
         default=None,
     )
@@ -339,7 +348,7 @@ def _build_parser() -> argparse.ArgumentParser:
         metavar="HÔTE",
         help=(
             "Hôte à écrire dans l'app pour un appareil physique "
-            f"(port {SERVER_PORT} si absent)."
+            f"(port {SERVER_PORT} si absent, défaut: la valeur mémorisée)."
         ),
         default=None,
     )
@@ -719,26 +728,26 @@ def _ask_app_path() -> str | None:
     return raw or None
 
 
-def _prompt_app_path() -> str | None:
-    saved = flutter_app.saved_path()
-
+def _prompt_app_path(saved: str | None) -> str | None:
     print("\n=== App Flutter (optionnel) ===\n")
     print("  L'app est pointée vers le mock au démarrage, puis remise à son")
     print("  état d'origine à l'arrêt du serveur.\n")
     if saved is not None:
-        print(f"  1) Configurer « {saved} » (mémorisé)")
+        print(f"  1) Configurer « {saved} » (par défaut)")
         print("  2) Configurer une autre app")
+        print("\n  0) Serveur seulement")
+        default, choices = "1", 2
     else:
         print("  1) Configurer une app")
-    print("\n  0) Serveur seulement (par défaut)")
+        print("\n  0) Serveur seulement (par défaut)")
+        default, choices = "0", 1
 
-    choices = 2 if saved is not None else 1
     while True:
         try:
-            raw = input("\nChoix [0]: ").strip()
+            raw = input(f"\nChoix [{default}]: ").strip() or default
         except EOFError:
             return None
-        if not raw or raw == "0":
+        if raw == "0":
             return None
         idx = _validate_menu_choice(raw, choices)
         if idx is None:
@@ -750,37 +759,59 @@ def _prompt_app_path() -> str | None:
 
 
 def _setup_app(args: argparse.Namespace, interactive: bool) -> str | None:
-    raw = args.app or (_prompt_app_path() if interactive else None)
-    if not raw:
+    if args.no_app:
         return None
 
+    config = flutter_app.load_config()
+    saved = config.get("app")
+    raw = args.app or (_prompt_app_path(saved) if interactive else saved)
+    if not raw:
+        if not interactive and (args.platform or args.host):
+            raise flutter_app.AppError(
+                "--platform et --host visent une app: ajoutez --app CHEMIN."
+            )
+        return None
+
+    if args.platform or args.host:
+        config["platform"], config["host"] = args.platform, args.host
     path = flutter_app.resolve_path(raw)
-    host = flutter_app.resolve_host(args.platform, args.host)
+    host = flutter_app.resolve_host(config.get("platform"), config.get("host"))
     patched = flutter_app.configure(path, host)
-    flutter_app.save_path(path)
+    config["app"] = str(path)
+    flutter_app.save_config(config)
 
     print(f"\nApp Flutter configurée: {path}")
     print(f"  Hôte     : {host}")
     print(f"  Base URL : {flutter_app.base_url(host)}")
     if patched:
         print(f"  Modifiés : {', '.join(patched)}")
+    print(
+        f"  Mémorisée dans {flutter_app.CONFIG_FILE.name}; "
+        "--no-app pour démarrer sans elle."
+    )
     return str(path)
 
 
 def _revert_app(raw: str | None) -> None:
-    target = raw or flutter_app.saved_path()
-    if target is None:
-        print("Aucun chemin d'app mémorisé; utilisez --app CHEMIN.")
-        return
     try:
-        reverted = flutter_app.revert(flutter_app.resolve_path(target))
+        target = raw or flutter_app.load_config().get("app")
+        if target is None:
+            print("Aucune app mémorisée; utilisez --app CHEMIN.")
+            return
+        restored, stuck = flutter_app.revert(flutter_app.resolve_path(target))
     except flutter_app.AppError as exc:
         print(f"App Flutter: {exc}")
         return
-    if reverted:
-        print(f"App Flutter remise à son état d'origine: {', '.join(reverted)}")
-    else:
+    if restored:
+        print(f"App Flutter remise à son état d'origine: {', '.join(restored)}")
+    elif not stuck:
         print("App Flutter déjà à son état d'origine.")
+    if stuck:
+        print(
+            "App Flutter: ces fichiers ne correspondent plus à la version "
+            "commitée et pointent peut-être encore vers le mock, à vérifier:\n"
+            + "\n".join(f"    {name}" for name in stuck)
+        )
 
 
 def _build_env(overrides: dict) -> dict:
@@ -843,6 +874,7 @@ def main(argv: list[str] | None = None) -> None:
         app_path = _setup_app(args, interactive)
     except flutter_app.AppError as exc:
         print(f"\nApp Flutter: {exc}")
+        print("  (--no-app pour démarrer le serveur sans toucher à l'app)")
         return
 
     try:
