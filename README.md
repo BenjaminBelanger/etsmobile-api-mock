@@ -35,7 +35,6 @@ To skip the menu, pass the configuration as flags instead:
 python start.py --profile semester-off
 python start.py --courses 2 --days 1,3,5 --time morning
 python start.py --scenario semaine-relache --semester-week 3
-python start.py --between-sessions --semester-gap 10
 ```
 
 `python start.py --help` lists every profile, scenario and day code.
@@ -221,21 +220,17 @@ By default, the mock uses the real session calendar from `seed/sessions.json`, s
 | `--semester-gap DAYS` | Days off (0-180) between the end of the active session and the start of the next one |
 | `--no-next-session` | No session after the active one: it is not listed and has no courses |
 
-`--semester-week` and `--between-sessions` both set where today is, so only one can be used. The same goes for `--semester-gap` and `--no-next-session`, which both describe the next session. Any position can be combined with any next-session option.
+`--semester-week` can't be combined with `--between-sessions`, nor `--semester-gap` with `--no-next-session`. Without `--semester-gap`, the next session keeps its real weekday and about its real break.
 
 ```bash
-python start.py --semester-week 3                          # week 3, real break after the session
 python start.py --semester-week 14 --semester-gap 60       # end of term, next session two months away
-python start.py --between-sessions                         # break between sessions, about the real break length
 python start.py --between-sessions --semester-gap 10       # break, next session starts in 10 days
 python start.py --between-sessions --no-next-session       # break, next session not published yet
 ```
 
-With `--between-sessions`, the gap is the number of days until the next session starts. ÉTSMobile only counts a session as active until its `dateFin`, and it shows the "session starts soon" message when the next session is 30 days away or less. So `--semester-gap 10` and `--semester-gap 45` land on either side of that threshold. `--between-sessions --no-next-session` leaves the app with no active or upcoming session.
+ÉTSMobile shows the "session starts soon" message when the next session is 30 days away or less, so `--between-sessions` with `--semester-gap 10` or `--semester-gap 45` tests either side of it.
 
-The session's `dateDebut` and every other date field move by the same number of days, so the courses, exams, evaluations and registration dates stay consistent. `--semester-week` moves the next session by the same amount, which keeps the real break. `--between-sessions` moves it by the nearest whole number of weeks, so the next session keeps its real weekday and the break stays within 3 days of the real one. `--semester-gap` sets the exact number of days off instead, so the next session can then start on any day of the week.
-
-`--no-next-session` also hides edits saved in the [schedule editor](#schedule-editor-ui) for the next session. They are kept and come back when the flag is left out.
+`--no-next-session` also hides [schedule editor](#schedule-editor-ui) edits for the next session until the flag is left out.
 
 ## Scenarios
 
