@@ -90,6 +90,15 @@ def client():
 
 
 @pytest.fixture(autouse=True)
+def sandbox_app_config(tmp_path, monkeypatch):
+    from lib import flutter_app
+
+    sandbox = tmp_path / "mock.config.json"
+    monkeypatch.setattr(flutter_app, "CONFIG_FILE", sandbox)
+    return sandbox
+
+
+@pytest.fixture(autouse=True)
 def clean_failures():
     from lib import failures
 

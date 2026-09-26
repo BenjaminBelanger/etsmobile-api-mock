@@ -37,6 +37,10 @@ python start.py --scenario semaine-relache --semester-week 3
 
 `python start.py --help` lists every profile, scenario and day code.
 
+The server runs on its own: nothing else has to be configured to use it. To also
+point the Flutter app at the mock while it runs, see
+[Connecting the Flutter App](#connecting-the-flutter-app).
+
 ## Schedule Editor UI
 
 <img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/2da27859-d13a-4df2-87f5-cb596055f1f6" />
@@ -416,3 +420,46 @@ The mock server requires no authentication, so you can skip past or stub out the
 |----------|-------------|
 | Android emulator | `10.0.2.2:8080` |
 | iOS emulator | `localhost:8080` |
+| Physical device | Your machine's LAN address, e.g. `192.168.1.10:8080` |
+
+### Doing it automatically
+
+`start.py --app` applies steps 2-4 when the server starts and undoes them when
+it stops. Later runs reuse it:
+
+```bash
+python start.py --app ../Notre-Dame --platform ios   # first run
+python start.py                                      # later runs: same app and platform
+python start.py --no-app                             # this run only: don't modify app
+```
+
+| Flag | Description |
+|------|-------------|
+| `--app PATH` | Flutter repo to configure (default: the saved app) |
+| `--no-app` | Start the server without touching the saved app |
+| `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
+| `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
+| `--revert-app` | Restore the app and exit, after a run that didn't |
+| `--forget-app` | Restore the app if needed, forget it and exit |
+
+**What is undone:** When the server
+stops, lines from steps 2-4 change. They go back to exactly what they were before the run, uncommitted
+changes included. Everything else in those files is left alone.
+
+**When:** On Ctrl+C or closing the terminal. If the process
+was killed some other way, run `python start.py --revert-app`. Starting a second
+`start.py` while one is running hands the app over: the second one undoes the
+changes when it stops.
+
+**Stop using it:** Run `python start.py --forget-app`. Later runs leave the app
+alone.
+
+**Saved settings:** `mock.config.json` holds the path, platform
+and host, plus the original lines while a server runs. A flag always overrides
+the saved value.
+
+**Special cases:**
+- A line from steps 2-4 was added or removed while the server ran: that file is
+  left as is and listed. Fix it, then run `python start.py --revert-app`.
+- The app already points at a local server before the first run (steps 2-4
+  applied by hand): the run stops. Put the production values back first.
