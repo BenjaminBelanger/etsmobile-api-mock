@@ -131,8 +131,18 @@ def _load_overrides() -> dict:
         return {}
 
 
+def _hidden_session(session_code: str) -> bool:
+    if not NO_NEXT_SESSION:
+        return False
+    return sessions.session_rank(session_code) > sessions.session_rank(ACTIVE_SESSION)
+
+
+def _served_overrides() -> dict:
+    return {k: v for k, v in _load_overrides().items() if not _hidden_session(k)}
+
+
 def _apply_overrides(built_courses: list[dict]) -> list[dict]:
-    overrides = _load_overrides()
+    overrides = _served_overrides()
     if not overrides:
         return built_courses
 
@@ -150,7 +160,7 @@ def _shift_calendar():
     elif BETWEEN_SESSIONS:
         delta = sessions.compute_ended_shift_delta(ACTIVE_SESSION)
     sessions.shift_session_metadata(ACTIVE_SESSION, delta)
-    sessions.shift_session_metadata(NEXT_SESSION, delta)
+    sessions.shift_session_metadata(NEXT_SESSION, sessions.nearest_week_shift(delta))
     if SEMESTER_GAP is not None:
         sessions.shift_session_metadata(
             NEXT_SESSION,
@@ -158,11 +168,6 @@ def _shift_calendar():
                 ACTIVE_SESSION, NEXT_SESSION, SEMESTER_GAP
             ),
         )
-
-
-def _drop_sessions_after(session_code: str, courses: list[dict]) -> list[dict]:
-    last = sessions.session_rank(session_code)
-    return [c for c in courses if sessions.session_rank(c["session"]) <= last]
 
 
 def _initialize():
@@ -184,8 +189,7 @@ def _initialize():
             PROFILE_NAME, ACTIVE_SESSION, _seed_courses
         )
         _programs = profiles.seed_programs(PROFILE_NAME, ACTIVE_SESSION, _programs)
-    if NO_NEXT_SESSION:
-        _seed_courses = _drop_sessions_after(ACTIVE_SESSION, _seed_courses)
+    _seed_courses = [c for c in _seed_courses if not _hidden_session(c["session"])]
     _seed_courses = scenarios.seed_replaced_day_overrides(_seed_courses)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         _seed_courses = scenarios.seed_occurrence_overrides(
@@ -250,7 +254,7 @@ def get_session_courses(session: str, *, base: bool = False) -> list[dict]:
 
 def get_sessions_with_courses() -> list[str]:
     codes = {c.get("session") for c in (_base_courses or []) if c.get("session")}
-    codes.update(k for k in _load_overrides().keys() if k)
+    codes.update(k for k in _served_overrides() if k)
     return sorted(codes, key=sessions.session_rank, reverse=True)
 
 
