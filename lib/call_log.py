@@ -8,7 +8,7 @@ from starlette.datastructures import QueryParams
 
 from .failures import API_PREFIX, endpoint_name, injected_failures
 
-CAPACITY = 1000
+CAPACITY = 100_000
 
 _entries: deque[dict] = deque(maxlen=CAPACITY)
 _next_id = 1

@@ -339,8 +339,10 @@ Use it to see when and how often the app calls the API:
   after a change in the app.
 - The trash button clears the log.
 
-The log is kept in memory. It holds the last 1000 entries and starts over when
-the server restarts.
+The log is kept in memory. It holds the last 100,000 entries (about 90 MB at
+most) and starts over when the server restarts. The tab shows the latest 1000
+to stay responsive; older entries are still counted in the per-endpoint stats
+and the repeat numbers, and included in the download.
 
 ### Runtime access via admin endpoint
 

@@ -62,6 +62,8 @@ const el = {
   callsToolbar: document.getElementById("callsToolbar"),
   callsBoard: document.getElementById("callsBoard"),
   callsTable: document.getElementById("callsTable"),
+  callsOlder: document.getElementById("callsOlder"),
+  callsOlderNote: document.getElementById("callsOlderNote"),
   callRows: document.getElementById("callRows"),
   callsEmpty: document.getElementById("callsEmpty"),
   callsClearBtn: document.getElementById("callsClearBtn"),
@@ -1960,6 +1962,7 @@ function submitFailure() {
 
 const CALLS = "/admin/calls";
 const CALLS_POLL_MS = 1000;
+const CALLS_SHOWN = 1000;
 
 const CALL_FAILURES = {
   latency: (failure) => `Latence ${fmtDuration(failure.ms)}`,
@@ -2000,7 +2003,14 @@ const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
 const isCall = (entry) => entry.kind === "call";
 const isPending = (entry) => isCall(entry) && entry.status == null;
 
-const callKey = (call) => JSON.stringify([call.endpoint, Object.entries(call.params).sort()]);
+const callKeys = new WeakMap();
+
+function callKey(call) {
+  if (!callKeys.has(call)) {
+    callKeys.set(call, JSON.stringify([call.endpoint, Object.entries(call.params).sort()]));
+  }
+  return callKeys.get(call);
+}
 
 function repeatsOf(calls) {
   const totals = new Map();
@@ -2149,6 +2159,11 @@ function renderEndpointStats(calls, repeats) {
   el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
 }
 
+function olderNote(count) {
+  const s = count > 1 ? "s" : "";
+  return `${count} entrée${s} plus ancienne${s} masquée${s}. Toujours dans les statistiques et l'export.`;
+}
+
 function markCallGroup() {
   el.callRows
     .querySelectorAll("tr[data-group]")
@@ -2168,13 +2183,17 @@ function renderCalls(stick) {
   const calls = entries.filter(isCall);
   const repeats = repeatsOf(calls);
   const sections = markerSections(entries);
-  el.callRows.innerHTML = entries
+  const shown = entries.slice(-CALLS_SHOWN);
+  const older = entries.length - shown.length;
+  el.callRows.innerHTML = shown
     .map((entry) =>
       isCall(entry)
         ? callRowHtml(entry, repeats.get(entry.id))
         : markerRowHtml(entry, sections.get(entry.id))
     )
     .join("");
+  el.callsOlder.hidden = !older;
+  el.callsOlderNote.textContent = older ? olderNote(older) : "";
   markCallGroup();
   el.callsTable.hidden = !entries.length;
   el.callsEmpty.hidden = entries.length > 0;

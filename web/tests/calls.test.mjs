@@ -572,6 +572,69 @@ describe("keeping the list current", () => {
   });
 });
 
+describe("a long log", () => {
+  const manyCalls = (count, from = 1) =>
+    Array.from({ length: count }, (_, i) => callEntry({ id: from + i }));
+
+  const note = (app) => app.byId("callsOlderNote").textContent;
+
+  test("shows every entry while they fit", async () => {
+    const app = await onCalls(manyCalls(1000));
+
+    assert.equal(rowIds(app).length, 1000);
+    assert.equal(app.byId("callsOlder").hidden, true);
+    app.close();
+  });
+
+  test("shows only the latest 1000 entries and says how many are hidden", async () => {
+    const app = await onCalls(manyCalls(1000));
+
+    app.server.callLog.add(callEntry({ id: 1001 }));
+    await refresh(app);
+
+    assert.deepEqual(rowIds(app).slice(0, 2), [2, 3]);
+    assert.equal(rowIds(app).at(-1), 1001);
+    assert.equal(app.byId("callsOlder").hidden, false);
+    assert.equal(
+      note(app),
+      "1 entrée plus ancienne masquée. Toujours dans les statistiques et l'export.",
+    );
+
+    app.server.callLog.add(callEntry({ id: 1002 }));
+    await refresh(app);
+
+    assert.equal(rowIds(app)[0], 3);
+    assert.equal(note(app).startsWith("2 entrées plus anciennes masquées"), true);
+    app.close();
+  });
+
+  test("still counts hidden entries in the stats and repeat numbers", async () => {
+    const app = await onCalls([
+      callEntry({ id: 1, ...GRADES, bytes: 1024 }),
+      ...manyCalls(1000, 2),
+      callEntry({ id: 1002, ...GRADES, bytes: 1024 }),
+    ]);
+
+    assert.equal(rowFor(app, 1), null);
+    assert.equal(rowFor(app, 1002).querySelector(".repeat").textContent.trim(), "2/2");
+    assert.deepEqual(stats(app)[1], {
+      endpoint: "listeElementsEvaluation",
+      cells: ["2", "1", "2 ko"],
+    });
+    app.close();
+  });
+
+  test("exports hidden entries too", async () => {
+    const entries = manyCalls(1001);
+    const app = await onCalls(entries);
+
+    await app.click(app.byId("callsExportBtn"));
+
+    assert.deepEqual(JSON.parse(await app.downloads[0].blob.text()), { entries, firstId: 1 });
+    app.close();
+  });
+});
+
 describe("clearing the log", () => {
   test("is only offered when there is something to clear", async () => {
     const app = await onCalls([callEntry({ id: 1 })]);
