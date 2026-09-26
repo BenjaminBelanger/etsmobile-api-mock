@@ -105,14 +105,15 @@ describe("the student tab", () => {
 });
 
 describe("the student profile", () => {
-  test("lists every field with its label, key and value", async () => {
+  test("lists every field with its label and value, keeping the key as a tooltip", async () => {
     const app = await onStudent();
     const profile = baseStudent().student;
 
     assert.deepEqual(
-      rows(app).map((row) => row.querySelector(".field__key").textContent),
+      rows(app).map((row) => row.getAttribute("title")),
       profile.map((row) => row.key),
     );
+    assert.equal(app.query("#profileFields code"), null);
     assert.equal(rowFor(app, "nom").querySelector(".field__label").textContent, "Nom");
     assert.equal(field(app, "nom").value, "Last0");
     assert.equal(field(app, "codePerm").value, "ABCD12345678");
@@ -127,7 +128,6 @@ describe("the student profile", () => {
 
     rows(app).forEach((row) => {
       assert.equal(row.querySelectorAll("fluent-text-input, input").length, 1);
-      assert.equal(row.querySelector(".field__key").tagName, "CODE");
     });
     app.close();
   });
@@ -138,8 +138,7 @@ describe("the student profile", () => {
     });
     const app = await onStudent(student);
 
-    assert.equal(rowFor(app, "courriel").querySelector(".field__label"), null);
-    assert.equal(rowFor(app, "courriel").querySelector(".field__key").textContent, "courriel");
+    assert.equal(rowFor(app, "courriel").querySelector(".field__label").textContent, "courriel");
     app.close();
   });
 
@@ -172,7 +171,7 @@ describe("the student profile", () => {
     await typeAndLeave(app, "nom", "Tremblay");
     assert.equal(rowFor(app, "nom").classList.contains("is-modified"), true);
     assert.equal(field(app, "nom").classList.contains("is-pinned"), true);
-    assert.match(field(app, "nom").getAttribute("title"), /valeur d'origine/);
+    assert.match(field(app, "nom").getAttribute("title"), /^nom · .*valeur d'origine/);
 
     await app.click(rowFor(app, "nom").querySelector("[data-reset]"));
     assert.deepEqual(posted(app, "/set"), { field: "nom", value: null });
