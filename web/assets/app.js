@@ -2209,28 +2209,51 @@ const SNAPSHOT_SCOPES = [
   { scope: "shared", title: "Partagés", icon: "people", empty: "Aucun instantané partagé." },
 ];
 
+const mondayOf = (iso) => {
+  const day = new Date(`${iso}T00:00:00`);
+  day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
+  return day.toDateString();
+};
+
+const savedThisWeek = (item, current) =>
+  item.anchor.session === current?.session &&
+  mondayOf(item.anchor.date) === mondayOf(todayISO());
+
+function realignHint(item, current) {
+  if (savedThisWeek(item, current)) {
+    return "Enregistré cette semaine: rien à décaler, tout est chargé tel quel.";
+  }
+  const moved =
+    current?.session && current.session !== item.anchor.session
+      ? ` L’horaire de ${item.anchor.session} est repris dans ${current.session}.`
+      : "";
+  return (
+    "Retrouve la même situation aujourd’hui: toutes les dates sont décalées pour " +
+    `qu’aujourd’hui tombe à la semaine ${item.anchor.week} de la session, comme au ` +
+    `moment de l’enregistrement.${moved}${clampHint(item.anchor.week, current)}`
+  );
+}
+
 const DATE_MODES = [
   {
     id: "week",
-    title: "Même semaine de session",
-    hint: (item, current) =>
-      `La semaine ${item.anchor.week} de ${item.anchor.session} devient la semaine courante` +
-      (current?.session ? ` de ${current.session}.` : ".") +
-      clampHint(item.anchor.week, current),
+    title: "Recaler sur aujourd’hui",
+    hint: realignHint,
   },
   {
     id: "exact",
-    title: "Dates exactes",
+    title: "Garder les dates enregistrées",
     hint: (item) =>
-      `Les dates telles qu’enregistrées le ${fmtLongDate(item.anchor.date)}. ` +
-      "Réglez l’horloge du téléphone à cette date.",
+      `Rien n’est décalé: l’horaire garde les dates du ${fmtLongDate(item.anchor.date)}. ` +
+      "Pour reproduire un bug, réglez l’horloge du téléphone à cette date.",
   },
   {
     id: "setup",
-    title: "Configuration seulement",
+    title: "Réglages seulement",
     hint: () =>
-      "Profil, scénario, semaine, options et pannes. L’horaire est régénéré à partir " +
-      "d’aujourd’hui; le profil étudiant est conservé.",
+      "Charge le profil, le scénario, la semaine, les options et les pannes, mais pas " +
+      "les modifications de l’horaire: il est régénéré à partir d’aujourd’hui. Le " +
+      "profil étudiant enregistré est chargé.",
   },
 ];
 
@@ -2501,7 +2524,7 @@ function openSnapshotLoad(item) {
   el.snapshotLoadTitle.textContent = `Charger « ${item.name} »`;
   const current = state.snapshots?.current;
   el.fSnapshotDates.innerHTML =
-    `<legend class="choices__legend">Dates</legend>` +
+    `<legend class="choices__legend">Dates de l’horaire</legend>` +
     DATE_MODES.map((mode, i) =>
       choiceHtml("snapshotDates", mode.id, mode.title, mode.hint(item, current), i === 0)
     ).join("");

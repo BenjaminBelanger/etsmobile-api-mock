@@ -122,16 +122,16 @@ on the running server, no restart needed. A dev-mode code reload of the server
 falls back to the startup settings, but keeps the loaded edits. Dates are
 chosen when loading:
 
-- **Même semaine de session** (default) shifts every date by whole weeks so the
+- **Recaler sur aujourd'hui** (default) shifts every date by whole weeks so the
   week the snapshot was saved in becomes the current week, in the current
   session. If that session is shorter, the last week is used and the status bar
   says so; séance changes that no longer fit in the session are dropped.
-- **Dates exactes** keeps every date and session code as saved, including the
-  session calendar. Use it to reproduce a bug with the phone clock set to the
+- **Garder les dates enregistrées** keeps every date and session code as saved,
+  including the session calendar. Use it to reproduce a bug with the phone clock set to the
   save date.
-- **Configuration seulement** only reapplies the profile, scenario, semester
-  week, generation options and Pannes. The schedule is generated again from
-  today; the student edits are kept.
+- **Réglages seulement** only reapplies the profile, scenario, semester week,
+  generation options and Pannes. The schedule edits are not loaded: the
+  schedule is generated again from today. The saved student edits are loaded.
 
 The replaced days served by `lireJoursRemplaces` are never shifted: holidays
 stay on their real dates in every mode.

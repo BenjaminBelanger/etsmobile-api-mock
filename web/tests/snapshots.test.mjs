@@ -238,7 +238,15 @@ describe("loading a snapshot", () => {
     await app.click(action(app, id, "load"));
   }
 
-  test("offers the three date modes, same session week first", async () => {
+  const savedOn = (anchor) => ({ ...clone(SNAPSHOT_ITEMS[0]), anchor });
+  const firstHint = (app) => app.query("#fSnapshotDates .choice__hint").textContent;
+  const today = () => {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  };
+
+  test("offers the three date modes, realigning on today first", async () => {
     const app = await onSnapshots();
     await openLoad(app);
 
@@ -246,21 +254,62 @@ describe("loading a snapshot", () => {
     assert.deepEqual(modes.map((m) => m.value), ["week", "exact", "setup"]);
     assert.equal(modes[0].checked, true);
     assert.equal(app.byId("snapshotLoadTitle").textContent, "Charger « Démo »");
+    const titles = app.queryAll("#fSnapshotDates .choice__title").map((t) => t.textContent);
+    assert.deepEqual(titles, [
+      "Recaler sur aujourd’hui",
+      "Garder les dates enregistrées",
+      "Réglages seulement",
+    ]);
     const hints = app.queryAll("#fSnapshotDates .choice__hint").map((h) => h.textContent);
-    assert.equal(hints[0], "La semaine 4 de A2026 devient la semaine courante de A2026.");
-    assert.match(hints[1], /25 sept\. 2026/);
+    assert.match(hints[1], /^Rien n’est décalé: l’horaire garde les dates du 25 sept\. 2026\./);
+    assert.match(hints[2], /profil étudiant enregistré est chargé/);
+    app.close();
+  });
+
+  test("explains how an older snapshot is realigned on today", async () => {
+    const app = await onSnapshots({
+      snapshots: [savedOn({ session: "A2026", week: 4, date: "2020-01-10" })],
+    });
+    await openLoad(app);
+
+    assert.equal(
+      firstHint(app),
+      "Retrouve la même situation aujourd’hui: toutes les dates sont décalées pour " +
+        "qu’aujourd’hui tombe à la semaine 4 de la session, comme au moment de " +
+        "l’enregistrement.",
+    );
+    app.close();
+  });
+
+  test("says which session takes over the schedule of another one", async () => {
+    const app = await onSnapshots({
+      snapshots: [savedOn({ session: "H2026", week: 4, date: "2026-01-30" })],
+    });
+    await openLoad(app);
+
+    assert.match(firstHint(app), /L’horaire de H2026 est repris dans A2026\.$/);
+    app.close();
+  });
+
+  test("says there is nothing to shift for a snapshot saved this week", async () => {
+    const app = await onSnapshots({
+      snapshots: [savedOn({ session: "A2026", week: 4, date: today() })],
+    });
+    await openLoad(app);
+
+    assert.equal(firstHint(app), "Enregistré cette semaine: rien à décaler, tout est chargé tel quel.");
     app.close();
   });
 
   test("warns before a week that the current session cannot hold", async () => {
-    const late = { ...clone(SNAPSHOT_ITEMS[0]), anchor: { session: "H2026", week: 17, date: "2026-04-30" } };
-    const app = await onSnapshots({ snapshots: [late] });
+    const app = await onSnapshots({
+      snapshots: [savedOn({ session: "H2026", week: 17, date: "2026-04-30" })],
+    });
     await openLoad(app);
 
-    assert.equal(
-      app.query("#fSnapshotDates .choice__hint").textContent,
-      "La semaine 17 de H2026 devient la semaine courante de A2026. " +
-        "A2026 n’a que 16 semaines: la semaine 16 sera utilisée.",
+    assert.match(
+      firstHint(app),
+      /A2026\. A2026 n’a que 16 semaines: la semaine 16 sera utilisée\.$/,
     );
     app.close();
   });

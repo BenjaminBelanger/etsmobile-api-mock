@@ -79,9 +79,9 @@ SCENARIO_DESCRIPTIONS = {
 SCOPE_LABELS = {"personal": "personnel", "shared": "partagé"}
 
 DATE_MODE_LABELS = {
-    "week": "Même semaine de session",
-    "exact": "Dates exactes",
-    "setup": "Configuration seulement",
+    "week": "Recaler sur aujourd'hui",
+    "exact": "Garder les dates enregistrées",
+    "setup": "Réglages seulement",
 }
 
 
@@ -352,8 +352,8 @@ def _build_parser() -> argparse.ArgumentParser:
     snapshot.add_argument(
         "--snapshot-dates",
         choices=snapshots.DATE_MODES,
-        help="week: même semaine de session (défaut); exact: dates exactes; "
-        "setup: configuration seulement, l'horaire est régénéré.",
+        help="week: recaler sur aujourd'hui (défaut); exact: garder les dates "
+        "enregistrées; setup: réglages seulement, l'horaire est régénéré.",
         default=None,
     )
     snapshot.add_argument(
@@ -718,12 +718,12 @@ def _select_snapshot() -> dict | None:
 def _prompt_snapshot_dates(item: dict) -> str:
     anchor = item["anchor"]
     details = {
-        "week": f"la semaine {anchor['week']} de {anchor['session']} devient la "
-        "semaine courante",
-        "exact": f"dates telles qu'enregistrées le {anchor['date']} (réglez "
-        "l'horloge du téléphone)",
-        "setup": "profil, scénario, semaine, options et pannes; l'horaire est "
-        "régénéré à partir d'aujourd'hui",
+        "week": "toutes les dates sont décalées pour qu'aujourd'hui tombe à la "
+        f"semaine {anchor['week']} de la session",
+        "exact": f"rien n'est décalé, l'horaire garde les dates du {anchor['date']} "
+        "(réglez l'horloge du téléphone)",
+        "setup": "profil, scénario, semaine, options et pannes, sans les "
+        "modifications de l'horaire",
     }
     print("\n=== Dates de l'instantané ===\n")
     for i, mode in enumerate(snapshots.DATE_MODES, 1):
