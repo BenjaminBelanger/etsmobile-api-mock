@@ -28,6 +28,8 @@ const state = {
   failuresPast: [],
   failuresFuture: [],
   failureKind: "latency",
+  failuresPoll: null,
+  failuresSeq: 0,
   staged: [],
   endpoints: [],
   presets: [],
@@ -1596,7 +1598,11 @@ const NO_FAILURES = {
   timeoutDurationS: 60,
   malformed: false,
   authRequired: false,
+  tokenExpiredCalls: 0,
+  tokensRejected: false,
 };
+
+const FAILURES_POLL_MS = 2000;
 
 const latencyMax = (raw) => {
   const parts = String(raw ?? "").split("-");
@@ -1607,10 +1613,14 @@ const latencyMax = (raw) => {
 const percent = (rate) => Math.round(rate * 100);
 const endpointLabel = (name) => (name === "*" ? "tous les endpoints" : name);
 
+const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
+
 const countLabel = (names, one, many) =>
   names.includes("*")
     ? `tous les endpoints ${many}`
     : `${names.length} endpoint${names.length > 1 ? "s" : ""} ${names.length > 1 ? many : one}`;
+
+const hintNote = (_, kind) => `<span class="injection__note">${kind.hint}</span>`;
 
 function injectionInput(field, value, size, unit, label) {
   return `<fluent-text-input class="injection__input injection__input--${size}" control-size="small"
@@ -1750,7 +1760,7 @@ const FAILURE_KINDS = [
     hint: "Le corps de chaque réponse 2xx est coupé en deux.",
     active: (cfg) => cfg.malformed,
     summary: () => "réponses tronquées",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ malformed: false }),
     form: () => "",
     read: () => ({ body: { malformed: true } }),
@@ -1762,31 +1772,68 @@ const FAILURE_KINDS = [
     hint: "Un appel sans en-tête Authorization répond 401.",
     active: (cfg) => cfg.authRequired,
     summary: () => "authentification requise",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ authRequired: false }),
     form: () => "",
     read: () => ({ body: { authRequired: true } }),
+  },
+  {
+    id: "tokenExpired",
+    label: "Jeton expiré",
+    icon: "keyReset",
+    hint: "Les prochains appels répondent 401, puis les appels réussissent de nouveau.",
+    active: (cfg) => cfg.tokenExpiredCalls > 0,
+    summary: (cfg) => `jeton expiré pour ${plural(cfg.tokenExpiredCalls, "appel")}`,
+    value: (cfg) =>
+      injectionInput(
+        "tokenExpiredCalls",
+        cfg.tokenExpiredCalls,
+        "sm",
+        cfg.tokenExpiredCalls > 1 ? "appels restants" : "appel restant",
+        "Appels restants"
+      ),
+    clear: () => ({ tokenExpiredCalls: 0 }),
+    form: () => numberField("fTokenExpiredCalls", "Nombre d'appels", "", "3"),
+    read: () => {
+      const calls = Number(el.failureParams.querySelector("#fTokenExpiredCalls").value);
+      if (!Number.isInteger(calls) || calls < 1) {
+        return { error: "Un nombre d'appels est requis" };
+      }
+      return { body: { tokenExpiredCalls: calls } };
+    },
+  },
+  {
+    id: "tokensRejected",
+    label: "Jetons refusés",
+    icon: "shieldDismiss",
+    hint: "Chaque appel répond 401, peu importe le jeton.",
+    active: (cfg) => cfg.tokensRejected,
+    summary: () => "jetons refusés",
+    value: hintNote,
+    clear: () => ({ tokensRejected: false }),
+    form: () => "",
+    read: () => ({ body: { tokensRejected: true } }),
   },
 ];
 
 const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
 const activeKinds = (cfg) => (cfg ? FAILURE_KINDS.filter((k) => k.active(cfg)) : []);
-const parameterless = (kind) => kind.id === "malformed" || kind.id === "auth";
 
 function failureError(data, res) {
   const detail = typeof data.detail === "string" ? data.detail : null;
   return detail || data.error || res.statusText || "Échec de l'opération";
 }
 
-async function adminFetch(path, options, message, record = true) {
+async function adminFetch(path, options, message, record = true, setsCountdown = true) {
   const before = state.failures;
   setStatus("Enregistrement…", true);
   try {
     const res = await fetch(`${ADMIN}${path}`, options);
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
-    if (record && before && !sameFailures(before, data)) {
-      state.failuresPast.push({ before, after: data });
+    const change = record && before && failureChange(before, data, setsCountdown);
+    if (change) {
+      state.failuresPast.push(change);
       state.failuresFuture = [];
     }
     applyFailures(data);
@@ -1810,29 +1857,63 @@ const patchFailures = (body, message, record) =>
       body: JSON.stringify(body),
     },
     message,
-    record
+    record,
+    "tokenExpiredCalls" in body
   );
 
 function applyFailures(cfg) {
+  state.failuresSeq += 1;
   state.failures = cfg;
   el.failuresDot.hidden = !activeKinds(cfg).length;
   renderFailures();
+  scheduleFailuresPoll();
 }
 
-const failureFields = (cfg) =>
-  Object.fromEntries(Object.keys(NO_FAILURES).map((key) => [key, cfg[key]]));
+function scheduleFailuresPoll() {
+  clearTimeout(state.failuresPoll);
+  if (!document.hidden && state.failures?.tokenExpiredCalls > 0) {
+    state.failuresPoll = setTimeout(pollFailures, FAILURES_POLL_MS);
+  }
+}
 
-const sameFailures = (a, b) =>
-  JSON.stringify(failureFields(a)) === JSON.stringify(failureFields(b));
+const editingInjection = () => !!document.activeElement?.closest?.("[data-field]");
+
+async function pollFailures() {
+  const seq = state.failuresSeq;
+  const res = await fetch(ADMIN).catch(() => null);
+  const cfg = res && res.ok ? await res.json().catch(() => null) : null;
+  if (seq !== state.failuresSeq) return;
+  if (cfg && !sameFailures(cfg, state.failures) && !editingInjection()) applyFailures(cfg);
+  else scheduleFailuresPoll();
+}
+
+const pickFields = (cfg, keys) => Object.fromEntries(keys.map((key) => [key, cfg[key]]));
+
+const FAILURE_FIELDS = Object.keys(NO_FAILURES);
+const SETTING_FIELDS = FAILURE_FIELDS.filter((key) => key !== "tokenExpiredCalls");
+
+const sameFields = (a, b, keys) =>
+  JSON.stringify(pickFields(a, keys)) === JSON.stringify(pickFields(b, keys));
+
+const sameFailures = (a, b) => sameFields(a, b, FAILURE_FIELDS);
+const sameSettings = (a, b) => sameFields(a, b, SETTING_FIELDS);
+
+function failureChange(before, after, setsCountdown) {
+  const countdown = setsCountdown && before.tokenExpiredCalls !== after.tokenExpiredCalls;
+  return countdown || !sameSettings(before, after) ? { before, after, countdown } : null;
+}
+
+const changeBody = (change, target) =>
+  pickFields(change[target], change.countdown ? FAILURE_FIELDS : SETTING_FIELDS);
 
 const canUndoFailures = () => {
   const change = state.failuresPast.at(-1);
-  return !!change && !!state.failures && sameFailures(change.after, state.failures);
+  return !!change && !!state.failures && sameSettings(change.after, state.failures);
 };
 
 const canRedoFailures = () => {
   const change = state.failuresFuture.at(-1);
-  return !!change && !!state.failures && sameFailures(change.before, state.failures);
+  return !!change && !!state.failures && sameSettings(change.before, state.failures);
 };
 
 function renderFailureHistory() {
@@ -1843,7 +1924,7 @@ function renderFailureHistory() {
 function stepFailures(from, to, target, message) {
   const change = from.pop();
   renderFailureHistory();
-  patchFailures(failureFields(change[target]), message, false).then(
+  patchFailures(changeBody(change, target), message, false).then(
     () => {
       to.push(change);
       renderFailureHistory();
@@ -1891,7 +1972,7 @@ function injectionHtml(kind, cfg) {
   return `<li class="injection" data-kind="${kind.id}">
       <span class="injection__icon">${icon(kind.icon, 16)}</span>
       <span class="injection__name" title="${escapeHtml(kind.hint)}">${kind.label}</span>
-      <span class="injection__value">${kind.value(parameterless(kind) ? kind : cfg)}</span>
+      <span class="injection__value">${kind.value(cfg, kind)}</span>
       <fluent-button class="injection__x" appearance="subtle" size="small" icon-only
         data-remove="${kind.id}" title="Retirer la panne"
         aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("delete", 16)}</fluent-button>
@@ -1934,28 +2015,32 @@ function wireInjections(cfg) {
   });
 }
 
+const NUMBER_FIELDS = {
+  errorRate: {
+    valid: (n) => n >= 0 && n <= 100,
+    toBody: (n) => n / 100,
+    error: "Un taux entre 0 et 100 est requis",
+  },
+  timeoutDurationS: { valid: (n) => n >= 0, error: "Un délai en secondes est requis" },
+  tokenExpiredCalls: {
+    valid: (n) => Number.isInteger(n) && n >= 0,
+    error: "Un nombre d'appels est requis",
+  },
+};
+
 function commitFailureField(fieldName, value) {
-  if (fieldName === "errorRate") {
-    const pct = Number(value);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      toast("Un taux entre 0 et 100 est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ errorRate: pct / 100 }, "Panne modifiée");
+  const numeric = NUMBER_FIELDS[fieldName];
+  if (!numeric) {
+    patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
     return;
   }
-  if (fieldName === "timeoutDurationS") {
-    const seconds = Number(value);
-    if (!Number.isFinite(seconds) || seconds < 0) {
-      toast("Un délai en secondes est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ timeoutDurationS: seconds }, "Panne modifiée");
+  const n = Number(value);
+  if (!Number.isFinite(n) || !numeric.valid(n)) {
+    toast(numeric.error, true);
+    renderFailures();
     return;
   }
-  patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
+  patchFailures({ [fieldName]: numeric.toBody ? numeric.toBody(n) : n }, "Panne modifiée");
 }
 
 function presetSummary(config) {
@@ -2213,6 +2298,8 @@ const CALL_FAILURES = {
   timeout: (failure) => `Expiration après ${decimal(failure.seconds)} s`,
   malformed: () => "Réponse tronquée",
   auth: () => "Authentification manquante",
+  tokenExpired: () => "Jeton expiré",
+  tokensRejected: () => "Jeton refusé",
 };
 
 const decimal = (value, digits = 1) =>
@@ -2239,8 +2326,6 @@ function fmtClock(iso) {
     3
   )}`;
 }
-
-const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
 
 const isCall = (entry) => entry.kind === "call";
 const isPending = (entry) => isCall(entry) && entry.status == null;
@@ -2691,6 +2776,7 @@ el.callRows.addEventListener("click", (e) => {
   if (button) removeMarker(button);
 });
 document.addEventListener("visibilitychange", () => {
+  scheduleFailuresPoll();
   if (state.view !== "calls") return;
   if (document.hidden) scheduleCallsPoll();
   else loadCalls();

@@ -196,6 +196,8 @@ const DEFAULT_FAILURES = {
   timeoutDurationS: 60,
   malformed: false,
   authRequired: false,
+  tokenExpiredCalls: 0,
+  tokensRejected: false,
 };
 
 export const ENDPOINTS = ["helloWorld", "listeCoequipiers", "listeCours"];

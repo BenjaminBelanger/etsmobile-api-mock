@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from lib._paths import SEED
+from start import _bounded_int, _latency, _rate, _seconds
 
 DEFAULT_URL = "http://localhost:8080"
 PRESETS_FILE = SEED / "failure_presets.json"
@@ -106,9 +107,11 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         description="Apply a custom failure config (resets first).",
     )
     parser.add_argument(
-        "--latency", help="Latency in ms, fixed or range (e.g., '500' or '100-500')"
+        "--latency",
+        type=_latency,
+        help="Latency in ms, fixed or range (e.g., '500' or '100-500')",
     )
-    parser.add_argument("--error-rate", type=float, help="Error rate, 0.0-1.0")
+    parser.add_argument("--error-rate", type=_rate, help="Error rate, 0.0-1.0")
     parser.add_argument(
         "--fail",
         action="append",
@@ -120,7 +123,7 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         help="Endpoint name to hang (repeatable, or '*' for all)",
     )
     parser.add_argument(
-        "--timeout-duration", type=float, help="How long timeout endpoints sleep (s)"
+        "--timeout-duration", type=_seconds, help="How long timeout endpoints sleep (s)"
     )
     parser.add_argument(
         "--malformed",
@@ -133,6 +136,17 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Require Authorization header",
+    )
+    parser.add_argument(
+        "--token-expired",
+        type=_bounded_int(0),
+        help="Answer the next N API calls with 401",
+    )
+    parser.add_argument(
+        "--tokens-rejected",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Answer every API call with 401",
     )
     return parser
 
@@ -153,6 +167,10 @@ def _custom_args_to_config(args: argparse.Namespace) -> dict:
         config["malformed"] = args.malformed
     if args.auth is not None:
         config["authRequired"] = args.auth
+    if args.token_expired is not None:
+        config["tokenExpiredCalls"] = args.token_expired
+    if args.tokens_rejected is not None:
+        config["tokensRejected"] = args.tokens_rejected
     return config
 
 

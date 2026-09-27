@@ -272,7 +272,9 @@ calls each injection hit.
 | `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
 | `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
 | `--malformed` | Truncate every successful 2xx response body in half |
-| `--auth` | Return 401 on API requests without an `Authorization` header |
+| `--auth` | Return 401 on API requests without an `Authorization` header. Never fires for ÉTSMobile, which always sends one (even `Bearer null`) |
+| `--token-expired N` | The next N API calls return 401, then calls succeed again |
+| `--tokens-rejected` | Every API call returns 401, whatever the token |
 
 ```bash
 python start.py --failures flaky
@@ -282,7 +284,7 @@ python start.py --profile semester-off --auth
 
 A preset can be adjusted by adding flags after it. `--failures flaky
 --error-rate 0.9` keeps the preset's latency and replaces its error rate.
-`--malformed` and `--auth` each have a `--no-` form.
+`--malformed`, `--auth` and `--tokens-rejected` each have a `--no-` form.
 
 ### Runtime control via admin endpoint
 
@@ -307,7 +309,7 @@ curl -X POST http://localhost:8080/admin/failures/preset \
   -d '{"name": "flaky"}'
 ```
 
-PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool). All optional.
+PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool). All optional.
 
 ### Named presets via manage_failures.py
 
@@ -319,6 +321,7 @@ python manage_failures.py status           # show current config
 python manage_failures.py flaky            # apply a preset
 python manage_failures.py reset            # clear everything (alias: off)
 python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail listeCoequipiers
+python manage_failures.py custom --token-expired 3   # next 3 calls get 401
 ```
 
 | Preset | Effect |
@@ -328,6 +331,8 @@ python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail liste
 | `outage` | Every API endpoint returns 503 |
 | `partial-outage` | Grades and teammates endpoints down |
 | `auth` | Require an Authorization header |
+| `token-expired` | The next 3 API calls return 401, then calls succeed |
+| `token-rejected` | Every API call returns 401 |
 | `corrupt` | Truncate every successful response body |
 | `timeout-grades` | Grade endpoints hang for 30s before returning 504 |
 | `chaos` | Latency + errors + corrupted bodies all at once |
@@ -370,7 +375,7 @@ The mock server returns data for a fictional ÉTS software engineering student w
 
 ## Authentication
 
-No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all).
+No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all). To test 401 handling, see [Startup flags](#startup-flags).
 
 ## Customizing Data
 

@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import ctypes
 import json
+import math
 import os
 import signal
 import subprocess
@@ -39,6 +40,8 @@ FAILURE_ENV = {
     "timeoutDurationS": "TIMEOUT_DURATION_S",
     "malformed": "MALFORMED",
     "authRequired": "AUTH_REQUIRED",
+    "tokenExpiredCalls": "TOKEN_EXPIRED_CALLS",
+    "tokensRejected": "TOKENS_REJECTED",
 }
 
 MANAGED_ENV = (
@@ -72,6 +75,8 @@ CONFIG_FLAGS = (
     "timeout_duration",
     "malformed",
     "auth",
+    "token_expired",
+    "tokens_rejected",
 )
 
 DAY_NAMES = {
@@ -168,23 +173,27 @@ def _seconds(raw: str) -> float:
         raise argparse.ArgumentTypeError(
             f"expected a number of seconds, got {raw!r}"
         ) from None
-    if val < 0:
+    if not math.isfinite(val) or val < 0:
         raise argparse.ArgumentTypeError(f"expected a number of seconds, got {val}")
     return val
 
 
-def _bounded_int(low: int, high: int):
+def _bounded_int(low: int, high: int | None = None):
+    expected = (
+        f"an integer of at least {low}"
+        if high is None
+        else f"an integer between {low} and {high}"
+    )
+
     def parse(raw: str) -> int:
         try:
             val = int(raw)
         except ValueError:
             raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {raw!r}"
+                f"expected {expected}, got {raw!r}"
             ) from None
-        if val < low or val > high:
-            raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {val}"
-            )
+        if val < low or (high is not None and val > high):
+            raise argparse.ArgumentTypeError(f"expected {expected}, got {val}")
         return val
 
     return parse
@@ -380,6 +389,19 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Exige un header Authorization.",
         default=None,
     )
+    failures.add_argument(
+        "--token-expired",
+        type=_bounded_int(0),
+        metavar="N",
+        help="Les N prochains appels retournent 401 (jeton expiré).",
+        default=None,
+    )
+    failures.add_argument(
+        "--tokens-rejected",
+        action=argparse.BooleanOptionalAction,
+        help="Chaque appel retourne 401, peu importe le jeton.",
+        default=None,
+    )
 
     app = parser.add_argument_group(
         "app flutter",
@@ -457,6 +479,8 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
         "timeoutDurationS": args.timeout_duration,
         "malformed": args.malformed,
         "authRequired": args.auth,
+        "tokenExpiredCalls": args.token_expired,
+        "tokensRejected": args.tokens_rejected,
     }
     overrides = {k: v for k, v in explicit.items() if v is not None}
     if overrides:

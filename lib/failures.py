@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import os
 import random
 from dataclasses import dataclass, field
@@ -10,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ._env import env_bool
+from ._env import env_bool, env_number
 from ._paths import SEED
 
 API_PREFIX = "/api/"
@@ -28,6 +29,8 @@ class FailureConfig:
     timeout_duration_s: float = _DEFAULT_TIMEOUT_S
     malformed: bool = False
     auth_required: bool = False
+    token_expired_calls: int = 0
+    tokens_rejected: bool = False
 
     def is_default(self) -> bool:
         return (
@@ -38,6 +41,8 @@ class FailureConfig:
             and self.timeout_duration_s == _DEFAULT_TIMEOUT_S
             and not self.malformed
             and not self.auth_required
+            and self.token_expired_calls == 0
+            and not self.tokens_rejected
         )
 
     def to_dict(self) -> dict:
@@ -51,6 +56,8 @@ class FailureConfig:
             "timeoutDurationS": self.timeout_duration_s,
             "malformed": self.malformed,
             "authRequired": self.auth_required,
+            "tokenExpiredCalls": self.token_expired_calls,
+            "tokensRejected": self.tokens_rejected,
         }
 
 
@@ -123,27 +130,28 @@ def load_from_env() -> FailureConfig:
         except ValueError:
             pass
 
-    if "ERROR_RATE" in os.environ:
-        try:
-            r = float(os.environ["ERROR_RATE"])
-            if 0.0 <= r <= 1.0:
-                cfg.error_rate = r
-        except ValueError:
-            pass
+    cfg.error_rate = env_number(
+        "ERROR_RATE", float, lambda r: 0.0 <= r <= 1.0, cfg.error_rate
+    )
 
     cfg.fail_endpoints = parse_endpoint_set(os.environ.get("FAIL_ENDPOINTS", ""))
     cfg.timeout_endpoints = parse_endpoint_set(os.environ.get("TIMEOUT_ENDPOINTS", ""))
 
-    if "TIMEOUT_DURATION_S" in os.environ:
-        try:
-            d = float(os.environ["TIMEOUT_DURATION_S"])
-            if d >= 0.0:
-                cfg.timeout_duration_s = d
-        except ValueError:
-            pass
+    cfg.timeout_duration_s = env_number(
+        "TIMEOUT_DURATION_S",
+        float,
+        lambda d: math.isfinite(d) and d >= 0.0,
+        cfg.timeout_duration_s,
+    )
 
     cfg.malformed = env_bool("MALFORMED")
     cfg.auth_required = env_bool("AUTH_REQUIRED")
+
+    cfg.token_expired_calls = env_number(
+        "TOKEN_EXPIRED_CALLS", int, lambda n: n >= 0, cfg.token_expired_calls
+    )
+
+    cfg.tokens_rejected = env_bool("TOKENS_REJECTED")
 
     _config = cfg
     return _config
@@ -175,12 +183,14 @@ def api_endpoint_names(app) -> list[str]:
 
 class FailureConfigUpdate(BaseModel):
     latencyMs: int | str | None = None
-    errorRate: float | None = Field(default=None, ge=0.0, le=1.0)
+    errorRate: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
     failEndpoints: list[str] | None = None
     timeoutEndpoints: list[str] | None = None
-    timeoutDurationS: float | None = Field(default=None, ge=0.0)
+    timeoutDurationS: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     malformed: bool | None = None
     authRequired: bool | None = None
+    tokenExpiredCalls: int | None = Field(default=None, ge=0)
+    tokensRejected: bool | None = None
 
     model_config = {"extra": "forbid"}
 
@@ -203,6 +213,10 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
         _config.malformed = bool(data["malformed"])
     if "authRequired" in data:
         _config.auth_required = bool(data["authRequired"])
+    if "tokenExpiredCalls" in data:
+        _config.token_expired_calls = int(data["tokenExpiredCalls"])
+    if "tokensRejected" in data:
+        _config.tokens_rejected = bool(data["tokensRejected"])
 
     return _config
 
@@ -233,6 +247,21 @@ async def _truncate_response(response: Response) -> Response:
     )
 
 
+TOKEN_ERRORS = {
+    "tokensRejected": "Jeton refusé.",
+    "tokenExpired": "Jeton expiré.",
+}
+
+
+def _token_rejection(cfg: FailureConfig) -> str | None:
+    if cfg.tokens_rejected:
+        return "tokensRejected"
+    if cfg.token_expired_calls > 0:
+        cfg.token_expired_calls -= 1
+        return "tokenExpired"
+    return None
+
+
 async def failure_middleware(request: Request, call_next):
     path = request.url.path
     if not path.startswith(API_PREFIX):
@@ -244,6 +273,11 @@ async def failure_middleware(request: Request, call_next):
     if cfg.auth_required and not request.headers.get("authorization", "").strip():
         _inject(request, "auth")
         return JSONResponse({"error": "Authentification requise."}, status_code=401)
+
+    rejection = _token_rejection(cfg)
+    if rejection:
+        _inject(request, rejection)
+        return JSONResponse({"error": TOKEN_ERRORS[rejection]}, status_code=401)
 
     if _matches(name, cfg.fail_endpoints):
         _inject(request, "fail")

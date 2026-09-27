@@ -130,6 +130,20 @@ def test_a_missing_header_is_logged_as_an_auth_injection(client):
     assert (allowed["status"], allowed["failures"]) == (200, [])
 
 
+def test_a_refused_token_is_logged_with_why_it_was_refused(client):
+    token = {"Authorization": "Bearer token"}
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 1})
+    client.get(ENDPOINT, headers=token)
+    client.get(ENDPOINT, headers=token)
+    client.patch("/admin/failures", json={"tokensRejected": True})
+    client.get(ENDPOINT, headers=token)
+
+    expired, allowed, rejected = entries(client)
+    assert (expired["status"], expired["failures"]) == (401, [{"kind": "tokenExpired"}])
+    assert (allowed["status"], allowed["failures"]) == (200, [])
+    assert (rejected["status"], rejected["failures"]) == (401, [{"kind": "tokensRejected"}])
+
+
 def test_a_timeout_is_logged_with_how_long_it_held_the_call(client, no_sleep):
     client.patch(
         "/admin/failures",

@@ -33,6 +33,10 @@ def fixed_random(monkeypatch):
     return apply
 
 
+def bearer(token):
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.mark.parametrize(
     "raw,expected",
     [
@@ -95,6 +99,8 @@ def test_a_fresh_config_is_the_default_one():
     assert not FailureConfig(malformed=True).is_default()
     assert not FailureConfig(timeout_duration_s=5.0).is_default()
     assert not FailureConfig(fail_endpoints={"listeCours"}).is_default()
+    assert not FailureConfig(token_expired_calls=1).is_default()
+    assert not FailureConfig(tokens_rejected=True).is_default()
 
 
 def test_a_config_renders_a_fixed_latency_as_a_number_and_a_range_as_text():
@@ -117,6 +123,8 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("TIMEOUT_DURATION_S", "12.5")
     monkeypatch.setenv("MALFORMED", "true")
     monkeypatch.setenv("AUTH_REQUIRED", "yes")
+    monkeypatch.setenv("TOKEN_EXPIRED_CALLS", "3")
+    monkeypatch.setenv("TOKENS_REJECTED", "on")
 
     config = failures.load_from_env()
 
@@ -127,6 +135,8 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     assert config.timeout_duration_s == 12.5
     assert config.malformed is True
     assert config.auth_required is True
+    assert config.token_expired_calls == 3
+    assert config.tokens_rejected is True
 
 
 def test_an_empty_environment_boots_the_default_config(monkeypatch):
@@ -138,6 +148,8 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         "TIMEOUT_DURATION_S",
         "MALFORMED",
         "AUTH_REQUIRED",
+        "TOKEN_EXPIRED_CALLS",
+        "TOKENS_REJECTED",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -153,6 +165,10 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         ("ERROR_RATE", "-0.5"),
         ("TIMEOUT_DURATION_S", "abc"),
         ("TIMEOUT_DURATION_S", "-1"),
+        ("TIMEOUT_DURATION_S", "inf"),
+        ("TOKEN_EXPIRED_CALLS", "abc"),
+        ("TOKEN_EXPIRED_CALLS", "1.5"),
+        ("TOKEN_EXPIRED_CALLS", "-1"),
     ],
 )
 def test_a_broken_environment_value_falls_back_to_the_default(monkeypatch, name, value):
@@ -196,6 +212,9 @@ def test_a_broken_latency_patch_is_rejected():
         {"errorRate": 1.5},
         {"errorRate": -0.1},
         {"timeoutDurationS": -1},
+        {"timeoutDurationS": float("inf")},
+        {"tokenExpiredCalls": -1},
+        {"tokenExpiredCalls": 1.5},
         {"inconnu": True},
     ],
 )
@@ -232,6 +251,26 @@ def test_the_admin_endpoint_rejects_unknown_fields(client):
     assert client.patch("/admin/failures", json={"inconnu": 1}).status_code == 422
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"errorRate": Infinity}',
+        '{"errorRate": NaN}',
+        '{"timeoutDurationS": 1e400}',
+        '{"latencyMs": Infinity}',
+    ],
+)
+def test_the_admin_endpoint_rejects_a_non_finite_number(client, body):
+    response = client.patch(
+        "/admin/failures",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]
+    assert failures.get_config().is_default()
+
+
 def test_a_required_header_turns_api_calls_into_401s(client):
     client.patch("/admin/failures", json={"authRequired": True})
 
@@ -246,6 +285,44 @@ def test_a_required_header_turns_api_calls_into_401s(client):
 def test_a_blank_authorization_header_does_not_count(client):
     client.patch("/admin/failures", json={"authRequired": True})
     assert client.get(ENDPOINT, headers={"Authorization": "   "}).status_code == 401
+
+
+def test_an_expired_token_fails_the_next_calls_then_lets_them_through(client):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 2})
+
+    first = client.get(ENDPOINT, headers=bearer("abc"))
+    assert first.status_code == 401
+    assert first.json() == {"error": "Jeton expiré."}
+    assert client.get("/admin/failures").json()["tokenExpiredCalls"] == 1
+
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 401
+    assert client.get(ENDPOINT, headers=bearer("abc")).status_code == 200
+    assert failures.get_config().is_default()
+
+
+def test_an_expired_token_counts_calls_without_a_token_too(client):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 1})
+
+    assert client.get(ENDPOINT).status_code == 401
+    assert client.get(ENDPOINT).status_code == 200
+
+
+def test_only_api_calls_use_up_an_expired_token(client, session):
+    client.patch("/admin/failures", json={"tokenExpiredCalls": 1})
+
+    client.get("/admin/failures")
+    client.get(f"/editor/api/state?session={session}")
+
+    assert failures.get_config().token_expired_calls == 1
+
+
+def test_rejected_tokens_turn_every_api_call_into_a_401(client):
+    client.patch("/admin/failures", json={"tokensRejected": True})
+
+    for headers in (bearer("abc"), bearer("null"), {}):
+        response = client.get(ENDPOINT, headers=headers)
+        assert response.status_code == 401
+        assert response.json() == {"error": "Jeton refusé."}
 
 
 def test_a_failing_endpoint_returns_503(client):
@@ -264,7 +341,10 @@ def test_the_wildcard_fails_every_api_endpoint(client):
 
 
 def test_failure_injection_leaves_the_editor_and_admin_alone(client, session):
-    client.patch("/admin/failures", json={"failEndpoints": ["*"], "authRequired": True})
+    client.patch(
+        "/admin/failures",
+        json={"failEndpoints": ["*"], "authRequired": True, "tokensRejected": True},
+    )
 
     assert client.get("/admin/failures").status_code == 200
     assert client.get(f"/editor/api/state?session={session}").status_code == 200
