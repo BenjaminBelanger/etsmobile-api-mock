@@ -86,10 +86,10 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 The **Instantanés** tab saves the mock state under a name: profile, scenario,
 generation options, calendar position, schedule edits, student profile edits
-and Pannes. **Personnel** snapshots go to `snapshots/personal/` (ignored by
-git), **Partagé** ones to `snapshots/shared/` for committing. Loading one
-applies it to the running server; a dev-mode code reload falls back to the
-startup settings but keeps the loaded edits.
+and Pannes. Snapshots are saved in `snapshots/`, which git ignores: to share
+one, export it and import the file on the other machine. Loading one applies
+it to the running server; a dev-mode code reload falls back to the startup
+settings but keeps the loaded edits.
 
 The calendar position is the week of the active session, or between sessions
 once it has ended, plus the days off before the next session (between
@@ -102,12 +102,10 @@ set to the save date. Replaced days from `lireJoursRemplaces` never move.
 
 ```bash
 python start.py --snapshot "examen final"
-python start.py --snapshot shared/demo --snapshot-dates exact --no-snapshot-failures
+python start.py --snapshot demo --snapshot-dates exact --no-snapshot-failures
 ```
 
-`--snapshot` (alias `--preset`) can't be combined with the other setup flags. A
-name saved both as personal and shared needs its `personal/` or `shared/`
-prefix.
+`--snapshot` (alias `--preset`) can't be combined with the other setup flags.
 
 ### Front-end build
 

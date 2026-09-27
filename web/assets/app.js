@@ -2670,11 +2670,6 @@ async function removeMarker(button) {
 
 const SNAPSHOT_API = `${API}/snapshots`;
 
-const SNAPSHOT_SCOPES = [
-  { scope: "personal", title: "Personnels", icon: "person", empty: "Aucun instantané personnel." },
-  { scope: "shared", title: "Partagés", icon: "people", empty: "Aucun instantané partagé." },
-];
-
 const mondayOf = (iso) => {
   const day = new Date(`${iso}T00:00:00`);
   day.setDate(day.getDate() - ((day.getDay() + 6) % 7));
@@ -2818,7 +2813,6 @@ function snapshotTags(item) {
 
 function snapshotHtml(item) {
   const name = escapeHtml(item.name);
-  const shared = item.scope === "shared";
   const tags = snapshotTags(item)
     .map(
       (tag) => `<span class="tag${tag.warn ? " tag--warn" : ""}"${
@@ -2826,7 +2820,7 @@ function snapshotHtml(item) {
       }>${escapeHtml(tag.text)}</span>`
     )
     .join("");
-  return `<li class="snapshot" data-scope="${item.scope}" data-id="${escapeHtml(item.id)}">
+  return `<li class="snapshot" data-id="${escapeHtml(item.id)}">
       <div class="snapshot__main">
         <span class="snapshot__name">${name}</span>
         <span class="snapshot__meta">${escapeHtml(item.anchor.session)} · ${escapeHtml(fmtSavedAt(item))}</span>
@@ -2836,9 +2830,6 @@ function snapshotHtml(item) {
         <fluent-button appearance="primary" size="small" data-act="load">Charger</fluent-button>
         <fluent-button appearance="subtle" size="small" icon-only data-act="export"
           title="Exporter" aria-label="Exporter : ${name}">${icon("download", 16)}</fluent-button>
-        <fluent-button appearance="subtle" size="small" icon-only data-act="move"
-          title="${shared ? "Rendre personnel" : "Partager"}"
-          aria-label="${shared ? "Rendre personnel" : "Partager"} : ${name}">${icon(shared ? "person" : "people", 16)}</fluent-button>
         <fluent-button appearance="subtle" size="small" icon-only data-act="delete"
           title="Supprimer" aria-label="Supprimer : ${name}">${icon("delete", 16)}</fluent-button>
       </div>
@@ -2849,20 +2840,9 @@ function renderSnapshotList() {
   const items = state.snapshots?.snapshots || [];
   el.snapshotEmpty.hidden = items.length > 0;
   el.snapshotList.hidden = !items.length;
-  el.snapshotList.innerHTML = items.length
-    ? SNAPSHOT_SCOPES.map(({ scope, title, icon: iconName, empty }) => {
-        const group = items.filter((item) => item.scope === scope);
-        const body = group.length
-          ? `<ul class="snapshot-group__list">${group.map(snapshotHtml).join("")}</ul>`
-          : `<p class="snapshot-group__empty">${empty}</p>`;
-        return `<section class="snapshot-group" data-group="${scope}">
-            <h2 class="snapshot-group__title">${icon(iconName, 16)}${title}<span class="snapshot-group__count">${group.length}</span></h2>
-            ${body}
-          </section>`;
-      }).join("")
-    : "";
+  el.snapshotList.innerHTML = items.map(snapshotHtml).join("");
   el.snapshotList.querySelectorAll(".snapshot").forEach((row) => {
-    const item = items.find((i) => i.scope === row.dataset.scope && i.id === row.dataset.id);
+    const item = items.find((i) => i.id === row.dataset.id);
     row.querySelectorAll("[data-act]").forEach((node) =>
       node.addEventListener("click", () => runSnapshotAction(item, node.dataset.act))
     );
@@ -2970,15 +2950,13 @@ async function submitSnapshotSave() {
     el.fSnapshotName.focus();
     return;
   }
-  const scope = checkedValue(el.snapshotSaveForm, "snapshotScope") || "personal";
   const result = await snapshotRequest(
     "/save",
-    { name, scope, overwrite: state.snapshotOverwrite },
+    { name, overwrite: state.snapshotOverwrite },
     { quiet409: true }
   );
   if (result.conflict) {
-    const where = scope === "shared" ? "partagé" : "personnel";
-    setSaveConflict(`Un instantané ${where} porte déjà ce nom. Enregistrez à nouveau pour le remplacer.`);
+    setSaveConflict("Un instantané porte déjà ce nom. Enregistrez à nouveau pour le remplacer.");
     return;
   }
   if (result.data) {
@@ -3087,7 +3065,6 @@ async function submitSnapshotLoad() {
   if (!item) return;
   const applied = (id) => !!el.fSnapshotParts.querySelector(`#${id}`)?.checked;
   const body = {
-    scope: item.scope,
     id: item.id,
     dates: checkedValue(el.snapshotLoadForm, "snapshotDates") || "week",
     schedule: applied("fSnapshotSchedule"),
@@ -3117,33 +3094,24 @@ function askSnapshot({ title, text, action, run }) {
 
 function downloadSnapshot(item) {
   const link = document.createElement("a");
-  link.href = `${SNAPSHOT_API}/export?scope=${encodeURIComponent(item.scope)}&id=${encodeURIComponent(item.id)}`;
+  link.href = `${SNAPSHOT_API}/export?id=${encodeURIComponent(item.id)}`;
   link.download = `${item.id}.json`;
   document.body.appendChild(link);
   link.click();
   link.remove();
 }
 
-async function moveSnapshot(item) {
-  const to = item.scope === "shared" ? "personal" : "shared";
-  const result = await snapshotRequest("/move", { scope: item.scope, id: item.id, to });
-  if (result.data) {
-    toast(to === "shared" ? `« ${item.name} » partagé` : `« ${item.name} » rendu personnel`);
-  }
-}
-
 function runSnapshotAction(item, action) {
   if (!item) return;
   if (action === "load") openSnapshotLoad(item);
   else if (action === "export") downloadSnapshot(item);
-  else if (action === "move") moveSnapshot(item);
   else if (action === "delete") {
     askSnapshot({
       title: `Supprimer « ${item.name} » ?`,
-      text: `Le fichier snapshots/${item.scope}/${item.id}.json sera supprimé.`,
+      text: `Le fichier snapshots/${item.id}.json sera supprimé.`,
       action: "Supprimer",
       run: () =>
-        snapshotRequest("/delete", { scope: item.scope, id: item.id }).then((result) => {
+        snapshotRequest("/delete", { id: item.id }).then((result) => {
           if (result.data) toast("Instantané supprimé");
         }),
     });
@@ -3153,13 +3121,13 @@ function runSnapshotAction(item, action) {
 async function importSnapshot(snapshot, overwrite = false) {
   const result = await snapshotRequest(
     "/import",
-    { snapshot, scope: "personal", overwrite },
+    { snapshot, overwrite },
     { quiet409: true }
   );
   if (result.conflict) {
     askSnapshot({
       title: `Remplacer « ${snapshot.name} » ?`,
-      text: "Un instantané personnel porte déjà ce nom. Il sera remplacé par le fichier importé.",
+      text: "Un instantané porte déjà ce nom. Il sera remplacé par le fichier importé.",
       action: "Remplacer",
       run: () => importSnapshot(snapshot, true),
     });

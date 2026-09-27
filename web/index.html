@@ -237,7 +237,7 @@
 
       <main class="layout" id="snapshotsView" hidden>
         <section class="board board--list" id="snapshotsBoard">
-          <div class="snapshots" id="snapshotList"></div>
+          <ul class="snapshots" id="snapshotList"></ul>
           <div class="board__empty" id="snapshotEmpty" hidden>
             <p>Aucun instantané. Enregistrez l’état actuel pour le retrouver plus tard ou le partager.</p>
           </div>
@@ -355,26 +355,9 @@
             <fluent-label slot="label" required>Nom</fluent-label>
             <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Examen final demain" aria-label="Nom de l’instantané"></fluent-text-input>
           </fluent-field>
-
-          <fieldset class="choices" id="fSnapshotScope">
-            <legend class="choices__legend">Visibilité</legend>
-            <label class="choice">
-              <input type="radio" name="snapshotScope" value="personal" checked />
-              <span class="choice__text">
-                <span class="choice__title">Personnel</span>
-                <span class="choice__hint">Dans snapshots/personal, ignoré par git.</span>
-              </span>
-            </label>
-            <label class="choice">
-              <input type="radio" name="snapshotScope" value="shared" />
-              <span class="choice__text">
-                <span class="choice__title">Partagé</span>
-                <span class="choice__hint">Dans snapshots/shared, à committer pour les autres devs.</span>
-              </span>
-            </label>
-          </fieldset>
         </form>
         <p class="dialog__hint">Comprend le profil, le scénario, la semaine, les options de génération, l’horaire modifié, le profil étudiant et les pannes actives.</p>
+        <p class="dialog__hint">Enregistré dans snapshots/, ignoré par git. Exportez-le pour le partager.</p>
         <p class="dialog__hint dialog__hint--warn" id="snapshotSaveConflict" hidden></p>
 
         <fluent-button slot="action" appearance="secondary" data-close-snapshot-save>Annuler</fluent-button>

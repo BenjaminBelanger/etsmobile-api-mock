@@ -485,7 +485,6 @@ const SNAPSHOTS = "/editor/api/snapshots";
 
 export const SNAPSHOT_ITEMS = [
   {
-    scope: "personal",
     id: "demo",
     name: "Démo",
     savedAt: "2026-09-25T14:03",
@@ -496,7 +495,6 @@ export const SNAPSHOT_ITEMS = [
     student: ["prenom"],
   },
   {
-    scope: "shared",
     id: "examen-final",
     name: "Examen final",
     savedAt: "2026-12-22T09:30",
@@ -539,7 +537,7 @@ function createSnapshots(options) {
 
   const payload = (extra = {}) => ({ snapshots: clone(items), current: clone(current), ...extra });
   const add = (item) => {
-    items = [...items.filter((i) => !(i.scope === item.scope && i.id === item.id)), item];
+    items = [...items.filter((i) => i.id !== item.id), item];
   };
 
   const snapshots = {
@@ -584,18 +582,14 @@ function createSnapshots(options) {
       let extra = {};
       if (path === "/save") {
         const id = slug(body.name);
-        add({ ...clone(SNAPSHOT_ITEMS[0]), scope: body.scope, id, name: body.name });
-        extra = { saved: { scope: body.scope, id } };
+        add({ ...clone(SNAPSHOT_ITEMS[0]), id, name: body.name });
+        extra = { saved: id };
       } else if (path === "/import") {
         const id = slug(body.snapshot.name);
-        add({ ...clone(SNAPSHOT_ITEMS[0]), scope: body.scope, id, name: body.snapshot.name });
-        extra = { saved: { scope: body.scope, id } };
+        add({ ...clone(SNAPSHOT_ITEMS[0]), id, name: body.snapshot.name });
+        extra = { saved: id };
       } else if (path === "/delete") {
-        items = items.filter((i) => !(i.scope === body.scope && i.id === body.id));
-      } else if (path === "/move") {
-        items = items.map((i) =>
-          i.scope === body.scope && i.id === body.id ? { ...i, scope: body.to } : i
-        );
+        items = items.filter((i) => i.id !== body.id);
       } else if (path === "/load") {
         extra = { notices: clone(options.notices || []) };
       }

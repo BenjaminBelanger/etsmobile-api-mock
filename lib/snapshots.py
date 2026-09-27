@@ -12,7 +12,6 @@ from ._env import env_bool
 from ._paths import ROOT
 
 FORMAT = 2
-SCOPES = ("personal", "shared")
 DATE_MODES = ("week", "exact")
 DEFAULT_DATE_MODE = "week"
 CALENDAR_SETUP = ("semesterWeek", "betweenSessions", "semesterGap", "noNextSession")
@@ -51,17 +50,10 @@ def slugify(name: str) -> str:
     return slug[:60].strip("-")
 
 
-def _folder(scope: str) -> Path:
-    if scope not in SCOPES:
-        raise SnapshotError(f"Unknown scope '{scope}'")
-    return snapshots_dir() / scope
-
-
-def _path(scope: str, snapshot_id: str) -> Path:
-    folder = _folder(scope)
+def _path(snapshot_id: str) -> Path:
     if not _ID_RE.fullmatch(snapshot_id or ""):
         raise SnapshotError(f"Invalid snapshot id '{snapshot_id}'")
-    return folder / f"{snapshot_id}.json"
+    return snapshots_dir() / f"{snapshot_id}.json"
 
 
 def clean_name(name) -> str:
@@ -130,9 +122,8 @@ def validate(raw) -> dict:
     return snapshot
 
 
-def summary(scope: str, snapshot_id: str, snapshot: dict) -> dict:
+def summary(snapshot_id: str, snapshot: dict) -> dict:
     return {
-        "scope": scope,
         "id": snapshot_id,
         "name": snapshot["name"],
         "savedAt": snapshot.get("savedAt", ""),
@@ -146,34 +137,33 @@ def summary(scope: str, snapshot_id: str, snapshot: dict) -> dict:
 
 def list_all() -> list[dict]:
     items = []
-    for scope in SCOPES:
-        for path in _folder(scope).glob("*.json"):
-            try:
-                snapshot = validate(json.loads(path.read_text(encoding="utf-8")))
-            except (OSError, ValueError):
-                continue
-            items.append(summary(scope, path.stem, snapshot))
-    items.sort(key=lambda item: (SCOPES.index(item["scope"]), item["name"].lower()))
+    for path in snapshots_dir().glob("*.json"):
+        try:
+            snapshot = validate(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, ValueError):
+            continue
+        items.append(summary(path.stem, snapshot))
+    items.sort(key=lambda item: item["name"].lower())
     return items
 
 
-def read(scope: str, snapshot_id: str) -> dict:
-    path = _path(scope, snapshot_id)
+def read(snapshot_id: str) -> dict:
+    path = _path(snapshot_id)
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
-        raise SnapshotError(f"Snapshot '{scope}/{snapshot_id}' not found") from exc
+        raise SnapshotError(f"Snapshot '{snapshot_id}' not found") from exc
     except (OSError, json.JSONDecodeError) as exc:
-        raise SnapshotError(f"Snapshot '{scope}/{snapshot_id}' is unreadable") from exc
+        raise SnapshotError(f"Snapshot '{snapshot_id}' is unreadable") from exc
     return validate(raw)
 
 
-def write(scope: str, snapshot: dict, *, overwrite: bool = False) -> str:
+def write(snapshot: dict, *, overwrite: bool = False) -> str:
     snapshot = validate(snapshot)
     snapshot_id = slugify(snapshot["name"])
-    path = _path(scope, snapshot_id)
+    path = _path(snapshot_id)
     if path.exists() and not overwrite:
-        existing = read(scope, snapshot_id)["name"]
+        existing = read(snapshot_id)["name"]
         raise SnapshotConflict(f"A snapshot named '{existing}' already exists")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -182,32 +172,23 @@ def write(scope: str, snapshot: dict, *, overwrite: bool = False) -> str:
     return snapshot_id
 
 
-def delete(scope: str, snapshot_id: str) -> None:
-    path = _path(scope, snapshot_id)
+def delete(snapshot_id: str) -> None:
+    path = _path(snapshot_id)
     if not path.exists():
-        raise SnapshotError(f"Snapshot '{scope}/{snapshot_id}' not found")
+        raise SnapshotError(f"Snapshot '{snapshot_id}' not found")
     path.unlink()
 
 
-def move(scope: str, snapshot_id: str, target: str) -> str:
-    if target == scope:
-        raise SnapshotError(f"Snapshot '{scope}/{snapshot_id}' is already {scope}")
-    snapshot = read(scope, snapshot_id)
-    new_id = write(target, snapshot)
-    delete(scope, snapshot_id)
-    return new_id
-
-
-def find(reference: str) -> list[tuple[str, str]]:
-    scope, _, name = reference.rpartition("/")
-    scopes = [scope] if scope in SCOPES else list(SCOPES)
-    wanted = {name.strip().lower(), slugify(name)}
-    return [
-        (item["scope"], item["id"])
-        for item in list_all()
-        if item["scope"] in scopes
-        and (item["id"] in wanted or item["name"].lower() in wanted)
-    ]
+def find(reference: str) -> str | None:
+    wanted = {reference.strip().lower(), slugify(reference)}
+    return next(
+        (
+            item["id"]
+            for item in list_all()
+            if item["id"] in wanted or item["name"].lower() in wanted
+        ),
+        None,
+    )
 
 
 def position(active: dict, upcoming: dict | None, today: date) -> dict:

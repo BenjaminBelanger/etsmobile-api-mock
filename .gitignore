@@ -15,4 +15,4 @@ mock.config.json
 node_modules/
 .pytest-tmp/
 
-snapshots/personal/
+snapshots/

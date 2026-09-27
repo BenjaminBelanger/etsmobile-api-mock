@@ -98,25 +98,20 @@ def get_state() -> dict:
     return {"snapshots": snapshots.list_all(), "current": current()}
 
 
-def save(name: str, scope: str, overwrite: bool = False) -> dict:
+def save(name: str, overwrite: bool = False) -> dict:
     snapshot = capture(snapshots.clean_name(name))
-    snapshot_id = snapshots.write(scope, snapshot, overwrite=overwrite)
-    return {**get_state(), "saved": {"scope": scope, "id": snapshot_id}}
+    snapshot_id = snapshots.write(snapshot, overwrite=overwrite)
+    return {**get_state(), "saved": snapshot_id}
 
 
-def import_snapshot(raw, scope: str, overwrite: bool = False) -> dict:
-    snapshot_id = snapshots.write(scope, raw, overwrite=overwrite)
-    return {**get_state(), "saved": {"scope": scope, "id": snapshot_id}}
+def import_snapshot(raw, overwrite: bool = False) -> dict:
+    snapshot_id = snapshots.write(raw, overwrite=overwrite)
+    return {**get_state(), "saved": snapshot_id}
 
 
-def delete(scope: str, snapshot_id: str) -> dict:
-    snapshots.delete(scope, snapshot_id)
+def delete(snapshot_id: str) -> dict:
+    snapshots.delete(snapshot_id)
     return get_state()
-
-
-def move(scope: str, snapshot_id: str, target: str) -> dict:
-    new_id = snapshots.move(scope, snapshot_id, target)
-    return {**get_state(), "saved": {"scope": target, "id": new_id}}
 
 
 def _check_setup(setup: dict) -> None:
@@ -142,7 +137,6 @@ def _apply(setup_env, schedule, student, failure_config) -> None:
 
 
 def load(
-    scope: str,
     snapshot_id: str,
     mode: str = snapshots.DEFAULT_DATE_MODE,
     *,
@@ -150,7 +144,7 @@ def load(
     student: bool = True,
     include_failures: bool = True,
 ) -> dict:
-    snapshot = snapshots.read(scope, snapshot_id)
+    snapshot = snapshots.read(snapshot_id)
     with schedule_editor._lock, student_editor._lock:
         previous = (
             data_store.runtime_setup(),

@@ -117,13 +117,11 @@ class SessionDateBody(BaseModel):
 
 
 class SnapshotRef(BaseModel):
-    scope: str
     id: str
 
 
 class SnapshotSaveBody(BaseModel):
     name: str
-    scope: str = "personal"
     overwrite: bool = False
 
 
@@ -134,13 +132,8 @@ class SnapshotLoadBody(SnapshotRef):
     failures: bool = True
 
 
-class SnapshotMoveBody(SnapshotRef):
-    to: str
-
-
 class SnapshotImportBody(BaseModel):
     snapshot: dict
-    scope: str = "personal"
     overwrite: bool = False
 
 
@@ -358,14 +351,13 @@ def snapshot_list():
 
 @router.post("/api/snapshots/save")
 def snapshot_save(body: SnapshotSaveBody):
-    return _guard(snapshot_editor.save, body.name, body.scope, body.overwrite)
+    return _guard(snapshot_editor.save, body.name, body.overwrite)
 
 
 @router.post("/api/snapshots/load")
 def snapshot_load(body: SnapshotLoadBody):
     return _guard(
         snapshot_editor.load,
-        body.scope,
         body.id,
         body.dates,
         schedule=body.schedule,
@@ -376,24 +368,17 @@ def snapshot_load(body: SnapshotLoadBody):
 
 @router.post("/api/snapshots/delete")
 def snapshot_delete(body: SnapshotRef):
-    return _guard(snapshot_editor.delete, body.scope, body.id)
-
-
-@router.post("/api/snapshots/move")
-def snapshot_move(body: SnapshotMoveBody):
-    return _guard(snapshot_editor.move, body.scope, body.id, body.to)
+    return _guard(snapshot_editor.delete, body.id)
 
 
 @router.post("/api/snapshots/import")
 def snapshot_import(body: SnapshotImportBody):
-    return _guard(
-        snapshot_editor.import_snapshot, body.snapshot, body.scope, body.overwrite
-    )
+    return _guard(snapshot_editor.import_snapshot, body.snapshot, body.overwrite)
 
 
 @router.get("/api/snapshots/export")
-def snapshot_export(scope: str = Query(...), id: str = Query(...)):
-    snapshot = _guard(snapshots.read, scope, id)
+def snapshot_export(id: str = Query(...)):
+    snapshot = _guard(snapshots.read, id)
     return Response(
         json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n",
         media_type="application/json",

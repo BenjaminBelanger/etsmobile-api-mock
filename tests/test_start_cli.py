@@ -628,8 +628,7 @@ def test_saving_a_snapshot_does_not_restart_the_server(monkeypatch, tmp_path):
     )
     folder = start.snapshots.snapshots_dir()
 
-    assert not watches(folder / "shared" / "demo.json")
-    assert not watches(folder / "personal" / "demo.json")
+    assert not watches(folder / "demo.json")
     assert not watches(ROOT / "seed" / start.OVERRIDES_FILENAME)
     assert not watches(ROOT / "seed" / start.STUDENT_OVERRIDES_FILENAME)
     assert watches(ROOT / "seed" / "courses.json")
@@ -641,13 +640,13 @@ def test_reload_options_survive_the_glob_expansion_of_the_uvicorn_cli(
 ):
     import glob
 
-    start.snapshots.write("shared", snapshot_body())
+    start.snapshots.write(snapshot_body())
     options = reload_options(monkeypatch, tmp_path)
     cwd = start.snapshots.snapshots_dir().parent
 
     for value in options["--reload-include"] + options["--reload-exclude"]:
         assert glob.glob(value, root_dir=cwd) in ([], [value]), value
-    assert glob.glob("snapshots/*/*.json", root_dir=cwd)
+    assert glob.glob("snapshots/*.json", root_dir=cwd)
 
 
 def snapshot_body(**changes):
@@ -682,8 +681,8 @@ BETWEEN_NO_NEXT = {
 
 @pytest.fixture
 def saved_snapshot():
-    start.snapshots.write("shared", snapshot_body())
-    return "shared/examen-final"
+    start.snapshots.write(snapshot_body())
+    return "examen-final"
 
 
 def started_with(monkeypatch, *argv):
@@ -717,7 +716,7 @@ def test_a_snapshot_turns_its_setup_and_position_into_the_env_vars(
 
 
 def test_a_snapshot_saved_between_sessions_starts_between_sessions(monkeypatch):
-    start.snapshots.write("shared", snapshot_body(anchor=BETWEEN_NO_NEXT))
+    start.snapshots.write(snapshot_body(anchor=BETWEEN_NO_NEXT))
 
     overrides, _, _, calendar, _ = started_with(monkeypatch, "--snapshot", "examen-final")
 
@@ -741,7 +740,7 @@ def test_exact_dates_leave_the_calendar_as_saved(saved_snapshot, monkeypatch):
 
 
 def test_exact_dates_still_hide_the_next_session(monkeypatch):
-    start.snapshots.write("shared", snapshot_body(anchor=BETWEEN_NO_NEXT))
+    start.snapshots.write(snapshot_body(anchor=BETWEEN_NO_NEXT))
 
     overrides, _, _, calendar, _ = started_with(
         monkeypatch, "--snapshot", "examen-final", "--snapshot-dates", "exact"
@@ -782,7 +781,7 @@ def test_a_snapshot_is_written_after_the_old_overrides_are_cleared(
     saved_snapshot, monkeypatch, tmp_path
 ):
     fake_start(monkeypatch, tmp_path)
-    snapshot = start.snapshots.read("shared", "examen-final")
+    snapshot = start.snapshots.read("examen-final")
     plan = start.snapshots.plan(snapshot, schedule=False)
 
     start._start_server({}, "normal", "none", None, plan)
@@ -796,7 +795,7 @@ def test_a_skipped_student_profile_starts_from_the_default_one(
     saved_snapshot, monkeypatch, tmp_path
 ):
     fake_start(monkeypatch, tmp_path)
-    snapshot = start.snapshots.read("shared", "examen-final")
+    snapshot = start.snapshots.read("examen-final")
     plan = start.snapshots.plan(snapshot, student=False)
 
     start._start_server({}, "normal", "none", None, plan)
@@ -826,24 +825,14 @@ def test_snapshot_flag_mistakes_are_rejected(saved_snapshot, argv, monkeypatch):
     assert exc.value.code == 2
 
 
-def test_a_name_in_both_scopes_must_be_qualified(saved_snapshot, monkeypatch, capsys):
-    start.snapshots.write("personal", snapshot_body())
-    monkeypatch.setattr(start, "_start_server", lambda *a: pytest.fail("nothing should start"))
-
-    with pytest.raises(SystemExit):
-        start.main(["--snapshot", "examen-final"])
-
-    assert "personal/examen-final ou shared/examen-final" in capsys.readouterr().err
-
-
 def test_the_help_lists_the_saved_snapshots_with_their_position(saved_snapshot, capsys):
     with pytest.raises(SystemExit):
         start._build_parser().parse_args(["--help"])
 
     printed = capsys.readouterr().out
-    assert "shared/examen-final" in printed
+    assert "examen-final" in printed
     assert (
-        "Examen final (partagé, A2026 semaine 4, congé de 16 jours, "
+        "Examen final (A2026 semaine 4, congé de 16 jours, "
         "enregistré le vendredi 2026-09-25)"
     ) in printed
 
@@ -859,10 +848,10 @@ def test_the_help_lists_the_saved_snapshots_with_their_position(saved_snapshot, 
     ],
 )
 def test_a_snapshot_saved_between_sessions_is_labelled_so(anchor, position):
-    item = {"name": "Congé", "scope": "personal", "anchor": anchor}
+    item = {"name": "Congé", "anchor": anchor}
 
     assert start._snapshot_label(item) == (
-        f"Congé (personnel, A2026 {position}, enregistré le mardi 2026-12-22)"
+        f"Congé (A2026 {position}, enregistré le mardi 2026-12-22)"
     )
 
 
@@ -871,7 +860,7 @@ def test_the_menu_offers_snapshots_only_when_there_are_some(monkeypatch, capsys)
     start._select_profile()
     assert "instantané" not in capsys.readouterr().out
 
-    start.snapshots.write("shared", snapshot_body())
+    start.snapshots.write(snapshot_body())
     answer(monkeypatch, "i")
     assert start._select_profile() == "__snapshot__"
 
@@ -914,9 +903,7 @@ def test_the_menu_asks_the_same_things_as_the_flags(saved_snapshot, monkeypatch)
 
 
 def test_the_menu_only_asks_about_what_the_snapshot_holds(monkeypatch, capsys):
-    start.snapshots.write(
-        "shared", snapshot_body(sessions={}, student={}, failures={})
-    )
+    start.snapshots.write(snapshot_body(sessions={}, student={}, failures={}))
     left = answer(monkeypatch, "i", "1", "")
 
     _, _, _, _, plan = start._config_from_menu()

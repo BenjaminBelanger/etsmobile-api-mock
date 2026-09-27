@@ -146,72 +146,57 @@ def test_an_unusable_name_is_refused(name):
 
 
 def test_a_snapshot_is_written_listed_and_read_back(sandbox_snapshots):
-    snapshot_id = snapshots.write("shared", snapshot(name="Examen final"))
+    snapshot_id = snapshots.write(snapshot(name="Examen final"))
 
     assert snapshot_id == "examen-final"
-    assert (sandbox_snapshots / "shared" / "examen-final.json").exists()
+    assert (sandbox_snapshots / "examen-final.json").exists()
     listed = snapshots.list_all()
-    assert [(item["scope"], item["id"], item["name"]) for item in listed] == [
-        ("shared", "examen-final", "Examen final")
+    assert [(item["id"], item["name"]) for item in listed] == [
+        ("examen-final", "Examen final")
     ]
     assert listed[0]["anchor"] == anchor()
     assert listed[0]["sessions"] == ["A2026"]
     assert listed[0]["student"] == ["prenom"]
-    assert snapshots.read("shared", "examen-final")["student"] == {"prenom": "Marie"}
+    assert snapshots.read("examen-final")["student"] == {"prenom": "Marie"}
 
 
-def test_personal_snapshots_are_listed_before_shared_ones():
-    snapshots.write("shared", snapshot(name="B"))
-    snapshots.write("personal", snapshot(name="C"))
-    snapshots.write("personal", snapshot(name="A"))
+def test_snapshots_are_listed_by_name():
+    snapshots.write(snapshot(name="C"))
+    snapshots.write(snapshot(name="a"))
+    snapshots.write(snapshot(name="B"))
 
-    assert [(i["scope"], i["name"]) for i in snapshots.list_all()] == [
-        ("personal", "A"),
-        ("personal", "C"),
-        ("shared", "B"),
-    ]
+    assert [i["name"] for i in snapshots.list_all()] == ["a", "B", "C"]
 
 
 def test_an_existing_name_is_not_replaced_unless_asked():
-    snapshots.write("personal", snapshot(name="Démo"))
+    snapshots.write(snapshot(name="Démo"))
 
     with pytest.raises(SnapshotConflict):
-        snapshots.write("personal", snapshot(name="demo", student={}))
+        snapshots.write(snapshot(name="demo", student={}))
 
-    snapshots.write("personal", snapshot(name="demo", student={}), overwrite=True)
-    assert snapshots.read("personal", "demo")["student"] == {}
-
-
-def test_a_snapshot_moves_between_personal_and_shared(sandbox_snapshots):
-    snapshots.write("personal", snapshot(name="Démo"))
-
-    assert snapshots.move("personal", "demo", "shared") == "demo"
-
-    assert not (sandbox_snapshots / "personal" / "demo.json").exists()
-    assert snapshots.read("shared", "demo")["name"] == "Démo"
+    snapshots.write(snapshot(name="demo", student={}), overwrite=True)
+    assert snapshots.read("demo")["student"] == {}
 
 
 def test_a_snapshot_can_be_deleted():
-    snapshots.write("personal", snapshot())
-    snapshots.delete("personal", "mi-session")
+    snapshots.write(snapshot())
+    snapshots.delete("mi-session")
 
     assert snapshots.list_all() == []
     with pytest.raises(SnapshotError):
-        snapshots.delete("personal", "mi-session")
+        snapshots.delete("mi-session")
 
 
-@pytest.mark.parametrize(
-    "scope, snapshot_id", [("elsewhere", "demo"), ("shared", "../escape"), ("shared", "")]
-)
-def test_paths_stay_inside_the_snapshot_folders(scope, snapshot_id):
+@pytest.mark.parametrize("snapshot_id", ["../escape", "shared/demo", ""])
+def test_paths_stay_inside_the_snapshot_folder(snapshot_id):
     with pytest.raises(SnapshotError):
-        snapshots.read(scope, snapshot_id)
+        snapshots.read(snapshot_id)
 
 
 def test_unreadable_files_are_left_out_of_the_list(sandbox_snapshots):
-    snapshots.write("shared", snapshot())
-    (sandbox_snapshots / "shared" / "broken.json").write_text("{", encoding="utf-8")
-    (sandbox_snapshots / "shared" / "other.json").write_text("[]", encoding="utf-8")
+    snapshots.write(snapshot())
+    (sandbox_snapshots / "broken.json").write_text("{", encoding="utf-8")
+    (sandbox_snapshots / "other.json").write_text("[]", encoding="utf-8")
 
     assert [item["id"] for item in snapshots.list_all()] == ["mi-session"]
 
@@ -245,19 +230,11 @@ def test_every_calendar_position_is_a_valid_anchor(position):
 
 
 def test_a_snapshot_is_found_by_name_or_id():
-    snapshots.write("shared", snapshot(name="Examen final"))
+    snapshots.write(snapshot(name="Examen final"))
 
-    assert snapshots.find("Examen final") == [("shared", "examen-final")]
-    assert snapshots.find("examen-final") == [("shared", "examen-final")]
-    assert snapshots.find("shared/examen-final") == [("shared", "examen-final")]
-    assert snapshots.find("personal/examen-final") == []
-
-
-def test_a_name_used_in_both_scopes_is_ambiguous():
-    snapshots.write("shared", snapshot(name="Démo"))
-    snapshots.write("personal", snapshot(name="Démo"))
-
-    assert snapshots.find("demo") == [("personal", "demo"), ("shared", "demo")]
+    assert snapshots.find("Examen final") == "examen-final"
+    assert snapshots.find("examen-final") == "examen-final"
+    assert snapshots.find("examen") is None
 
 
 @pytest.mark.parametrize(
@@ -622,10 +599,10 @@ def test_a_break_saved_partway_through_comes_back_with_the_same_countdown(client
     saved_on = today("2026-12-22")
     data_store.reload()
     countdown = days_until_next_session(saved_on)
-    snapshots.write("personal", snapshot_editor.capture("Congé"))
+    snapshots.write(snapshot_editor.capture("Congé"))
 
     loaded_on = today("2027-02-10")
-    api(client, "/load", scope="personal", id="conge")
+    api(client, "/load", id="conge")
 
     assert countdown == 13
     assert days_until_next_session(loaded_on) == countdown
@@ -651,12 +628,12 @@ def test_the_current_calendar_is_listed_with_the_snapshots(client, today, reconf
 
 
 def test_a_snapshot_is_saved_from_the_editor(client, sandbox_snapshots):
-    state = api(client, "/save", name="Démo", scope="shared")
+    state = api(client, "/save", name="Démo")
 
-    assert state["saved"] == {"scope": "shared", "id": "demo"}
+    assert state["saved"] == "demo"
     assert [item["name"] for item in state["snapshots"]] == ["Démo"]
     assert state["current"]["session"] == data_store.ACTIVE_SESSION
-    assert json.loads((sandbox_snapshots / "shared" / "demo.json").read_text("utf-8"))
+    assert json.loads((sandbox_snapshots / "demo.json").read_text("utf-8"))
 
 
 def test_saving_over_an_existing_name_asks_first(client):
@@ -665,7 +642,7 @@ def test_saving_over_an_existing_name_asks_first(client):
     response = client.post("/editor/api/snapshots/save", json={"name": "Démo"})
 
     assert response.status_code == 409
-    assert api(client, "/save", name="Démo", overwrite=True)["saved"]["id"] == "demo"
+    assert api(client, "/save", name="Démo", overwrite=True)["saved"] == "demo"
 
 
 def test_loading_brings_every_edit_back(client):
@@ -679,7 +656,7 @@ def test_loading_brings_every_edit_back(client):
     student_editor.reset()
     failures.reset_config()
 
-    result = api(client, "/load", scope="personal", id="demo")
+    result = api(client, "/load", id="demo")
 
     assert result["notices"] == []
     assert data_store._load_overrides()[PAST] == saved_overrides[PAST]
@@ -692,9 +669,9 @@ def test_loading_brings_every_edit_back(client):
 @pytest.mark.parametrize("position", [WEEK_4, BETWEEN, LONG_BREAK, NO_NEXT])
 def test_a_loaded_snapshot_is_saved_again_in_the_same_situation(client, today, position):
     today("2027-02-10")
-    snapshots.write("personal", snapshot(anchor=anchor(position)))
+    snapshots.write(snapshot(anchor=anchor(position)))
 
-    api(client, "/load", scope="personal", id="mi-session")
+    api(client, "/load", id="mi-session")
 
     again = snapshot_editor.capture("Encore")["anchor"]
     assert again == {"session": "H2027", "date": "2027-02-10", **position}
@@ -710,9 +687,9 @@ def test_a_loaded_snapshot_is_saved_again_in_the_same_situation(client, today, p
 )
 def test_loading_replaces_the_startup_calendar_options(client, reconfigure, position, expected):
     reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
-    snapshots.write("personal", snapshot(anchor=anchor(position)))
+    snapshots.write(snapshot(anchor=anchor(position)))
 
-    result = api(client, "/load", scope="personal", id="mi-session")
+    result = api(client, "/load", id="mi-session")
 
     served = (
         data_store.SEMESTER_WEEK,
@@ -726,9 +703,9 @@ def test_loading_replaces_the_startup_calendar_options(client, reconfigure, posi
 
 def test_exact_dates_only_keep_the_hidden_next_session(client, reconfigure):
     reconfigure(SEMESTER_WEEK="3", SEMESTER_GAP="45")
-    snapshots.write("personal", snapshot(anchor=anchor(NO_NEXT)))
+    snapshots.write(snapshot(anchor=anchor(NO_NEXT)))
 
-    api(client, "/load", scope="personal", id="mi-session", dates="exact")
+    api(client, "/load", id="mi-session", dates="exact")
 
     assert data_store.SEMESTER_WEEK is None
     assert data_store.SEMESTER_GAP is None
@@ -737,9 +714,9 @@ def test_exact_dates_only_keep_the_hidden_next_session(client, reconfigure):
 
 def test_loading_changes_the_setup_without_a_restart(client):
     body = snapshot(setup={"profile": "semester-off", "scenario": "friday-off"})
-    snapshots.write("personal", body)
+    snapshots.write(body)
 
-    result = api(client, "/load", scope="personal", id="mi-session", schedule=False)
+    result = api(client, "/load", id="mi-session", schedule=False)
 
     assert data_store.PROFILE_NAME == "semester-off"
     assert data_store.SCENARIO_NAME == "friday-off"
@@ -748,8 +725,8 @@ def test_loading_changes_the_setup_without_a_restart(client):
 
 
 def test_the_loaded_setup_survives_a_data_reload(client):
-    snapshots.write("personal", snapshot(setup={"profile": "semester-off"}))
-    api(client, "/load", scope="personal", id="mi-session", schedule=False)
+    snapshots.write(snapshot(setup={"profile": "semester-off"}))
+    api(client, "/load", id="mi-session", schedule=False)
 
     assert client.post("/reload").status_code == 200
 
@@ -758,9 +735,9 @@ def test_the_loaded_setup_survives_a_data_reload(client):
 
 def test_without_the_schedule_the_current_edits_are_cleared(client):
     move_block()
-    snapshots.write("personal", snapshot())
+    snapshots.write(snapshot())
 
-    api(client, "/load", scope="personal", id="mi-session", schedule=False)
+    api(client, "/load", id="mi-session", schedule=False)
 
     assert data_store._load_overrides() == {}
     assert data_store.load_student_overrides() == {"prenom": "Marie"}
@@ -769,9 +746,9 @@ def test_without_the_schedule_the_current_edits_are_cleared(client):
 
 def test_without_the_student_profile_the_current_one_is_kept(client):
     student_editor.set_field("prenom", "Luc")
-    snapshots.write("personal", snapshot())
+    snapshots.write(snapshot())
 
-    api(client, "/load", scope="personal", id="mi-session", student=False)
+    api(client, "/load", id="mi-session", student=False)
 
     assert data_store.load_student_overrides() == {"prenom": "Luc"}
     assert student_editor.get_state()["canUndo"] is True
@@ -783,7 +760,7 @@ def test_without_the_pannes_the_current_ones_are_kept(client):
     api(client, "/save", name="Démo")
     failures.update_config(failures.FailureConfigUpdate(errorRate=0.1, malformed=True))
 
-    api(client, "/load", scope="personal", id="demo", failures=False)
+    api(client, "/load", id="demo", failures=False)
 
     assert failures.get_config().error_rate == 0.1
     assert failures.get_config().malformed is True
@@ -793,7 +770,7 @@ def test_loading_replaces_the_pannes_set_after_the_save(client):
     api(client, "/save", name="Démo")
     failures.update_config(failures.FailureConfigUpdate(malformed=True))
 
-    api(client, "/load", scope="personal", id="demo")
+    api(client, "/load", id="demo")
 
     assert failures.get_config().is_default()
 
@@ -801,11 +778,9 @@ def test_loading_replaces_the_pannes_set_after_the_save(client):
 def test_a_snapshot_that_cannot_load_leaves_everything_as_it_was(client):
     move_block()
     before = data_store._load_overrides()
-    snapshots.write("personal", snapshot(setup={"profile": "gone"}))
+    snapshots.write(snapshot(setup={"profile": "gone"}))
 
-    response = client.post(
-        "/editor/api/snapshots/load", json={"scope": "personal", "id": "mi-session"}
-    )
+    response = client.post("/editor/api/snapshots/load", json={"id": "mi-session"})
 
     assert response.status_code == 400
     assert "gone" in response.json()["error"]
@@ -814,17 +789,17 @@ def test_a_snapshot_that_cannot_load_leaves_everything_as_it_was(client):
 
 
 def test_a_snapshot_can_be_exported_and_imported(client):
-    api(client, "/save", name="Démo", scope="shared")
+    api(client, "/save", name="Démo")
 
-    exported = client.get("/editor/api/snapshots/export", params={"scope": "shared", "id": "demo"})
+    exported = client.get("/editor/api/snapshots/export", params={"id": "demo"})
 
     assert exported.status_code == 200
     assert 'filename="demo.json"' in exported.headers["content-disposition"]
     body = exported.json()
-    api(client, "/delete", scope="shared", id="demo")
+    api(client, "/delete", id="demo")
     state = api(client, "/import", snapshot=body)
-    assert state["saved"] == {"scope": "personal", "id": "demo"}
-    assert snapshots.read("personal", "demo") == body
+    assert state["saved"] == "demo"
+    assert snapshots.read("demo") == body
 
 
 def test_importing_something_else_than_a_snapshot_is_refused(client):
@@ -833,20 +808,12 @@ def test_importing_something_else_than_a_snapshot_is_refused(client):
     assert response.status_code == 400
 
 
-def test_a_snapshot_can_be_shared_from_the_editor(client):
-    api(client, "/save", name="Démo")
-
-    state = api(client, "/move", scope="personal", id="demo", to="shared")
-
-    assert [(i["scope"], i["id"]) for i in state["snapshots"]] == [("shared", "demo")]
-
-
 def test_exact_dates_bring_back_an_edited_session_date(client):
     schedule_editor.set_session_date(PAST, "dateFin", "2026-05-01")
     api(client, "/save", name="Démo")
     schedule_editor.reset_session_dates(PAST)
 
-    api(client, "/load", scope="personal", id="demo", dates="exact")
+    api(client, "/load", id="demo", dates="exact")
 
     assert data_store._load_overrides()[PAST]["dates"] == {"dateFin": "2026-05-01"}
     assert sessions.session_metadata(PAST)["dateFin"] == "2026-05-01"

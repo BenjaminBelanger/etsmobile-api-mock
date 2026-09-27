@@ -25,10 +25,9 @@ function pick(app, name, value) {
   app.fire(radio, "change");
 }
 
-async function saveAs(app, name, scope = "personal") {
+async function saveAs(app, name) {
   await app.click(app.byId("snapshotSaveBtn"));
   app.byId("fSnapshotName").value = name;
-  pick(app, "snapshotScope", scope);
   await app.click(app.byId("snapshotSaveSubmit"));
 }
 
@@ -73,11 +72,9 @@ describe("the snapshots tab", () => {
     app.close();
   });
 
-  test("lists personal snapshots before shared ones", async () => {
+  test("lists the snapshots in the order they come", async () => {
     const app = await onSnapshots();
 
-    const groups = app.queryAll(".snapshot-group").map((node) => node.dataset.group);
-    assert.deepEqual(groups, ["personal", "shared"]);
     assert.deepEqual(
       rows(app).map((row) => row.querySelector(".snapshot__name").textContent),
       ["Démo", "Examen final"],
@@ -124,16 +121,6 @@ describe("the snapshots tab", () => {
 
     const tag = rowFor(app, "demo").querySelector(".tag--warn");
     assert.equal(tag.getAttribute("title"), "Latence : 100-800 ms\nErreurs aléatoires : 30 % d'erreurs");
-    app.close();
-  });
-
-  test("says so when a scope has no snapshot", async () => {
-    const app = await onSnapshots({ snapshots: [SNAPSHOT_ITEMS[0]] });
-
-    assert.equal(
-      app.query('[data-group="shared"] .snapshot-group__empty').textContent,
-      "Aucun instantané partagé.",
-    );
     app.close();
   });
 
@@ -227,28 +214,14 @@ describe("the snapshots tab", () => {
 });
 
 describe("saving a snapshot", () => {
-  test("sends the name and the chosen scope", async () => {
+  test("sends the name", async () => {
     const app = await onSnapshots();
-    await saveAs(app, "Examen demain", "shared");
+    await saveAs(app, "Examen demain");
 
-    assert.deepEqual(posted(app, "/save"), {
-      name: "Examen demain",
-      scope: "shared",
-      overwrite: false,
-    });
+    assert.deepEqual(posted(app, "/save"), { name: "Examen demain", overwrite: false });
     assert.equal(app.byId("snapshotSaveDialog").open, false);
     assert.equal(app.toast().text, "Instantané « Examen demain » enregistré");
     assert.ok(rowFor(app, "examen-demain"));
-    app.close();
-  });
-
-  test("keeps personal as the default scope", async () => {
-    const app = await onSnapshots();
-    await app.click(app.byId("snapshotSaveBtn"));
-    app.byId("fSnapshotName").value = "Démo 2";
-    await app.click(app.byId("snapshotSaveSubmit"));
-
-    assert.equal(posted(app, "/save").scope, "personal");
     app.close();
   });
 
@@ -499,7 +472,6 @@ describe("loading a snapshot", () => {
     await app.click(app.byId("snapshotLoadSubmit"));
 
     assert.deepEqual(posted(app, "/load"), {
-      scope: "personal",
       id: "demo",
       dates: "week",
       schedule: true,
@@ -539,7 +511,6 @@ describe("loading a snapshot", () => {
     await app.click(app.byId("snapshotLoadSubmit"));
 
     assert.deepEqual(posted(app, "/load"), {
-      scope: "shared",
       id: "examen-final",
       dates: "exact",
       schedule: false,
@@ -611,27 +582,13 @@ describe("managing snapshots", () => {
     await app.click(action(app, "demo", "delete"));
 
     assert.equal(app.byId("snapshotConfirmDialog").open, true);
-    assert.match(app.byId("snapshotConfirmText").textContent, /snapshots\/personal\/demo\.json/);
+    assert.match(app.byId("snapshotConfirmText").textContent, /snapshots\/demo\.json/);
     assert.equal(app.server.snapshots.called("/delete").length, 0);
 
     await app.click(app.byId("snapshotConfirmSubmit"));
 
-    assert.deepEqual(posted(app, "/delete"), { scope: "personal", id: "demo" });
+    assert.deepEqual(posted(app, "/delete"), { id: "demo" });
     assert.equal(rowFor(app, "demo"), null);
-    app.close();
-  });
-
-  test("a personal snapshot can be shared and back", async () => {
-    const app = await onSnapshots();
-    await app.click(action(app, "demo", "move"));
-
-    assert.deepEqual(posted(app, "/move"), { scope: "personal", id: "demo", to: "shared" });
-    assert.equal(rowFor(app, "demo").closest(".snapshot-group").dataset.group, "shared");
-    assert.equal(action(app, "demo", "move").getAttribute("title"), "Rendre personnel");
-
-    await app.click(action(app, "demo", "move"));
-
-    assert.deepEqual(posted(app, "/move"), { scope: "shared", id: "demo", to: "personal" });
     app.close();
   });
 
@@ -645,20 +602,19 @@ describe("managing snapshots", () => {
 
     assert.deepEqual(clicked, [
       {
-        href: "/editor/api/snapshots/export?scope=shared&id=examen-final",
+        href: "/editor/api/snapshots/export?id=examen-final",
         download: "examen-final.json",
       },
     ]);
     app.close();
   });
 
-  test("importing sends the file content as a personal snapshot", async () => {
+  test("importing sends the file content", async () => {
     const app = await onSnapshots();
     await importFile(app, JSON.stringify({ format: 1, name: "Reçu" }));
 
     assert.deepEqual(posted(app, "/import"), {
       snapshot: { format: 1, name: "Reçu" },
-      scope: "personal",
       overwrite: false,
     });
     assert.equal(app.toast().text, "Instantané « Reçu » importé");

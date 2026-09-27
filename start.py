@@ -104,8 +104,6 @@ SCENARIO_DESCRIPTIONS = {
     "none": "Aucune modification au calendrier",
 }
 
-SCOPE_LABELS = {"personal": "personnel", "shared": "partagé"}
-
 DATE_MODE_LABELS = {
     "week": "Recaler sur aujourd'hui",
     "exact": "Garder les dates enregistrées",
@@ -241,7 +239,7 @@ def _saved_weekday(anchor: dict) -> str:
 def _snapshot_label(item: dict) -> str:
     anchor = item["anchor"]
     return (
-        f"{item['name']} ({SCOPE_LABELS[item['scope']]}, {anchor['session']} "
+        f"{item['name']} ({anchor['session']} "
         f"{_position_label(anchor)}, enregistré le {_saved_weekday(anchor)} "
         f"{anchor['date']})"
     )
@@ -264,7 +262,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("instantanés (onglet Instantanés de l'éditeur):")
     items = snapshots.list_all()
     for item in items:
-        lines.append(f"  {item['scope'] + '/' + item['id']:<28}{_snapshot_label(item)}")
+        lines.append(f"  {item['id']:<28}{_snapshot_label(item)}")
     if not items:
         lines.append("  (aucun)")
     lines.append("")
@@ -281,7 +279,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("  python start.py --failures flaky")
     lines.append("  python start.py --latency 200-600 --error-rate 0.1")
     lines.append('  python start.py --snapshot "examen final"')
-    lines.append("  python start.py --snapshot shared/demo --snapshot-dates exact")
+    lines.append("  python start.py --snapshot demo --snapshot-dates exact")
     lines.append("  python start.py --app ../Notre-Dame")
     lines.append("  python start.py --app ../Notre-Dame --platform ios")
     lines.append("  python start.py --no-app")
@@ -462,7 +460,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--preset",
         dest="snapshot",
         metavar="NOM",
-        help="Instantané à charger (nom, ou shared/nom et personal/nom).",
+        help="Nom de l'instantané à charger.",
         default=None,
     )
     snapshot.add_argument(
@@ -664,7 +662,6 @@ def _failure_summary(config: dict) -> str:
 
 
 def _snapshot_config(
-    scope: str,
     snapshot_id: str,
     mode: str,
     *,
@@ -672,7 +669,7 @@ def _snapshot_config(
     student: bool = True,
     failures: bool = True,
 ) -> tuple[dict, str, str, str, snapshots.Plan]:
-    snapshot = snapshots.read(scope, snapshot_id)
+    snapshot = snapshots.read(snapshot_id)
     plan = snapshots.plan(
         snapshot, mode, schedule=schedule, student=student, failures=failures
     )
@@ -700,22 +697,15 @@ def _config_from_snapshot(
     ]
     if used:
         parser.error(f"--snapshot ne se combine pas avec {', '.join(used)}")
-    matches = snapshots.find(args.snapshot)
-    if not matches:
-        known = ", ".join(f"{i['scope']}/{i['id']}" for i in snapshots.list_all())
+    snapshot_id = snapshots.find(args.snapshot)
+    if snapshot_id is None:
+        known = ", ".join(item["id"] for item in snapshots.list_all())
         parser.error(
             f"instantané introuvable: {args.snapshot!r} "
             f"(disponibles: {known or 'aucun'})"
         )
-    if len(matches) > 1:
-        refs = " ou ".join(f"{scope}/{snapshot_id}" for scope, snapshot_id in matches)
-        parser.error(
-            f"plusieurs instantanés correspondent à {args.snapshot!r}: précisez {refs}"
-        )
-    scope, snapshot_id = matches[0]
     try:
         return _snapshot_config(
-            scope,
             snapshot_id,
             args.snapshot_dates or snapshots.DEFAULT_DATE_MODE,
             schedule=args.snapshot_schedule is not False,
@@ -1028,7 +1018,6 @@ def _config_from_snapshot_menu() -> (
         "Appliquer les pannes?",
     )
     return _snapshot_config(
-        item["scope"],
         item["id"],
         mode,
         schedule=schedule,
