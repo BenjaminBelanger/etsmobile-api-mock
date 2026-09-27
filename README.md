@@ -84,59 +84,30 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 ### Snapshots tab
 
-The **Instantanés** tab saves the whole mock state under a name, so you can
-load it again later or share it with other devs. A snapshot holds:
+The **Instantanés** tab saves the mock state under a name: profile, scenario,
+generation options, calendar position, schedule edits, student profile edits
+and Pannes. **Personnel** snapshots go to `snapshots/personal/` (ignored by
+git), **Partagé** ones to `snapshots/shared/` for committing. Loading one
+applies it to the running server; a dev-mode code reload falls back to the
+startup settings but keeps the loaded edits.
 
-- the profile, the scenario, the semester week and the generated-course options,
-- the schedule of the active and next sessions, plus every other edited
-  session (courses, week-specific changes, session dates, grades, exams),
-- the student profile edits,
-- the active Pannes.
-
-**Enregistrer l'état actuel** asks for a name and where to keep it:
-
-- **Personnel** writes `snapshots/personal/<name>.json`, which git ignores.
-- **Partagé** writes `snapshots/shared/<name>.json`. Commit it to share it.
-
-Saving an existing name asks before replacing it. Each snapshot can be exported
-as a file, imported back (imports land in **Personnel**), moved between
-personal and shared, or deleted. Snapshots are only made from the UI: there is
-no need to write or edit their JSON by hand.
-
-**Charger** replaces the current setup, schedule edits, student edits and, by
-default, the Pannes, then clears the undo history. The dialog lists the Pannes
-the snapshot carries; untick them to keep the current ones. The setup changes
-on the running server, no restart needed. A dev-mode code reload of the server
-falls back to the startup settings, but keeps the loaded edits. Dates are
-chosen when loading:
-
-- **Recaler sur aujourd'hui** (default) shifts every date by whole weeks so the
-  week the snapshot was saved in becomes the current week, in the current
-  session. If that session is shorter, the last week is used and the status bar
-  says so; séance changes that no longer fit in the session are dropped.
-- **Garder les dates enregistrées** keeps every date and session code as saved,
-  including the session calendar. Use it to reproduce a bug with the phone clock set to the
-  save date.
-- **Réglages seulement** only reapplies the profile, scenario, semester week,
-  generation options and Pannes. The schedule edits are not loaded: the
-  schedule is generated again from today. The saved student edits are loaded.
-
-The replaced days served by `lireJoursRemplaces` are never shifted: holidays
-stay on their real dates in every mode.
-
-To start the server straight from a snapshot, pick **I) Charger un instantané**
-in the `python start.py` menu, or pass its name:
+The calendar position is the week of the active session, or between sessions
+once it has ended, plus the days off before the next session, or no next
+session. **Recaler sur aujourd'hui** sets the matching
+[session calendar](#session-calendar) options so the same situation shows up
+relative to today, and moves schedule edits by whole weeks: "exam tomorrow"
+only comes back on the weekday it was saved on. **Garder les dates
+enregistrées** moves nothing, for use with the phone clock set to the save
+date. Replaced days from `lireJoursRemplaces` never move.
 
 ```bash
 python start.py --snapshot "examen final"
-python start.py --snapshot shared/demo --snapshot-dates exact
-python start.py --snapshot demo --no-snapshot-failures
+python start.py --snapshot shared/demo --snapshot-dates exact --no-snapshot-failures
 ```
 
-`--snapshot-dates` takes `week` (default), `exact` or `setup`. `--preset` is an
-alias of `--snapshot`. A name that exists both as personal and shared needs its
-`personal/` or `shared/` prefix. `--snapshot` cannot be combined with the
-profile, scenario, calendar, generation or failure flags.
+`--snapshot` (alias `--preset`) can't be combined with the other setup flags. A
+name saved both as personal and shared needs its `personal/` or `shared/`
+prefix.
 
 ### Front-end build
 

@@ -198,13 +198,26 @@ def week_count(entry: dict) -> int:
     )
 
 
-def prepare(active_code: str, next_code: str, semester_week: int | None) -> None:
+def shift_calendar(
+    active_code: str,
+    next_code: str,
+    semester_week: int | None = None,
+    between_sessions: bool = False,
+    semester_gap: int | None = None,
+) -> None:
     ensure_session_metadata(active_code)
     ensure_session_metadata(next_code)
+    delta = 0
     if semester_week is not None:
         delta = compute_week_shift_delta(active_code, semester_week)
-        shift_session_metadata(active_code, delta)
-        shift_session_metadata(next_code, delta)
+    elif between_sessions:
+        delta = compute_ended_shift_delta(active_code)
+    shift_session_metadata(active_code, delta)
+    shift_session_metadata(next_code, nearest_week_shift(delta))
+    if semester_gap is not None:
+        shift_session_metadata(
+            next_code, compute_gap_shift_delta(active_code, next_code, semester_gap)
+        )
 
 
 def compute_week_shift_delta(active_code: str, target_week: int) -> int:

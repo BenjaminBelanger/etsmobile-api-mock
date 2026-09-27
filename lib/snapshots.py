@@ -8,12 +8,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 from . import sessions
+from ._env import env_bool
 from ._paths import ROOT
 
-FORMAT = 1
+FORMAT = 2
 SCOPES = ("personal", "shared")
-DATE_MODES = ("week", "exact", "setup")
+DATE_MODES = ("week", "exact")
 DEFAULT_DATE_MODE = "week"
+CALENDAR_SETUP = ("semesterWeek", "betweenSessions", "semesterGap", "noNextSession")
 MAX_NAME_LENGTH = 80
 
 DEFAULT_PROFILE = "normal"
@@ -35,7 +37,7 @@ class Plan:
     setup: dict
     failures: dict | None
     schedule: dict
-    student: dict
+    student: dict | None
     notices: list[str] = field(default_factory=list)
 
 
@@ -83,6 +85,27 @@ def _is_iso_date(value) -> bool:
     return True
 
 
+def _is_int(value) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def _check_anchor(anchor) -> None:
+    if (
+        not isinstance(anchor, dict)
+        or not isinstance(anchor.get("session"), str)
+        or not _is_iso_date(anchor.get("date"))
+    ):
+        raise SnapshotError("The snapshot anchor needs a session and a date")
+    if ("week" in anchor) == (anchor.get("betweenSessions") is True):
+        raise SnapshotError("The snapshot anchor needs either a week or betweenSessions")
+    if "week" in anchor and not _is_int(anchor["week"]):
+        raise SnapshotError("The snapshot week must be a number")
+    if ("gap" in anchor) == (anchor.get("noNextSession") is True):
+        raise SnapshotError("The snapshot anchor needs either a gap or noNextSession")
+    if "gap" in anchor and (not _is_int(anchor["gap"]) or anchor["gap"] < 0):
+        raise SnapshotError("The snapshot gap must be a number >= 0")
+
+
 def validate(raw) -> dict:
     if not isinstance(raw, dict):
         raise SnapshotError("A snapshot must be a JSON object")
@@ -90,22 +113,11 @@ def validate(raw) -> dict:
         raise SnapshotError(f"Unsupported snapshot format {raw.get('format')!r}")
     snapshot = copy.deepcopy(raw)
     snapshot["name"] = clean_name(snapshot.get("name"))
-
-    anchor = snapshot.get("anchor")
-    if (
-        not isinstance(anchor, dict)
-        or not isinstance(anchor.get("session"), str)
-        or not isinstance(anchor.get("week"), int)
-        or not _is_iso_date(anchor.get("date"))
-    ):
-        raise SnapshotError("The snapshot anchor needs a session, a week and a date")
+    _check_anchor(snapshot.get("anchor"))
 
     setup = snapshot.get("setup")
     if not isinstance(setup, dict) or not isinstance(setup.get("profile"), str):
         raise SnapshotError("The snapshot setup needs a profile")
-    week = setup.get("semesterWeek")
-    if week is not None and (not isinstance(week, int) or week < 1):
-        raise SnapshotError("The snapshot semester week must be a number >= 1")
 
     saved = snapshot.setdefault("sessions", {})
     if not isinstance(saved, dict) or not all(
@@ -198,6 +210,22 @@ def find(reference: str) -> list[tuple[str, str]]:
     ]
 
 
+def position(active: dict, upcoming: dict | None, today: date) -> dict:
+    end = date.fromisoformat(active["dateFin"])
+    if today > end:
+        where = {"betweenSessions": True}
+    else:
+        where = {"week": sessions.week_index(date.fromisoformat(active["dateDebut"]), today)}
+    if upcoming is None:
+        return {**where, "noNextSession": True}
+    gap = (date.fromisoformat(upcoming["dateDebut"]) - end).days - 1
+    return {**where, "gap": max(gap, 0)}
+
+
+def without_calendar(setup: Mapping) -> dict:
+    return {key: value for key, value in setup.items() if key not in CALENDAR_SETUP}
+
+
 def setup_to_env(setup: Mapping) -> dict[str, str]:
     env = {"PROFILE": setup.get("profile") or DEFAULT_PROFILE}
     scenario = setup.get("scenario") or DEFAULT_SCENARIO
@@ -205,6 +233,12 @@ def setup_to_env(setup: Mapping) -> dict[str, str]:
         env["SCENARIO"] = scenario
     if setup.get("semesterWeek") is not None:
         env["SEMESTER_WEEK"] = str(setup["semesterWeek"])
+    if setup.get("betweenSessions"):
+        env["BETWEEN_SESSIONS"] = "true"
+    if setup.get("semesterGap") is not None:
+        env["SEMESTER_GAP"] = str(setup["semesterGap"])
+    if setup.get("noNextSession"):
+        env["NO_NEXT_SESSION"] = "true"
     if "courses" in setup:
         env["COURSE_COUNT"] = str(setup["courses"])
     if "days" in setup:
@@ -215,12 +249,20 @@ def setup_to_env(setup: Mapping) -> dict[str, str]:
 
 
 def setup_from_env(env: Mapping[str, str]) -> dict:
-    week = (env.get("SEMESTER_WEEK") or "").strip()
     setup = {
         "profile": env.get("PROFILE") or DEFAULT_PROFILE,
         "scenario": env.get("SCENARIO") or DEFAULT_SCENARIO,
-        "semesterWeek": int(week) if week else None,
     }
+    week = (env.get("SEMESTER_WEEK") or "").strip()
+    if week:
+        setup["semesterWeek"] = int(week)
+    if env_bool("BETWEEN_SESSIONS", env):
+        setup["betweenSessions"] = True
+    gap = (env.get("SEMESTER_GAP") or "").strip()
+    if gap:
+        setup["semesterGap"] = int(gap)
+    if env_bool("NO_NEXT_SESSION", env):
+        setup["noNextSession"] = True
     if "COURSE_COUNT" in env:
         setup["courses"] = int(env["COURSE_COUNT"])
     if "SCHEDULE_DAYS" in env:
@@ -288,12 +330,11 @@ def _schedule_entry(entry: dict, session_code: str, days: int) -> dict:
     return result
 
 
-def _target_week(active: str, saved_week: int, notices: list[str]) -> int | None:
+def _target_week(active: str, saved_week: int, notices: list[str]) -> int:
     meta = sessions.session_metadata(active)
     if meta is None:
         raise SnapshotError(f"No dates known for session '{active}'")
     count = sessions.week_count(meta)
-    week = min(max(saved_week, 1), count)
     if saved_week < 1:
         notices.append(
             f"L'instantané a été enregistré avant le début de sa session: "
@@ -304,8 +345,20 @@ def _target_week(active: str, saved_week: int, notices: list[str]) -> int | None
             f"{active} n'a que {count} semaines: la semaine {count} est utilisée "
             f"au lieu de la semaine {saved_week}."
         )
-    real_week = sessions.week_index(date.fromisoformat(meta["dateDebut"]), date.today())
-    return None if week == real_week else week
+    return min(max(saved_week, 1), count)
+
+
+def _calendar(anchor: dict, active: str, mode: str, notices: list[str]) -> dict:
+    calendar = {"noNextSession": True} if anchor.get("noNextSession") else {}
+    if mode == "exact":
+        return calendar
+    if anchor.get("betweenSessions"):
+        calendar["betweenSessions"] = True
+    else:
+        calendar["semesterWeek"] = _target_week(active, anchor["week"], notices)
+    if "gap" in anchor:
+        calendar["semesterGap"] = anchor["gap"]
+    return calendar
 
 
 def _shifted_schedule(snapshot: dict, active: str, notices: list[str]) -> dict:
@@ -363,33 +416,44 @@ def _exact_schedule(snapshot: dict) -> dict:
     return schedule
 
 
-def plan(snapshot: dict, mode: str = DEFAULT_DATE_MODE, *, failures: bool = True) -> Plan:
+def plan(
+    snapshot: dict,
+    mode: str = DEFAULT_DATE_MODE,
+    *,
+    schedule: bool = True,
+    student: bool = True,
+    failures: bool = True,
+) -> Plan:
     if mode not in DATE_MODES:
         raise SnapshotError(f"Unknown date mode '{mode}'")
     snapshot = validate(snapshot)
-    setup = copy.deepcopy(snapshot["setup"])
     notices: list[str] = []
     active = sessions.compute_active_session()
     upcoming = sessions.compute_next_session(active)
 
     sessions.reload_sessions()
-    sessions.prepare(active, upcoming, None)
-    if mode == "week":
-        setup["semesterWeek"] = _target_week(active, snapshot["anchor"]["week"], notices)
-    sessions.prepare(active, upcoming, setup.get("semesterWeek"))
+    sessions.ensure_session_metadata(active)
+    calendar = _calendar(snapshot["anchor"], active, mode, notices)
+    sessions.shift_calendar(
+        active,
+        upcoming,
+        semester_week=calendar.get("semesterWeek"),
+        between_sessions=calendar.get("betweenSessions", False),
+        semester_gap=calendar.get("semesterGap"),
+    )
 
-    if mode == "week":
-        schedule = _shifted_schedule(snapshot, active, notices)
-    elif mode == "exact":
-        schedule = _exact_schedule(snapshot)
+    if not schedule:
+        edits = {}
+    elif mode == "week":
+        edits = _shifted_schedule(snapshot, active, notices)
     else:
-        schedule = {}
+        edits = _exact_schedule(snapshot)
 
     return Plan(
-        setup=setup,
+        setup={**without_calendar(snapshot["setup"]), **calendar},
         failures=copy.deepcopy(snapshot["failures"]) if failures else None,
-        schedule=schedule,
-        student=copy.deepcopy(snapshot["student"]),
+        schedule=edits,
+        student=copy.deepcopy(snapshot["student"]) if student else None,
         notices=notices,
     )
 
@@ -404,7 +468,8 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def write_overrides(
-    schedule: dict, student: dict, schedule_path: Path, student_path: Path
+    schedule: dict, student: dict | None, schedule_path: Path, student_path: Path
 ) -> None:
     _write_json(schedule_path, schedule)
-    _write_json(student_path, student)
+    if student is not None:
+        _write_json(student_path, student)

@@ -129,6 +129,8 @@ class SnapshotSaveBody(BaseModel):
 
 class SnapshotLoadBody(SnapshotRef):
     dates: str = snapshots.DEFAULT_DATE_MODE
+    schedule: bool = True
+    student: bool = True
     failures: bool = True
 
 
@@ -361,7 +363,15 @@ def snapshot_save(body: SnapshotSaveBody):
 
 @router.post("/api/snapshots/load")
 def snapshot_load(body: SnapshotLoadBody):
-    return _guard(snapshot_editor.load, body.scope, body.id, body.dates, body.failures)
+    return _guard(
+        snapshot_editor.load,
+        body.scope,
+        body.id,
+        body.dates,
+        schedule=body.schedule,
+        student=body.student,
+        include_failures=body.failures,
+    )
 
 
 @router.post("/api/snapshots/delete")

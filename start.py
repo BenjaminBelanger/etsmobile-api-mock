@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 import uuid
+from datetime import date
 
 from lib import flutter_app, snapshots
 from lib._api import SERVER_HOST, SERVER_PORT
@@ -108,8 +109,16 @@ SCOPE_LABELS = {"personal": "personnel", "shared": "partagé"}
 DATE_MODE_LABELS = {
     "week": "Recaler sur aujourd'hui",
     "exact": "Garder les dates enregistrées",
-    "setup": "Réglages seulement",
 }
+
+SNAPSHOT_OPTIONS = (
+    "snapshot_dates",
+    "snapshot_schedule",
+    "snapshot_student",
+    "snapshot_failures",
+)
+
+WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
 def _load_profiles() -> dict:
@@ -215,11 +224,30 @@ def _app_host(raw: str) -> str:
     return raw
 
 
+def _position_label(anchor: dict) -> str:
+    where = (
+        "entre deux sessions"
+        if anchor.get("betweenSessions")
+        else f"semaine {anchor['week']}"
+    )
+    after = (
+        "aucune session suivante"
+        if anchor.get("noNextSession")
+        else f"congé de {anchor['gap']} jours"
+    )
+    return f"{where}, {after}"
+
+
+def _saved_weekday(anchor: dict) -> str:
+    return WEEKDAYS[date.fromisoformat(anchor["date"]).weekday()]
+
+
 def _snapshot_label(item: dict) -> str:
     anchor = item["anchor"]
     return (
         f"{item['name']} ({SCOPE_LABELS[item['scope']]}, {anchor['session']} "
-        f"semaine {anchor['week']}, enregistré le {anchor['date']})"
+        f"{_position_label(anchor)}, enregistré le {_saved_weekday(anchor)} "
+        f"{anchor['date']})"
     )
 
 
@@ -445,7 +473,21 @@ def _build_parser() -> argparse.ArgumentParser:
         "--snapshot-dates",
         choices=snapshots.DATE_MODES,
         help="week: recaler sur aujourd'hui (défaut); exact: garder les dates "
-        "enregistrées; setup: réglages seulement, l'horaire est régénéré.",
+        "enregistrées.",
+        default=None,
+    )
+    snapshot.add_argument(
+        "--no-snapshot-schedule",
+        dest="snapshot_schedule",
+        action="store_false",
+        help="N'applique pas l'horaire enregistré: l'horaire est régénéré.",
+        default=None,
+    )
+    snapshot.add_argument(
+        "--no-snapshot-student",
+        dest="snapshot_student",
+        action="store_false",
+        help="N'applique pas le profil étudiant enregistré.",
         default=None,
     )
     snapshot.add_argument(
@@ -626,16 +668,30 @@ def _failure_summary(config: dict) -> str:
 
 
 def _snapshot_config(
-    scope: str, snapshot_id: str, mode: str, include_failures: bool
+    scope: str,
+    snapshot_id: str,
+    mode: str,
+    *,
+    schedule: bool = True,
+    student: bool = True,
+    failures: bool = True,
 ) -> tuple[dict, str, str, str, snapshots.Plan]:
     snapshot = snapshots.read(scope, snapshot_id)
-    plan = snapshots.plan(snapshot, mode, failures=include_failures)
+    plan = snapshots.plan(
+        snapshot, mode, schedule=schedule, student=student, failures=failures
+    )
     overrides = snapshots.setup_to_env(plan.setup)
     if plan.failures:
         overrides.update(_failure_env(plan.failures))
     display = f"{plan.setup['profile']} + instantané « {snapshot['name']} »"
     scenario = plan.setup.get("scenario") or "none"
-    return overrides, display, scenario, _calendar_label(overrides), plan
+    anchor = snapshot["anchor"]
+    calendar = (
+        f"dates du {anchor['date']} ({_position_label(anchor)})"
+        if mode == "exact"
+        else _calendar_label(overrides)
+    )
+    return overrides, display, scenario, calendar, plan
 
 
 def _config_from_snapshot(
@@ -661,10 +717,14 @@ def _config_from_snapshot(
             f"plusieurs instantanés correspondent à {args.snapshot!r}: précisez {refs}"
         )
     scope, snapshot_id = matches[0]
-    mode = args.snapshot_dates or snapshots.DEFAULT_DATE_MODE
     try:
         return _snapshot_config(
-            scope, snapshot_id, mode, args.snapshot_failures is not False
+            scope,
+            snapshot_id,
+            args.snapshot_dates or snapshots.DEFAULT_DATE_MODE,
+            schedule=args.snapshot_schedule is not False,
+            student=args.snapshot_student is not False,
+            failures=args.snapshot_failures is not False,
         )
     except snapshots.SnapshotError as exc:
         parser.error(f"instantané illisible: {exc}")
@@ -916,13 +976,13 @@ def _select_snapshot() -> dict | None:
 
 def _prompt_snapshot_dates(item: dict) -> str:
     anchor = item["anchor"]
+    weekday = _saved_weekday(anchor)
     details = {
-        "week": "toutes les dates sont décalées pour qu'aujourd'hui tombe à la "
-        f"semaine {anchor['week']} de la session",
+        "week": f"retrouve la même situation aujourd'hui ({_position_label(anchor)}); "
+        "les dates avancent par semaines entières, donc enregistré un "
+        f"{weekday}, un « examen demain » ne revient qu'un {weekday}",
         "exact": f"rien n'est décalé, l'horaire garde les dates du {anchor['date']} "
         "(réglez l'horloge du téléphone)",
-        "setup": "profil, scénario, semaine, options et pannes, sans les "
-        "modifications de l'horaire",
     }
     print("\n=== Dates de l'instantané ===\n")
     for i, mode in enumerate(snapshots.DATE_MODES, 1):
@@ -941,12 +1001,10 @@ def _prompt_snapshot_dates(item: dict) -> str:
         return snapshots.DATE_MODES[idx - 1]
 
 
-def _prompt_snapshot_failures(item: dict) -> bool:
-    if not item["failures"]:
-        return False
-    print(f"\n  Pannes enregistrées: {_failure_summary(item['failures'])}")
+def _prompt_apply(saved: str, question: str) -> bool:
+    print(f"\n  {saved}")
     try:
-        confirm = input("  Appliquer les pannes? (O/n): ").strip().lower()
+        confirm = input(f"  {question} (O/n): ").strip().lower()
     except EOFError:
         confirm = "o"
     return confirm != "n"
@@ -960,8 +1018,26 @@ def _config_from_snapshot_menu() -> (
         print("Annulé.")
         return None
     mode = _prompt_snapshot_dates(item)
-    include_failures = _prompt_snapshot_failures(item)
-    return _snapshot_config(item["scope"], item["id"], mode, include_failures)
+    schedule = bool(item["sessions"]) and _prompt_apply(
+        f"Horaire enregistré: {', '.join(item['sessions'])}",
+        "Appliquer l'horaire? Sinon, il est régénéré.",
+    )
+    student = bool(item["student"]) and _prompt_apply(
+        f"Profil étudiant enregistré: {', '.join(item['student'])}",
+        "Appliquer le profil étudiant?",
+    )
+    failures = bool(item["failures"]) and _prompt_apply(
+        f"Pannes enregistrées: {_failure_summary(item['failures'])}",
+        "Appliquer les pannes?",
+    )
+    return _snapshot_config(
+        item["scope"],
+        item["id"],
+        mode,
+        schedule=schedule,
+        student=student,
+        failures=failures,
+    )
 
 
 def _clear_overrides() -> None:
@@ -1337,8 +1413,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     if args.snapshot is not None:
         config = _config_from_snapshot(parser, args)
-    elif args.snapshot_dates is not None or args.snapshot_failures is not None:
-        parser.error("--snapshot-dates et --no-snapshot-failures exigent --snapshot")
+    elif any(getattr(args, name) is not None for name in SNAPSHOT_OPTIONS):
+        parser.error("--snapshot-dates et --no-snapshot-* exigent --snapshot")
     elif interactive:
         config = _config_from_menu()
     else:

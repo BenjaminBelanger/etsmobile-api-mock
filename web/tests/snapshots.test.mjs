@@ -90,16 +90,18 @@ describe("the snapshots tab", () => {
 
     assert.equal(
       rowFor(app, "demo").querySelector(".snapshot__meta").textContent,
-      "A2026 · semaine 4 · 25 sept. 2026 à 14 h 03",
+      "A2026 · vendredi 25 sept. 2026 à 14 h 03",
     );
     app.close();
   });
 
-  test("tags what each snapshot contains", async () => {
+  test("tags what each snapshot contains, starting with its calendar position", async () => {
     const app = await onSnapshots();
 
     const tags = (id) => [...rowFor(app, id).querySelectorAll(".tag")].map((t) => t.textContent);
     assert.deepEqual(tags("demo"), [
+      "semaine 4",
+      "congé de 16 jours",
       "profil normal",
       "scénario friday-off",
       "horaire A2026",
@@ -107,8 +109,9 @@ describe("the snapshots tab", () => {
       "2 pannes",
     ]);
     assert.deepEqual(tags("examen-final"), [
+      "entre deux sessions",
+      "aucune session suivante",
       "profil generated-busy",
-      "semaine 3 forcée",
       "2 cours",
       "lun-mer",
       "matin",
@@ -142,26 +145,71 @@ describe("the snapshots tab", () => {
     app.close();
   });
 
+  const setupRows = (app) =>
+    [...app.queryAll("#currentSetup dt")].map((dt) => [
+      dt.textContent,
+      dt.nextElementSibling.textContent,
+    ]);
+
   test("shows the setup the mock runs with", async () => {
     const current = {
       ...clone(CURRENT_SETUP),
-      setup: { profile: "semester-off", scenario: "friday-off", semesterWeek: 3, courses: 2 },
+      position: { week: 3, gap: 10 },
+      setup: {
+        profile: "semester-off",
+        scenario: "friday-off",
+        semesterWeek: 3,
+        semesterGap: 10,
+        courses: 2,
+      },
       failures: { malformed: true },
     };
     const app = await onSnapshots({ current });
 
-    const pairs = [...app.queryAll("#currentSetup dt")].map((dt) => [
-      dt.textContent,
-      dt.nextElementSibling.textContent,
-    ]);
-    assert.deepEqual(pairs, [
-      ["Session", "A2026 · semaine 4 sur 16"],
+    assert.deepEqual(setupRows(app), [
+      ["Session", "A2026 · semaine 3 sur 16"],
+      ["Suivante", "H2027 · après 10 jours de congé"],
+      ["Calendrier", "décalé"],
       ["Profil", "semester-off"],
       ["Scénario", "friday-off"],
-      ["Semaine", "semaine 3 forcée"],
       ["Génération", "2 cours"],
       ["Pannes", "réponses tronquées"],
     ]);
+    app.close();
+  });
+
+  test("shows the real calendar position when nothing shifts it", async () => {
+    const app = await onSnapshots();
+
+    assert.deepEqual(setupRows(app).slice(0, 3), [
+      ["Session", "A2026 · semaine 4 sur 16"],
+      ["Suivante", "H2027 · après 16 jours de congé"],
+      ["Calendrier", "dates réelles"],
+    ]);
+    app.close();
+  });
+
+  test("shows a break without a next session", async () => {
+    const current = {
+      ...clone(CURRENT_SETUP),
+      position: { betweenSessions: true, noNextSession: true },
+      setup: { profile: "normal", scenario: "none", betweenSessions: true, noNextSession: true },
+    };
+    const app = await onSnapshots({ current });
+
+    assert.deepEqual(setupRows(app).slice(0, 3), [
+      ["Session", "A2026 · entre deux sessions"],
+      ["Suivante", "aucune (non publiée)"],
+      ["Calendrier", "décalé"],
+    ]);
+    app.close();
+  });
+
+  test("shows a session that has not started yet", async () => {
+    const current = { ...clone(CURRENT_SETUP), position: { week: 0, gap: 16 } };
+    const app = await onSnapshots({ current });
+
+    assert.deepEqual(setupRows(app)[0], ["Session", "A2026 · avant le début de la session"]);
     app.close();
   });
 });
@@ -246,44 +294,88 @@ describe("loading a snapshot", () => {
     return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
   };
 
-  test("offers the three date modes, realigning on today first", async () => {
+  const isoDay = (day) => {
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+  };
+  const otherDayThisWeek = () => {
+    const day = new Date();
+    day.setDate(day.getDate() + (day.getDay() === 1 ? 1 : -1));
+    return isoDay(day);
+  };
+  const partHints = (app) =>
+    app.queryAll("#fSnapshotParts .choice__hint").map((h) => h.textContent);
+
+  function uncheck(app, id) {
+    const box = app.byId(id);
+    box.checked = false;
+    app.fire(box, "change");
+  }
+
+  test("offers two date choices, realigning on today first", async () => {
     const app = await onSnapshots();
     await openLoad(app);
 
     const modes = app.queryAll('input[name="snapshotDates"]');
-    assert.deepEqual(modes.map((m) => m.value), ["week", "exact", "setup"]);
+    assert.deepEqual(modes.map((m) => m.value), ["week", "exact"]);
     assert.equal(modes[0].checked, true);
     assert.equal(app.byId("snapshotLoadTitle").textContent, "Charger « Démo »");
     const titles = app.queryAll("#fSnapshotDates .choice__title").map((t) => t.textContent);
-    assert.deepEqual(titles, [
-      "Recaler sur aujourd’hui",
-      "Garder les dates enregistrées",
-      "Réglages seulement",
-    ]);
+    assert.deepEqual(titles, ["Recaler sur aujourd’hui", "Garder les dates enregistrées"]);
     const hints = app.queryAll("#fSnapshotDates .choice__hint").map((h) => h.textContent);
-    assert.match(hints[1], /^Rien n’est décalé: l’horaire garde les dates du 25 sept\. 2026\./);
-    assert.match(hints[2], /profil étudiant enregistré est chargé/);
+    assert.equal(
+      hints[1],
+      "Rien n’est décalé: l’horaire garde les dates du 25 sept. 2026. " +
+        "Pour reproduire un bug, réglez l’horloge du téléphone à cette date.",
+    );
     app.close();
   });
 
-  test("explains how an older snapshot is realigned on today", async () => {
+  test("explains how a snapshot saved in week N comes back, weekday included", async () => {
     const app = await onSnapshots({
-      snapshots: [savedOn({ session: "A2026", week: 4, date: "2020-01-10" })],
+      snapshots: [savedOn({ session: "A2026", date: "2020-01-10", week: 4, gap: 16 })],
     });
     await openLoad(app);
 
     assert.equal(
       firstHint(app),
-      "Retrouve la même situation aujourd’hui: toutes les dates sont décalées pour " +
-        "qu’aujourd’hui tombe à la semaine 4 de la session, comme au moment de " +
-        "l’enregistrement.",
+      "Retrouve la même situation: aujourd’hui tombe à la semaine 4 de la session et la " +
+        "suivante commence après 16 jours de congé. Les cours gardent leur jour de " +
+        "semaine: enregistré un vendredi, un « examen demain » ne revient qu’un vendredi.",
     );
+    app.close();
+  });
+
+  test("explains how a snapshot saved between sessions comes back", async () => {
+    const app = await onSnapshots({
+      snapshots: [
+        savedOn({ session: "A2026", date: "2020-12-22", betweenSessions: true, gap: 10 }),
+      ],
+    });
+    await openLoad(app);
+
+    assert.match(
+      firstHint(app),
+      /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence après 10 jours de congé\. .*enregistré un mardi,/,
+    );
+    app.close();
+  });
+
+  test("explains that a missing next session stays missing", async () => {
+    const app = await onSnapshots({
+      snapshots: [savedOn({ session: "A2026", date: "2020-01-10", week: 6, noNextSession: true })],
+    });
+    await openLoad(app);
+
+    const hints = app.queryAll("#fSnapshotDates .choice__hint").map((h) => h.textContent);
+    assert.match(hints[0], /semaine 6 de la session et aucune session suivante n’est publiée\./);
+    assert.match(hints[1], /La session suivante reste masquée\.$/);
     app.close();
   });
 
   test("says which session takes over the schedule of another one", async () => {
     const app = await onSnapshots({
-      snapshots: [savedOn({ session: "H2026", week: 4, date: "2026-01-30" })],
+      snapshots: [savedOn({ session: "H2026", date: "2026-01-30", week: 4, gap: 6 })],
     });
     await openLoad(app);
 
@@ -293,7 +385,7 @@ describe("loading a snapshot", () => {
 
   test("says there is nothing to shift for a snapshot saved this week", async () => {
     const app = await onSnapshots({
-      snapshots: [savedOn({ session: "A2026", week: 4, date: today() })],
+      snapshots: [savedOn({ session: "A2026", date: today(), week: 4, gap: 16 })],
     });
     await openLoad(app);
 
@@ -301,9 +393,24 @@ describe("loading a snapshot", () => {
     app.close();
   });
 
+  test("only skips the shift of a break saved today", async () => {
+    const between = { session: "A2026", betweenSessions: true, gap: 10 };
+    const sameDay = await onSnapshots({ snapshots: [savedOn({ ...between, date: today() })] });
+    await openLoad(sameDay);
+    const sameWeek = await onSnapshots({
+      snapshots: [savedOn({ ...between, date: otherDayThisWeek() })],
+    });
+    await openLoad(sameWeek);
+
+    assert.equal(firstHint(sameDay), "Enregistré aujourd’hui: rien à décaler, tout est chargé tel quel.");
+    assert.match(firstHint(sameWeek), /^Retrouve la même situation/);
+    sameDay.close();
+    sameWeek.close();
+  });
+
   test("warns before a week that the current session cannot hold", async () => {
     const app = await onSnapshots({
-      snapshots: [savedOn({ session: "H2026", week: 17, date: "2026-04-30" })],
+      snapshots: [savedOn({ session: "H2026", date: "2026-04-24", week: 17, gap: 6 })],
     });
     await openLoad(app);
 
@@ -314,23 +421,44 @@ describe("loading a snapshot", () => {
     app.close();
   });
 
+  test("applies the schedule, the student profile and the pannes by default", async () => {
+    const app = await onSnapshots();
+    await openLoad(app);
+
+    const titles = app.queryAll("#fSnapshotParts .choice__title").map((t) => t.textContent);
+    assert.deepEqual(titles, ["Horaire", "Profil étudiant", "Pannes"]);
+    for (const id of ["fSnapshotSchedule", "fSnapshotStudent", "fSnapshotFailures"]) {
+      assert.equal(app.byId(id).checked, true, id);
+    }
+    assert.deepEqual(partHints(app), [
+      "Modifications de A2026. Décoché: les modifications actuelles sont effacées et " +
+        "l’horaire est régénéré.",
+      "1 champ modifié. Décoché: le profil actuel est gardé.",
+      "Décoché: les pannes actuelles sont gardées.",
+    ]);
+    app.close();
+  });
+
   test("lists the pannes that will be applied", async () => {
     const app = await onSnapshots();
     await openLoad(app);
 
-    const items = app.queryAll(".snapshot-failures__list li").map((li) =>
-      li.textContent.replace(/\s+/g, " ").trim(),
+    const items = app.queryAll("#fSnapshotParts .choice__list > span").map((row) =>
+      row.textContent.replace(/\s+/g, " ").trim(),
     );
     assert.deepEqual(items, ["Latence 100-800 ms", "Erreurs aléatoires 30 % d'erreurs"]);
-    assert.equal(app.byId("fSnapshotFailures").checked, true);
     app.close();
   });
 
-  test("warns that loading a snapshot without pannes clears the active ones", async () => {
+  test("says what loading a snapshot with nothing saved does", async () => {
     const app = await onSnapshots();
     await openLoad(app, "examen-final");
 
-    assert.match(app.text(".snapshot-failures__none"), /pannes actives seront retirées/);
+    assert.deepEqual(partHints(app), [
+      "Aucune modification enregistrée: l’horaire est régénéré.",
+      "Aucune modification: le profil par défaut est remis. Décoché: le profil actuel est gardé.",
+      "Aucune panne: les pannes actives seront retirées. Décoché: elles sont gardées.",
+    ]);
     app.close();
   });
 
@@ -343,25 +471,48 @@ describe("loading a snapshot", () => {
       scope: "personal",
       id: "demo",
       dates: "week",
+      schedule: true,
+      student: true,
       failures: true,
     });
     assert.equal(app.byId("snapshotLoadDialog").open, false);
     app.close();
   });
 
-  test("can keep exact dates and skip the pannes", async () => {
+  for (const [id, part] of [
+    ["fSnapshotSchedule", "schedule"],
+    ["fSnapshotStudent", "student"],
+    ["fSnapshotFailures", "failures"],
+  ]) {
+    test(`can leave out the ${part} alone`, async () => {
+      const app = await onSnapshots();
+      await openLoad(app);
+      uncheck(app, id);
+      await app.click(app.byId("snapshotLoadSubmit"));
+
+      const sent = posted(app, "/load");
+      assert.equal(sent[part], false);
+      const others = ["schedule", "student", "failures"].filter((name) => name !== part);
+      assert.deepEqual(others.map((name) => sent[name]), [true, true]);
+      app.close();
+    });
+  }
+
+  test("can keep exact dates and leave everything else out", async () => {
     const app = await onSnapshots();
     await openLoad(app, "examen-final");
     pick(app, "snapshotDates", "exact");
-    const toggle = app.byId("fSnapshotFailures");
-    toggle.checked = false;
-    app.fire(toggle, "change");
+    for (const id of ["fSnapshotSchedule", "fSnapshotStudent", "fSnapshotFailures"]) {
+      uncheck(app, id);
+    }
     await app.click(app.byId("snapshotLoadSubmit"));
 
     assert.deepEqual(posted(app, "/load"), {
       scope: "shared",
       id: "examen-final",
       dates: "exact",
+      schedule: false,
+      student: false,
       failures: false,
     });
     app.close();
@@ -381,6 +532,24 @@ describe("loading a snapshot", () => {
     assert.equal(app.toast().text, "Instantané « Démo » chargé");
     app.close();
   });
+
+  for (const [applied, disabled] of [[true, true], [false, false]]) {
+    test(`${applied ? "forgets" : "keeps"} the pannes undo history when they are ${applied ? "" : "not "}loaded`, async () => {
+      const app = await mount({ failures: { latencyMs: 500 } });
+      await openTab(app, "viewFailures");
+      app.select(app.query('.injection[data-kind="latency"] [data-field="latencyMs"]'), "200-900");
+      await flush();
+      await openTab(app, "viewSnapshots");
+      await openLoad(app);
+      if (!applied) uncheck(app, "fSnapshotFailures");
+      await app.click(app.byId("snapshotLoadSubmit"));
+      await flush();
+      await openTab(app, "viewFailures");
+
+      assert.equal(app.byId("failuresUndoBtn").disabled, disabled);
+      app.close();
+    });
+  }
 
   test("tells what had to be adjusted", async () => {
     const notice = "A2026 n'a que 16 semaines: la semaine 16 est utilisée au lieu de la semaine 17.";

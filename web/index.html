@@ -389,12 +389,14 @@
 
         <form id="snapshotLoadForm" class="form" novalidate>
           <fieldset class="choices" id="fSnapshotDates">
-            <legend class="choices__legend">Dates de l’horaire</legend>
+            <legend class="choices__legend">Dates</legend>
           </fieldset>
 
-          <div class="snapshot-failures" id="snapshotLoadFailures"></div>
+          <fieldset class="choices" id="fSnapshotParts">
+            <legend class="choices__legend">Appliquer</legend>
+          </fieldset>
         </form>
-        <p class="dialog__hint">Remplace l’état actuel du mock (horaire, profil étudiant, réglages). L’historique d’annulation est vidé.</p>
+        <p class="dialog__hint">Remplace les réglages (profil, scénario, calendrier) et ce qui est coché. L’historique d’annulation de ce qui est remplacé est vidé.</p>
 
         <fluent-button slot="action" appearance="secondary" data-close-snapshot-load>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="snapshotLoadSubmit">Charger</fluent-button>

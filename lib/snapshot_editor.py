@@ -25,12 +25,21 @@ def _calendar(code: str) -> dict:
     return {key: base[key] for key in sessions.date_fields(base)} if base else {}
 
 
-def _current_week() -> tuple[int | None, int | None]:
-    base = data_store.get_base_session(data_store.ACTIVE_SESSION)
-    if not base:
-        return None, None
-    week = sessions.week_index(date.fromisoformat(base["dateDebut"]), date.today())
-    return week, sessions.week_count(base)
+def _position() -> dict:
+    active = data_store.get_base_session(data_store.ACTIVE_SESSION)
+    if not active:
+        return {"week": 1, "noNextSession": True}
+    upcoming = (
+        None
+        if data_store.NO_NEXT_SESSION
+        else data_store.get_base_session(data_store.NEXT_SESSION)
+    )
+    return snapshots.position(active, upcoming, date.today())
+
+
+def _week_count() -> int | None:
+    active = data_store.get_base_session(data_store.ACTIVE_SESSION)
+    return sessions.week_count(active) if active else None
 
 
 def capture(name: str) -> dict:
@@ -54,7 +63,6 @@ def capture(name: str) -> dict:
             record["dates"] = dict(entry["dates"])
         saved[code] = record
 
-    week, _ = _current_week()
     return snapshots.validate(
         {
             "format": snapshots.FORMAT,
@@ -62,10 +70,12 @@ def capture(name: str) -> dict:
             "savedAt": datetime.now().isoformat(timespec="minutes"),
             "anchor": {
                 "session": active,
-                "week": 1 if week is None else week,
                 "date": date.today().isoformat(),
+                **_position(),
             },
-            "setup": snapshots.setup_from_env(data_store.setup_env()),
+            "setup": snapshots.without_calendar(
+                snapshots.setup_from_env(data_store.setup_env())
+            ),
             "failures": _active_failures(),
             "sessions": saved,
             "student": data_store.load_student_overrides(),
@@ -74,11 +84,11 @@ def capture(name: str) -> dict:
 
 
 def current() -> dict:
-    week, weeks = _current_week()
     return {
         "session": data_store.ACTIVE_SESSION,
-        "week": week,
-        "weeks": weeks,
+        "nextSession": data_store.NEXT_SESSION,
+        "weeks": _week_count(),
+        "position": _position(),
         "setup": snapshots.setup_from_env(data_store.setup_env()),
         "failures": _active_failures(),
     }
@@ -131,7 +141,15 @@ def _apply(setup_env, schedule, student, failure_config) -> None:
     data_store.reload()
 
 
-def load(scope: str, snapshot_id: str, mode: str, include_failures: bool = True) -> dict:
+def load(
+    scope: str,
+    snapshot_id: str,
+    mode: str = snapshots.DEFAULT_DATE_MODE,
+    *,
+    schedule: bool = True,
+    student: bool = True,
+    include_failures: bool = True,
+) -> dict:
     snapshot = snapshots.read(scope, snapshot_id)
     with schedule_editor._lock, student_editor._lock:
         previous = (
@@ -141,7 +159,13 @@ def load(scope: str, snapshot_id: str, mode: str, include_failures: bool = True)
             failures.get_config().to_dict(),
         )
         try:
-            plan = snapshots.plan(snapshot, mode, failures=include_failures)
+            plan = snapshots.plan(
+                snapshot,
+                mode,
+                schedule=schedule,
+                student=student,
+                failures=include_failures,
+            )
             _check_setup(plan.setup)
             _apply(
                 snapshots.setup_to_env(plan.setup),
@@ -154,5 +178,6 @@ def load(scope: str, snapshot_id: str, mode: str, include_failures: bool = True)
             raise EditorError(f"Could not load '{snapshot['name']}': {exc}") from exc
         finally:
             schedule_editor.clear_cache()
-            student_editor.clear_history()
+            if student:
+                student_editor.clear_history()
     return {**get_state(), "notices": plan.notices}

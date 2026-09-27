@@ -205,23 +205,6 @@ def _apply_overrides(built_courses: list[dict]) -> list[dict]:
     return result
 
 
-def _shift_calendar():
-    delta = 0
-    if SEMESTER_WEEK is not None:
-        delta = sessions.compute_week_shift_delta(ACTIVE_SESSION, SEMESTER_WEEK)
-    elif BETWEEN_SESSIONS:
-        delta = sessions.compute_ended_shift_delta(ACTIVE_SESSION)
-    sessions.shift_session_metadata(ACTIVE_SESSION, delta)
-    sessions.shift_session_metadata(NEXT_SESSION, sessions.nearest_week_shift(delta))
-    if SEMESTER_GAP is not None:
-        sessions.shift_session_metadata(
-            NEXT_SESSION,
-            sessions.compute_gap_shift_delta(
-                ACTIVE_SESSION, NEXT_SESSION, SEMESTER_GAP
-            ),
-        )
-
-
 def _initialize():
     global _seed_courses, _base_courses, _professors, _pools, _programs, _generated
     global _base_sessions, _student_overrides
@@ -229,9 +212,9 @@ def _initialize():
     _seed_courses = json.loads((SEED / COURSES.filename).read_text(encoding="utf-8"))
     _professors = json.loads((SEED / "professors.json").read_text(encoding="utf-8"))
     _pools = json.loads((SEED / "pools.json").read_text(encoding="utf-8"))
-    sessions.ensure_session_metadata(ACTIVE_SESSION)
-    sessions.ensure_session_metadata(NEXT_SESSION)
-    _shift_calendar()
+    sessions.shift_calendar(
+        ACTIVE_SESSION, NEXT_SESSION, SEMESTER_WEEK, BETWEEN_SESSIONS, SEMESTER_GAP
+    )
     _student_overrides = load_student_overrides()
     _base_sessions = {s["abrege"]: dict(s) for s in sessions.get_raw_sessions()}
     sessions.apply_date_overrides(

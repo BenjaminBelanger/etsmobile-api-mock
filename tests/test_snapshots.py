@@ -1,5 +1,5 @@
 import json
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -18,6 +18,11 @@ COURSE = "LOG430-02"
 BLOCK = "LOG430-02:0"
 PAST = "H2026"
 
+WEEK_4 = {"week": 4, "gap": 16}
+BETWEEN = {"betweenSessions": True, "gap": 10}
+LONG_BREAK = {"week": 14, "gap": 60}
+NO_NEXT = {"week": 6, "noNextSession": True}
+
 
 @pytest.fixture
 def today(monkeypatch):
@@ -29,8 +34,9 @@ def today(monkeypatch):
             def today(cls):
                 return frozen
 
-        monkeypatch.setattr(sessions, "date", FrozenDate)
-        monkeypatch.setattr(snapshots, "date", FrozenDate)
+        for module in (sessions, snapshots, snapshot_editor):
+            monkeypatch.setattr(module, "date", FrozenDate)
+        return frozen
 
     return freeze
 
@@ -87,13 +93,17 @@ def edited_course(code="A2026"):
     return record
 
 
+def anchor(position=WEEK_4, session="A2026", day="2026-09-25"):
+    return {"session": session, "date": day, **position}
+
+
 def snapshot(**changes):
     body = {
         "format": snapshots.FORMAT,
         "name": "Mi-session",
         "savedAt": "2026-09-25T10:00",
-        "anchor": {"session": "A2026", "week": 4, "date": "2026-09-25"},
-        "setup": {"profile": "normal", "scenario": "none", "semesterWeek": None},
+        "anchor": anchor(),
+        "setup": {"profile": "normal", "scenario": "none"},
         "failures": {"latencyMs": "100-800", "errorRate": 0.3},
         "sessions": {
             "A2026": {
@@ -117,6 +127,14 @@ def stored_courses(schedule, code):
     return schedule[code]["courses"]
 
 
+def calendar_of(plan):
+    return {key: plan.setup[key] for key in snapshots.CALENDAR_SETUP if key in plan.setup}
+
+
+def planned(code, field):
+    return date.fromisoformat(sessions.session_metadata(code)[field])
+
+
 def test_a_name_becomes_a_file_friendly_id():
     assert snapshots.slugify("  Été: examen final! ") == "ete-examen-final"
 
@@ -136,6 +154,7 @@ def test_a_snapshot_is_written_listed_and_read_back(sandbox_snapshots):
     assert [(item["scope"], item["id"], item["name"]) for item in listed] == [
         ("shared", "examen-final", "Examen final")
     ]
+    assert listed[0]["anchor"] == anchor()
     assert listed[0]["sessions"] == ["A2026"]
     assert listed[0]["student"] == ["prenom"]
     assert snapshots.read("shared", "examen-final")["student"] == {"prenom": "Marie"}
@@ -201,11 +220,16 @@ def test_unreadable_files_are_left_out_of_the_list(sandbox_snapshots):
     "broken",
     [
         [],
-        {**snapshot(), "format": 99},
+        {**snapshot(), "format": 1},
         {**snapshot(), "name": ""},
-        {**snapshot(), "anchor": {"session": "A2026"}},
+        {**snapshot(), "anchor": {"session": "A2026", "week": 4, "gap": 16}},
+        {**snapshot(), "anchor": anchor({"gap": 16})},
+        {**snapshot(), "anchor": anchor({"week": 4, "betweenSessions": True, "gap": 16})},
+        {**snapshot(), "anchor": anchor({"week": True, "gap": 16})},
+        {**snapshot(), "anchor": anchor({"week": 4})},
+        {**snapshot(), "anchor": anchor({"week": 4, "gap": 16, "noNextSession": True})},
+        {**snapshot(), "anchor": anchor({"week": 4, "gap": -1})},
         {**snapshot(), "setup": {}},
-        {**snapshot(), "setup": {"profile": "normal", "semesterWeek": 0}},
         {**snapshot(), "sessions": {"A2026": []}},
         {**snapshot(), "student": []},
     ],
@@ -213,6 +237,11 @@ def test_unreadable_files_are_left_out_of_the_list(sandbox_snapshots):
 def test_malformed_snapshots_are_rejected(broken):
     with pytest.raises(SnapshotError):
         snapshots.validate(broken)
+
+
+@pytest.mark.parametrize("position", [WEEK_4, BETWEEN, NO_NEXT, {"week": 0, "gap": 0}])
+def test_every_calendar_position_is_a_valid_anchor(position):
+    assert snapshots.validate(snapshot(anchor=anchor(position)))["anchor"] == anchor(position)
 
 
 def test_a_snapshot_is_found_by_name_or_id():
@@ -231,11 +260,21 @@ def test_a_name_used_in_both_scopes_is_ambiguous():
     assert snapshots.find("demo") == [("personal", "demo"), ("shared", "demo")]
 
 
-def test_the_setup_round_trips_through_the_environment():
+@pytest.mark.parametrize(
+    "calendar_env, calendar_setup",
+    [
+        ({"SEMESTER_WEEK": "3", "SEMESTER_GAP": "10"}, {"semesterWeek": 3, "semesterGap": 10}),
+        (
+            {"BETWEEN_SESSIONS": "true", "NO_NEXT_SESSION": "true"},
+            {"betweenSessions": True, "noNextSession": True},
+        ),
+    ],
+)
+def test_the_setup_round_trips_through_the_environment(calendar_env, calendar_setup):
     env = {
         "PROFILE": "generated-busy",
         "SCENARIO": "friday-off",
-        "SEMESTER_WEEK": "3",
+        **calendar_env,
         "COURSE_COUNT": "2",
         "SCHEDULE_DAYS": "1,3",
         "TIME_PREFERENCE": "",
@@ -246,7 +285,7 @@ def test_the_setup_round_trips_through_the_environment():
     assert setup == {
         "profile": "generated-busy",
         "scenario": "friday-off",
-        "semesterWeek": 3,
+        **calendar_setup,
         "courses": 2,
         "days": ["1", "3"],
         "time": "",
@@ -257,16 +296,16 @@ def test_the_setup_round_trips_through_the_environment():
 def test_a_default_setup_only_sets_the_profile():
     setup = snapshots.setup_from_env({})
 
-    assert setup == {"profile": "normal", "scenario": "none", "semesterWeek": None}
+    assert setup == {"profile": "normal", "scenario": "none"}
     assert snapshots.setup_to_env(setup) == {"PROFILE": "normal"}
 
 
-def test_the_same_week_mode_shifts_every_date_by_whole_weeks(today):
+def test_realigning_shifts_every_date_by_whole_weeks(today):
     today("2026-10-09")
 
     plan = snapshots.plan(snapshot(), "week")
 
-    assert plan.setup["semesterWeek"] == 4
+    assert calendar_of(plan) == {"semesterWeek": 4, "semesterGap": 16}
     assert plan.notices == []
     saved = stored_courses(plan.schedule, "A2026")[0]
     assert saved["session"] == "A2026"
@@ -279,13 +318,14 @@ def test_the_same_week_mode_shifts_every_date_by_whole_weeks(today):
     assert plan.schedule["A2026"]["dates"] == {"dateFin": "2027-01-05"}
 
 
-def test_the_session_is_placed_so_today_falls_in_the_saved_week(today):
-    today("2026-10-09")
-    plan = snapshots.plan(snapshot(), "week")
+def test_a_snapshot_saved_in_week_n_puts_today_in_week_n(today):
+    now = today("2026-10-09")
 
-    start = sessions.session_metadata("A2026")["dateDebut"]
-    assert sessions.week_index(date.fromisoformat(start), date(2026, 10, 9)) == 4
-    assert plan.setup["semesterWeek"] == 4
+    snapshots.plan(snapshot(), "week")
+
+    start = planned("A2026", "dateDebut")
+    assert sessions.week_index(start, now) == 4
+    assert start.weekday() == date(2026, 9, 1).weekday()
 
 
 def test_loading_on_the_saved_day_changes_nothing(today):
@@ -293,9 +333,55 @@ def test_loading_on_the_saved_day_changes_nothing(today):
 
     plan = snapshots.plan(snapshot(), "week")
 
-    assert plan.setup["semesterWeek"] is None
+    assert calendar_of(plan) == {"semesterWeek": 4, "semesterGap": 16}
     assert plan.schedule["A2026"]["courses"] == [edited_course()]
     assert plan.schedule["A2026"]["dates"] == {"dateFin": "2026-12-22"}
+    assert planned("A2026", "dateDebut") == date(2026, 9, 1)
+
+
+def test_a_snapshot_saved_between_sessions_ends_the_active_session_yesterday(today):
+    now = today("2027-02-10")
+
+    plan = snapshots.plan(snapshot(anchor=anchor(BETWEEN, day="2026-12-22")), "week")
+
+    assert calendar_of(plan) == {"betweenSessions": True, "semesterGap": 10}
+    assert plan.notices == []
+    assert planned("H2027", "dateFin") == now - timedelta(days=1)
+    assert planned("É2027", "dateDebut") == now + timedelta(days=10)
+
+
+@pytest.mark.parametrize("gap", [0, 10, 60])
+def test_the_next_session_starts_the_saved_gap_after_the_active_one(today, gap):
+    today("2026-10-09")
+
+    plan = snapshots.plan(snapshot(anchor=anchor({"week": 14, "gap": gap})), "week")
+
+    assert calendar_of(plan) == {"semesterWeek": 14, "semesterGap": gap}
+    days_off = (planned("H2027", "dateDebut") - planned("A2026", "dateFin")).days - 1
+    assert days_off == gap
+
+
+def test_a_snapshot_without_a_next_session_hides_it_again(today):
+    today("2026-10-09")
+
+    plan = snapshots.plan(snapshot(anchor=anchor(NO_NEXT)), "week")
+
+    assert calendar_of(plan) == {"semesterWeek": 6, "noNextSession": True}
+
+
+@pytest.mark.parametrize("position", [WEEK_4, BETWEEN, LONG_BREAK, NO_NEXT])
+def test_the_plan_and_the_served_calendar_agree(today, position):
+    today("2027-02-10")
+    plan = snapshots.plan(snapshot(anchor=anchor(position)), "week")
+    expected = {
+        code: sessions.session_metadata(code) for code in ("H2027", "É2027")
+    }
+
+    data_store.set_setup(snapshots.setup_to_env(plan.setup))
+    data_store.reload()
+
+    for code, dates in expected.items():
+        assert data_store.get_base_session(code) == dates
 
 
 def test_the_active_session_is_remapped_to_the_current_one(today):
@@ -306,7 +392,7 @@ def test_the_active_session_is_remapped_to_the_current_one(today):
     assert set(plan.schedule) == {"H2027"}
     saved = stored_courses(plan.schedule, "H2027")[0]
     assert saved["session"] == "H2027"
-    start = date.fromisoformat(sessions.session_metadata("H2027")["dateDebut"])
+    start = planned("H2027", "dateDebut")
     origin = date.fromisoformat(saved["occurrenceOverrides"][0]["date"])
     assert origin.isoweekday() == 1
     assert sessions.week_index(start, origin) == 5
@@ -316,9 +402,10 @@ def test_the_active_session_is_remapped_to_the_current_one(today):
 def test_the_next_session_follows_the_active_one(today):
     today("2027-02-10")
     upcoming = course("H2027")
+    upcoming["occurrenceOverrides"] = [{"block": 0, "date": "2027-01-11", "canceled": True}]
     body = snapshot()
     body["sessions"]["H2027"] = {
-        "calendar": {"dateDebut": "2027-01-04", "dateFin": "2027-04-23"},
+        "calendar": {"dateDebut": "2027-01-04", "dateFin": "2027-04-26"},
         "courses": [upcoming],
         "trash": [],
     }
@@ -326,8 +413,11 @@ def test_the_next_session_follows_the_active_one(today):
     plan = snapshots.plan(body, "week")
 
     assert set(plan.schedule) == {"H2027", "É2027"}
-    assert stored_courses(plan.schedule, "É2027")[0]["session"] == "É2027"
+    moved = stored_courses(plan.schedule, "É2027")[0]
+    assert moved["session"] == "É2027"
     assert stored_courses(plan.schedule, "H2027")[0]["sigle"] == "LOG100"
+    start = planned("É2027", "dateDebut")
+    assert sessions.week_index(start, date.fromisoformat(moved["occurrenceOverrides"][0]["date"])) == 2
 
 
 def test_other_sessions_keep_their_code_and_dates(today):
@@ -343,7 +433,7 @@ def test_other_sessions_keep_their_code_and_dates(today):
 
 def test_a_week_past_the_end_of_a_shorter_session_is_clamped(today):
     today("2026-10-09")
-    body = snapshot(anchor={"session": "H2026", "week": 17, "date": "2026-04-30"})
+    body = snapshot(anchor=anchor({"week": 17, "gap": 6}, session="H2026", day="2026-04-24"))
 
     plan = snapshots.plan(body, "week")
 
@@ -356,7 +446,7 @@ def test_a_week_past_the_end_of_a_shorter_session_is_clamped(today):
 def test_a_snapshot_saved_before_its_session_started_lands_on_week_one(today):
     today("2026-10-09")
 
-    plan = snapshots.plan(snapshot(anchor={**snapshot()["anchor"], "week": 0}), "week")
+    plan = snapshots.plan(snapshot(anchor=anchor({"week": 0, "gap": 16})), "week")
 
     assert plan.setup["semesterWeek"] == 1
     assert "semaine 1" in plan.notices[0]
@@ -370,7 +460,7 @@ def test_seance_edits_past_the_end_of_a_shorter_session_are_dropped(today):
         {"block": 0, "date": "2026-04-20", "canceled": True},
     ]
     body = snapshot(
-        anchor={"session": "H2026", "week": 3, "date": "2026-01-23"},
+        anchor=anchor({"week": 3, "gap": 6}, session="H2026", day="2026-01-23"),
         sessions={
             "H2026": {"calendar": {"dateDebut": "2026-01-05"}, "courses": [winter], "trash": []}
         },
@@ -383,54 +473,96 @@ def test_seance_edits_past_the_end_of_a_shorter_session_are_dropped(today):
     assert plan.notices == ["1 modification(s) de séance hors de la session A2026 ignorée(s)."]
 
 
-def test_exact_dates_keep_every_date_and_pin_the_session_calendar(today):
+def test_exact_dates_keep_every_date_and_the_real_calendar(today):
     today("2026-10-09")
 
-    plan = snapshots.plan(snapshot(), "exact")
+    plan = snapshots.plan(snapshot(anchor=anchor(LONG_BREAK)), "exact")
 
-    assert plan.setup["semesterWeek"] is None
+    assert calendar_of(plan) == {}
+    assert plan.notices == []
     assert plan.schedule["A2026"]["courses"] == [edited_course()]
     assert plan.schedule["A2026"]["dates"] == {"dateFin": "2026-12-22"}
+    assert planned("A2026", "dateDebut") == date(2026, 9, 1)
 
 
-def test_exact_dates_pin_a_calendar_that_moved_since_the_save(today):
+def test_exact_dates_still_hide_a_next_session_that_was_not_published(today):
     today("2026-10-09")
-    body = snapshot(setup={"profile": "normal", "scenario": "none", "semesterWeek": 4})
+
+    plan = snapshots.plan(snapshot(anchor=anchor(NO_NEXT)), "exact")
+
+    assert calendar_of(plan) == {"noNextSession": True}
+
+
+def test_exact_dates_pin_a_calendar_that_was_shifted_when_saved(today):
+    today("2026-10-09")
+    body = snapshot(anchor=anchor(BETWEEN, day="2026-09-25"))
     body["sessions"]["A2026"]["calendar"] = {
-        "dateDebut": "2026-09-01",
-        "dateFinCours": "2026-12-07",
-        "dateFin": "2026-12-18",
+        "dateDebut": "2026-06-09",
+        "dateFinCours": "2026-09-14",
+        "dateFin": "2026-09-24",
     }
 
     plan = snapshots.plan(body, "exact")
 
-    assert plan.setup["semesterWeek"] == 4
+    assert calendar_of(plan) == {}
     assert plan.schedule["A2026"]["dates"] == {
-        "dateDebut": "2026-09-01",
-        "dateFinCours": "2026-12-07",
+        "dateDebut": "2026-06-09",
+        "dateFinCours": "2026-09-14",
         "dateFin": "2026-12-22",
     }
 
 
-def test_setup_only_drops_the_schedule_but_keeps_the_rest(today):
+def test_a_plan_without_the_schedule_keeps_the_calendar_but_no_edit(today):
     today("2027-02-10")
-    body = snapshot(setup={"profile": "generated-busy", "scenario": "friday-off", "semesterWeek": 2})
+    body = snapshot(
+        anchor=anchor(BETWEEN),
+        setup={"profile": "generated-busy", "scenario": "friday-off"},
+    )
 
-    plan = snapshots.plan(body, "setup")
+    plan = snapshots.plan(body, "week", schedule=False)
 
     assert plan.schedule == {}
-    assert plan.setup == body["setup"]
+    assert plan.setup == {
+        "profile": "generated-busy",
+        "scenario": "friday-off",
+        "betweenSessions": True,
+        "semesterGap": 10,
+    }
     assert plan.student == {"prenom": "Marie"}
     assert plan.failures == {"latencyMs": "100-800", "errorRate": 0.3}
 
 
-def test_failures_can_be_left_out_of_a_plan():
-    assert snapshots.plan(snapshot(), "setup", failures=False).failures is None
+def test_the_student_profile_and_the_pannes_can_be_left_out_of_a_plan():
+    plan = snapshots.plan(snapshot(), student=False, failures=False)
+
+    assert plan.student is None
+    assert plan.failures is None
+    assert plan.schedule
+
+
+def test_calendar_options_left_in_a_saved_setup_are_ignored(today):
+    today("2026-10-09")
+    body = snapshot(setup={"profile": "normal", "semesterWeek": 9, "noNextSession": True})
+
+    plan = snapshots.plan(body, "week")
+
+    assert calendar_of(plan) == {"semesterWeek": 4, "semesterGap": 16}
 
 
 def test_an_unknown_date_mode_is_refused():
     with pytest.raises(SnapshotError):
-        snapshots.plan(snapshot(), "tomorrow")
+        snapshots.plan(snapshot(), "setup")
+
+
+def test_writing_leaves_the_student_profile_alone_when_it_is_not_loaded(tmp_path):
+    schedule_path = tmp_path / "schedule.json"
+    student_path = tmp_path / "student.json"
+    student_path.write_text('{"nom": "Kept"}', encoding="utf-8")
+
+    snapshots.write_overrides({}, None, schedule_path, student_path)
+
+    assert json.loads(student_path.read_text("utf-8")) == {"nom": "Kept"}
+    assert not schedule_path.exists()
 
 
 def api(client, path, **body):
@@ -459,6 +591,44 @@ def test_the_current_state_is_captured():
     assert PAST in captured["sessions"]
     assert captured["sessions"][PAST]["calendar"]["dateDebut"]
     assert captured["sessions"][active]["courses"] == data_store.get_session_courses(active)
+
+
+@pytest.mark.parametrize(
+    "day, env, position",
+    [
+        ("2026-09-25", {}, WEEK_4),
+        ("2026-12-22", {}, {"betweenSessions": True, "gap": 16}),
+        ("2026-09-25", {"BETWEEN_SESSIONS": "true", "SEMESTER_GAP": "10"}, BETWEEN),
+        ("2026-09-25", {"SEMESTER_WEEK": "14", "SEMESTER_GAP": "60"}, LONG_BREAK),
+        ("2026-10-09", {"NO_NEXT_SESSION": "true"}, NO_NEXT),
+    ],
+)
+def test_the_calendar_position_is_captured(today, reconfigure, day, env, position):
+    today(day)
+    reconfigure(**env)
+
+    captured = snapshot_editor.capture("Démo")
+
+    assert captured["anchor"] == {"session": "A2026", "date": day, **position}
+    assert not set(captured["setup"]) & set(snapshots.CALENDAR_SETUP)
+
+
+def test_the_current_calendar_is_listed_with_the_snapshots(client, today, reconfigure):
+    today("2026-09-25")
+    reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
+
+    current = client.get("/editor/api/snapshots").json()["current"]
+
+    assert current["session"] == "A2026"
+    assert current["nextSession"] == "H2027"
+    assert current["weeks"] == 16
+    assert current["position"] == {"betweenSessions": True, "noNextSession": True}
+    assert current["setup"] == {
+        "profile": "normal",
+        "scenario": "none",
+        "betweenSessions": True,
+        "noNextSession": True,
+    }
 
 
 def test_a_snapshot_is_saved_from_the_editor(client, sandbox_snapshots):
@@ -500,7 +670,96 @@ def test_loading_brings_every_edit_back(client):
     assert student_editor.get_state()["canUndo"] is False
 
 
-def test_the_pannes_can_be_skipped_when_loading(client):
+@pytest.mark.parametrize("position", [WEEK_4, BETWEEN, LONG_BREAK, NO_NEXT])
+def test_a_loaded_snapshot_is_saved_again_in_the_same_situation(client, today, position):
+    today("2027-02-10")
+    snapshots.write("personal", snapshot(anchor=anchor(position)))
+
+    api(client, "/load", scope="personal", id="mi-session")
+
+    again = snapshot_editor.capture("Encore")["anchor"]
+    assert again == {"session": "H2027", "date": "2027-02-10", **position}
+
+
+@pytest.mark.parametrize(
+    "position, expected",
+    [
+        (WEEK_4, (4, False, 16, False)),
+        (BETWEEN, (None, True, 10, False)),
+        (NO_NEXT, (6, False, None, True)),
+    ],
+)
+def test_loading_replaces_the_startup_calendar_options(client, reconfigure, position, expected):
+    reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
+    snapshots.write("personal", snapshot(anchor=anchor(position)))
+
+    result = api(client, "/load", scope="personal", id="mi-session")
+
+    served = (
+        data_store.SEMESTER_WEEK,
+        data_store.BETWEEN_SESSIONS,
+        data_store.SEMESTER_GAP,
+        data_store.NO_NEXT_SESSION,
+    )
+    assert served == expected
+    assert result["current"]["position"] == position
+
+
+def test_exact_dates_only_keep_the_hidden_next_session(client, reconfigure):
+    reconfigure(SEMESTER_WEEK="3", SEMESTER_GAP="45")
+    snapshots.write("personal", snapshot(anchor=anchor(NO_NEXT)))
+
+    api(client, "/load", scope="personal", id="mi-session", dates="exact")
+
+    assert data_store.SEMESTER_WEEK is None
+    assert data_store.SEMESTER_GAP is None
+    assert data_store.NO_NEXT_SESSION is True
+
+
+def test_loading_changes_the_setup_without_a_restart(client):
+    body = snapshot(setup={"profile": "semester-off", "scenario": "friday-off"})
+    snapshots.write("personal", body)
+
+    result = api(client, "/load", scope="personal", id="mi-session", schedule=False)
+
+    assert data_store.PROFILE_NAME == "semester-off"
+    assert data_store.SCENARIO_NAME == "friday-off"
+    assert result["current"]["setup"]["profile"] == "semester-off"
+    assert data_store.get_session_courses(data_store.ACTIVE_SESSION) == []
+
+
+def test_the_loaded_setup_survives_a_data_reload(client):
+    snapshots.write("personal", snapshot(setup={"profile": "semester-off"}))
+    api(client, "/load", scope="personal", id="mi-session", schedule=False)
+
+    assert client.post("/reload").status_code == 200
+
+    assert data_store.PROFILE_NAME == "semester-off"
+
+
+def test_without_the_schedule_the_current_edits_are_cleared(client):
+    move_block()
+    snapshots.write("personal", snapshot())
+
+    api(client, "/load", scope="personal", id="mi-session", schedule=False)
+
+    assert data_store._load_overrides() == {}
+    assert data_store.load_student_overrides() == {"prenom": "Marie"}
+    assert failures.get_config().error_rate == 0.3
+
+
+def test_without_the_student_profile_the_current_one_is_kept(client):
+    student_editor.set_field("prenom", "Luc")
+    snapshots.write("personal", snapshot())
+
+    api(client, "/load", scope="personal", id="mi-session", student=False)
+
+    assert data_store.load_student_overrides() == {"prenom": "Luc"}
+    assert student_editor.get_state()["canUndo"] is True
+    assert failures.get_config().error_rate == 0.3
+
+
+def test_without_the_pannes_the_current_ones_are_kept(client):
     failures.update_config(failures.FailureConfigUpdate(errorRate=0.5))
     api(client, "/save", name="Démo")
     failures.update_config(failures.FailureConfigUpdate(errorRate=0.1, malformed=True))
@@ -518,50 +777,6 @@ def test_loading_replaces_the_pannes_set_after_the_save(client):
     api(client, "/load", scope="personal", id="demo")
 
     assert failures.get_config().is_default()
-
-
-def test_loading_changes_the_setup_without_a_restart(client):
-    body = snapshot(setup={"profile": "semester-off", "scenario": "friday-off", "semesterWeek": 3})
-    snapshots.write("personal", body)
-
-    result = api(client, "/load", scope="personal", id="mi-session", dates="setup")
-
-    assert data_store.PROFILE_NAME == "semester-off"
-    assert data_store.SCENARIO_NAME == "friday-off"
-    assert data_store.SEMESTER_WEEK == 3
-    assert result["current"]["setup"]["profile"] == "semester-off"
-    assert result["current"]["week"] == 3
-    assert data_store.get_session_courses(data_store.ACTIVE_SESSION) == []
-
-
-def test_the_loaded_setup_survives_a_data_reload(client):
-    snapshots.write("personal", snapshot(setup={"profile": "semester-off"}))
-    api(client, "/load", scope="personal", id="mi-session", dates="setup")
-
-    assert client.post("/reload").status_code == 200
-
-    assert data_store.PROFILE_NAME == "semester-off"
-
-
-def test_loading_replaces_the_startup_calendar_options(client, reconfigure):
-    reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
-    snapshots.write("personal", snapshot(setup={"profile": "normal", "semesterWeek": 3}))
-
-    api(client, "/load", scope="personal", id="mi-session", dates="setup")
-
-    assert data_store.SEMESTER_WEEK == 3
-    assert data_store.BETWEEN_SESSIONS is False
-    assert data_store.NO_NEXT_SESSION is False
-
-
-def test_setup_only_keeps_the_student_edits_and_clears_the_schedule(client):
-    move_block()
-    snapshots.write("personal", snapshot())
-
-    api(client, "/load", scope="personal", id="mi-session", dates="setup")
-
-    assert data_store._load_overrides() == {}
-    assert data_store.load_student_overrides() == {"prenom": "Marie"}
 
 
 def test_a_snapshot_that_cannot_load_leaves_everything_as_it_was(client):

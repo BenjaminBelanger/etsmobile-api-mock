@@ -489,8 +489,8 @@ export const SNAPSHOT_ITEMS = [
     id: "demo",
     name: "Démo",
     savedAt: "2026-09-25T14:03",
-    anchor: { session: "A2026", week: 4, date: "2026-09-25" },
-    setup: { profile: "normal", scenario: "friday-off", semesterWeek: null },
+    anchor: { session: "A2026", date: "2026-09-25", week: 4, gap: 16 },
+    setup: { profile: "normal", scenario: "friday-off" },
     failures: { latencyMs: "100-800", errorRate: 0.3 },
     sessions: ["A2026"],
     student: ["prenom"],
@@ -499,12 +499,11 @@ export const SNAPSHOT_ITEMS = [
     scope: "shared",
     id: "examen-final",
     name: "Examen final",
-    savedAt: "2026-09-20T09:30",
-    anchor: { session: "A2026", week: 3, date: "2026-09-20" },
+    savedAt: "2026-12-22T09:30",
+    anchor: { session: "A2026", date: "2026-12-22", betweenSessions: true, noNextSession: true },
     setup: {
       profile: "generated-busy",
       scenario: "none",
-      semesterWeek: 3,
       courses: 2,
       days: ["1", "3"],
       time: "morning",
@@ -517,9 +516,10 @@ export const SNAPSHOT_ITEMS = [
 
 export const CURRENT_SETUP = {
   session: "A2026",
-  week: 4,
+  nextSession: "H2027",
   weeks: 16,
-  setup: { profile: "normal", scenario: "none", semesterWeek: null },
+  position: { week: 4, gap: 16 },
+  setup: { profile: "normal", scenario: "none" },
   failures: {},
 };
 

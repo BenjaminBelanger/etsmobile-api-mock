@@ -146,9 +146,9 @@ const el = {
   snapshotLoadDialog: document.getElementById("snapshotLoadDialog"),
   snapshotLoadTitle: document.getElementById("snapshotLoadTitle"),
   snapshotLoadForm: document.getElementById("snapshotLoadForm"),
-  snapshotLoadFailures: document.getElementById("snapshotLoadFailures"),
   snapshotLoadSubmit: document.getElementById("snapshotLoadSubmit"),
   fSnapshotDates: document.getElementById("fSnapshotDates"),
+  fSnapshotParts: document.getElementById("fSnapshotParts"),
   snapshotConfirmDialog: document.getElementById("snapshotConfirmDialog"),
   snapshotConfirmTitle: document.getElementById("snapshotConfirmTitle"),
   snapshotConfirmText: document.getElementById("snapshotConfirmText"),
@@ -2681,51 +2681,64 @@ const mondayOf = (iso) => {
   return day.toDateString();
 };
 
-const savedThisWeek = (item, current) =>
-  item.anchor.session === current?.session &&
-  mondayOf(item.anchor.date) === mondayOf(todayISO());
+const WEEKDAYS_FR = ["dimanche", "lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi"];
+const weekdayOf = (iso) => WEEKDAYS_FR[new Date(`${iso}T00:00:00`).getDay()];
+
+function positionText(position) {
+  if (position.betweenSessions) return "entre deux sessions";
+  return position.week < 1 ? "avant le début de la session" : `semaine ${position.week}`;
+}
+
+const nextText = (position) =>
+  position.noNextSession ? "aucune session suivante" : `congé de ${plural(position.gap, "jour")}`;
+
+const unchangedToday = (anchor, current) =>
+  anchor.session === current?.session &&
+  (anchor.betweenSessions
+    ? anchor.date === todayISO()
+    : mondayOf(anchor.date) === mondayOf(todayISO()));
 
 function realignHint(item, current) {
-  if (savedThisWeek(item, current)) {
-    return "Enregistré cette semaine: rien à décaler, tout est chargé tel quel.";
+  const { anchor } = item;
+  if (unchangedToday(anchor, current)) {
+    const when = anchor.betweenSessions ? "aujourd’hui" : "cette semaine";
+    return `Enregistré ${when}: rien à décaler, tout est chargé tel quel.`;
   }
+  const where = anchor.betweenSessions
+    ? "la session active s’est terminée hier"
+    : `aujourd’hui tombe à la semaine ${anchor.week} de la session`;
+  const next = anchor.noNextSession
+    ? "aucune session suivante n’est publiée"
+    : `la suivante commence après ${plural(anchor.gap, "jour")} de congé`;
+  const weekday = weekdayOf(anchor.date);
   const moved =
-    current?.session && current.session !== item.anchor.session
-      ? ` L’horaire de ${item.anchor.session} est repris dans ${current.session}.`
+    current?.session && current.session !== anchor.session
+      ? ` L’horaire de ${anchor.session} est repris dans ${current.session}.`
       : "";
   return (
-    "Retrouve la même situation aujourd’hui: toutes les dates sont décalées pour " +
-    `qu’aujourd’hui tombe à la semaine ${item.anchor.week} de la session, comme au ` +
-    `moment de l’enregistrement.${moved}${clampHint(item.anchor.week, current)}`
+    `Retrouve la même situation: ${where} et ${next}. Les cours gardent leur jour de ` +
+    `semaine: enregistré un ${weekday}, un « examen demain » ne revient qu’un ${weekday}.` +
+    `${moved}${clampHint(anchor, current)}`
+  );
+}
+
+function exactHint(item) {
+  const hidden = item.anchor.noNextSession ? " La session suivante reste masquée." : "";
+  return (
+    `Rien n’est décalé: l’horaire garde les dates du ${fmtLongDate(item.anchor.date)}. ` +
+    `Pour reproduire un bug, réglez l’horloge du téléphone à cette date.${hidden}`
   );
 }
 
 const DATE_MODES = [
-  {
-    id: "week",
-    title: "Recaler sur aujourd’hui",
-    hint: realignHint,
-  },
-  {
-    id: "exact",
-    title: "Garder les dates enregistrées",
-    hint: (item) =>
-      `Rien n’est décalé: l’horaire garde les dates du ${fmtLongDate(item.anchor.date)}. ` +
-      "Pour reproduire un bug, réglez l’horloge du téléphone à cette date.",
-  },
-  {
-    id: "setup",
-    title: "Réglages seulement",
-    hint: () =>
-      "Charge le profil, le scénario, la semaine, les options et les pannes, mais pas " +
-      "les modifications de l’horaire: il est régénéré à partir d’aujourd’hui. Le " +
-      "profil étudiant enregistré est chargé.",
-  },
+  { id: "week", title: "Recaler sur aujourd’hui", hint: realignHint },
+  { id: "exact", title: "Garder les dates enregistrées", hint: exactHint },
 ];
 
-function clampHint(week, current) {
-  if (week < 1) return " La semaine 1 sera utilisée.";
-  if (current?.weeks && week > current.weeks) {
+function clampHint(anchor, current) {
+  if (anchor.betweenSessions) return "";
+  if (anchor.week < 1) return " La semaine 1 sera utilisée.";
+  if (current?.weeks && anchor.week > current.weeks) {
     return ` ${current.session} n’a que ${current.weeks} semaines: la semaine ${current.weeks} sera utilisée.`;
   }
   return "";
@@ -2742,7 +2755,8 @@ const fmtLongDate = (iso) => {
 function fmtSavedAt(item) {
   const day = (item.savedAt || item.anchor.date).slice(0, 10);
   const time = (item.savedAt || "").slice(11, 16);
-  return time ? `${fmtLongDate(day)} à ${time.replace(":", " h ")}` : fmtLongDate(day);
+  const date = `${weekdayOf(day)} ${fmtLongDate(day)}`;
+  return time ? `${date} à ${time.replace(":", " h ")}` : date;
 }
 
 function generationParts(setup) {
@@ -2766,7 +2780,6 @@ function generationParts(setup) {
 function setupParts(setup) {
   const parts = [`profil ${setup.profile}`];
   if (setup.scenario && setup.scenario !== "none") parts.push(`scénario ${setup.scenario}`);
-  if (setup.semesterWeek) parts.push(`semaine ${setup.semesterWeek} forcée`);
   return [...parts, ...generationParts(setup)];
 }
 
@@ -2779,7 +2792,9 @@ const includedFailures = (config) => {
 };
 
 function snapshotTags(item) {
-  const tags = setupParts(item.setup).map((text) => ({ text }));
+  const tags = [positionText(item.anchor), nextText(item.anchor), ...setupParts(item.setup)].map(
+    (text) => ({ text })
+  );
   if (item.sessions.length) tags.push({ text: `horaire ${item.sessions.join(", ")}` });
   if (item.student.length) {
     tags.push({ text: `profil étudiant (${plural(item.student.length, "champ")})` });
@@ -2808,7 +2823,7 @@ function snapshotHtml(item) {
   return `<li class="snapshot" data-scope="${item.scope}" data-id="${escapeHtml(item.id)}">
       <div class="snapshot__main">
         <span class="snapshot__name">${name}</span>
-        <span class="snapshot__meta">${escapeHtml(item.anchor.session)} · semaine ${item.anchor.week} · ${escapeHtml(fmtSavedAt(item))}</span>
+        <span class="snapshot__meta">${escapeHtml(item.anchor.session)} · ${escapeHtml(fmtSavedAt(item))}</span>
         <span class="snapshot__tags">${tags}</span>
       </div>
       <div class="snapshot__actions">
@@ -2848,12 +2863,18 @@ function renderSnapshotList() {
   });
 }
 
-function weekText(current) {
-  if (current.week == null) return current.session;
-  if (current.week < 1) return `${current.session} · avant le début`;
-  if (current.weeks && current.week > current.weeks) return `${current.session} · après la fin`;
-  return `${current.session} · semaine ${current.week}${current.weeks ? ` sur ${current.weeks}` : ""}`;
+function sessionText({ session, weeks, position }) {
+  const where = positionText(position);
+  return position.week >= 1 && weeks ? `${session} · ${where} sur ${weeks}` : `${session} · ${where}`;
 }
+
+const nextSessionText = ({ nextSession, position }) =>
+  position.noNextSession
+    ? "aucune (non publiée)"
+    : `${nextSession} · après ${plural(position.gap, "jour")} de congé`;
+
+const shiftedCalendar = (setup) =>
+  setup.semesterWeek != null || setup.betweenSessions || setup.semesterGap != null;
 
 function renderCurrentSetup() {
   const current = state.snapshots?.current;
@@ -2861,10 +2882,11 @@ function renderCurrentSetup() {
   const setup = current.setup;
   const failures = includedFailures(current.failures);
   const rows = [
-    ["Session", weekText(current)],
+    ["Session", sessionText(current)],
+    ["Suivante", nextSessionText(current)],
+    ["Calendrier", shiftedCalendar(setup) ? "décalé" : "dates réelles"],
     ["Profil", setup.profile],
     ["Scénario", setup.scenario && setup.scenario !== "none" ? setup.scenario : "aucun"],
-    ["Semaine", setup.semesterWeek ? `semaine ${setup.semesterWeek} forcée` : "dates réelles"],
   ];
   const generation = generationParts(setup);
   if (generation.length) rows.push(["Génération", generation.join(" · ")]);
@@ -2966,21 +2988,54 @@ function choiceHtml(name, value, title, hint, checked) {
     </label>`;
 }
 
-function snapshotFailuresHtml(item) {
+function failureListHtml(failures) {
+  return `<span class="choice__list">${failures
+    .map(
+      ({ kind, summary }) => `<span>${icon(kind.icon, 16)}${kind.label}
+        <span class="choice__value">${escapeHtml(summary)}</span></span>`
+    )
+    .join("")}</span>`;
+}
+
+function snapshotParts(item) {
   const failures = includedFailures(item.failures);
-  const list = failures.length
-    ? `<ul class="snapshot-failures__list">${failures
-        .map(
-          ({ kind, summary }) => `<li>${icon(kind.icon, 16)}<span>${kind.label}</span>
-            <span class="snapshot-failures__value">${escapeHtml(summary)}</span></li>`
-        )
-        .join("")}</ul>`
-    : `<p class="snapshot-failures__none">Aucune panne dans cet instantané: les pannes actives seront retirées.</p>`;
-  return `<label class="check">
-      <input type="checkbox" id="fSnapshotFailures" checked />
-      <span>Appliquer les pannes enregistrées</span>
-    </label>
-    ${list}`;
+  const fields = item.student.length;
+  return [
+    {
+      id: "fSnapshotSchedule",
+      title: "Horaire",
+      hint: item.sessions.length
+        ? `Modifications de ${item.sessions.join(", ")}. Décoché: les modifications ` +
+          "actuelles sont effacées et l’horaire est régénéré."
+        : "Aucune modification enregistrée: l’horaire est régénéré.",
+    },
+    {
+      id: "fSnapshotStudent",
+      title: "Profil étudiant",
+      hint: fields
+        ? `${plural(fields, "champ")} modifié${fields > 1 ? "s" : ""}. Décoché: le profil actuel est gardé.`
+        : "Aucune modification: le profil par défaut est remis. Décoché: le profil actuel est gardé.",
+    },
+    {
+      id: "fSnapshotFailures",
+      title: "Pannes",
+      list: failures.length ? failureListHtml(failures) : "",
+      hint: failures.length
+        ? "Décoché: les pannes actuelles sont gardées."
+        : "Aucune panne: les pannes actives seront retirées. Décoché: elles sont gardées.",
+    },
+  ];
+}
+
+function partHtml({ id, title, list = "", hint }) {
+  return `<label class="choice">
+      <input type="checkbox" id="${id}" checked />
+      <span class="choice__text">
+        <span class="choice__title">${title}</span>
+        ${list}
+        <span class="choice__hint">${escapeHtml(hint)}</span>
+      </span>
+    </label>`;
 }
 
 function openSnapshotLoad(item) {
@@ -2988,21 +3043,21 @@ function openSnapshotLoad(item) {
   el.snapshotLoadTitle.textContent = `Charger « ${item.name} »`;
   const current = state.snapshots?.current;
   el.fSnapshotDates.innerHTML =
-    `<legend class="choices__legend">Dates de l’horaire</legend>` +
+    `<legend class="choices__legend">Dates</legend>` +
     DATE_MODES.map((mode, i) =>
       choiceHtml("snapshotDates", mode.id, mode.title, mode.hint(item, current), i === 0)
     ).join("");
-  el.snapshotLoadFailures.innerHTML = snapshotFailuresHtml(item);
-  const toggle = el.snapshotLoadFailures.querySelector("#fSnapshotFailures");
-  toggle.addEventListener("change", () =>
-    el.snapshotLoadFailures.classList.toggle("is-off", !toggle.checked)
-  );
+  el.fSnapshotParts.innerHTML =
+    `<legend class="choices__legend">Appliquer</legend>` +
+    snapshotParts(item).map(partHtml).join("");
   el.snapshotLoadDialog.show();
 }
 
-async function refreshAfterSnapshot() {
-  state.failuresPast = [];
-  state.failuresFuture = [];
+async function refreshAfterSnapshot(failuresReplaced) {
+  if (failuresReplaced) {
+    state.failuresPast = [];
+    state.failuresFuture = [];
+  }
   state.student = null;
   const [schedule] = await Promise.all([apiGet(""), loadFailures()]);
   state.session = null;
@@ -3012,13 +3067,20 @@ async function refreshAfterSnapshot() {
 async function submitSnapshotLoad() {
   const item = state.snapshotTarget;
   if (!item) return;
-  const dates = checkedValue(el.snapshotLoadForm, "snapshotDates") || "week";
-  const failures = !!el.snapshotLoadFailures.querySelector("#fSnapshotFailures")?.checked;
-  const result = await snapshotRequest("/load", { scope: item.scope, id: item.id, dates, failures });
+  const applied = (id) => !!el.fSnapshotParts.querySelector(`#${id}`)?.checked;
+  const body = {
+    scope: item.scope,
+    id: item.id,
+    dates: checkedValue(el.snapshotLoadForm, "snapshotDates") || "week",
+    schedule: applied("fSnapshotSchedule"),
+    student: applied("fSnapshotStudent"),
+    failures: applied("fSnapshotFailures"),
+  };
+  const result = await snapshotRequest("/load", body);
   if (!result.data) return;
   el.snapshotLoadDialog.hide();
   try {
-    await refreshAfterSnapshot();
+    await refreshAfterSnapshot(body.failures);
   } catch (err) {
     toast(err.message || "Serveur injoignable", true);
   }

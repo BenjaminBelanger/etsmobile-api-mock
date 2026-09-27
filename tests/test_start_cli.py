@@ -655,20 +655,29 @@ def snapshot_body(**changes):
         "format": start.snapshots.FORMAT,
         "name": "Examen final",
         "savedAt": "2026-09-25T10:00",
-        "anchor": {"session": "A2026", "week": 4, "date": "2026-09-25"},
+        "anchor": {"session": "A2026", "date": "2026-09-25", "week": 4, "gap": 16},
         "setup": {
             "profile": "generated-busy",
             "scenario": "friday-off",
-            "semesterWeek": 3,
             "courses": 2,
             "time": "",
         },
         "failures": {"latencyMs": "100-800", "errorRate": 0.3},
-        "sessions": {},
+        "sessions": {
+            "A2026": {"calendar": {"dateDebut": "2026-09-01"}, "courses": [], "trash": []}
+        },
         "student": {"prenom": "Marie"},
     }
     body.update(changes)
     return body
+
+
+BETWEEN_NO_NEXT = {
+    "session": "A2026",
+    "date": "2026-12-22",
+    "betweenSessions": True,
+    "noNextSession": True,
+}
 
 
 @pytest.fixture
@@ -677,55 +686,104 @@ def saved_snapshot():
     return "shared/examen-final"
 
 
-def test_a_snapshot_turns_its_setup_into_the_env_vars(saved_snapshot, monkeypatch):
+def started_with(monkeypatch, *argv):
     started = []
     monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
+    start.main(list(argv))
+    return started[0]
 
-    start.main(["--snapshot", "Examen final", "--snapshot-dates", "setup"])
 
-    overrides, display, scenario, calendar, plan = started[0]
+def test_a_snapshot_turns_its_setup_and_position_into_the_env_vars(
+    saved_snapshot, monkeypatch
+):
+    overrides, display, scenario, calendar, plan = started_with(
+        monkeypatch, "--snapshot", "Examen final"
+    )
+
     assert overrides == {
         "PROFILE": "generated-busy",
         "SCENARIO": "friday-off",
-        "SEMESTER_WEEK": "3",
+        "SEMESTER_WEEK": "4",
+        "SEMESTER_GAP": "16",
         "COURSE_COUNT": "2",
         "TIME_PREFERENCE": "",
         "LATENCY_MS": "100-800",
         "ERROR_RATE": "0.3",
     }
     assert display == "generated-busy + instantané « Examen final »"
-    assert (scenario, calendar) == ("friday-off", "semaine 3")
+    assert (scenario, calendar) == ("friday-off", "semaine 4 + congé de 16 jours")
     assert plan.student == {"prenom": "Marie"}
+    assert plan.schedule
+
+
+def test_a_snapshot_saved_between_sessions_starts_between_sessions(monkeypatch):
+    start.snapshots.write("shared", snapshot_body(anchor=BETWEEN_NO_NEXT))
+
+    overrides, _, _, calendar, _ = started_with(monkeypatch, "--snapshot", "examen-final")
+
+    assert overrides["BETWEEN_SESSIONS"] == "true"
+    assert overrides["NO_NEXT_SESSION"] == "true"
+    assert "SEMESTER_WEEK" not in overrides
+    assert calendar == "entre deux sessions + aucune session suivante"
 
 
 def test_the_preset_flag_is_an_alias_of_the_snapshot_flag(saved_snapshot, monkeypatch):
-    started = []
-    monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
-
-    start.main(["--preset", saved_snapshot, "--snapshot-dates", "setup"])
-
-    assert started[0][0]["PROFILE"] == "generated-busy"
+    assert started_with(monkeypatch, "--preset", saved_snapshot)[0]["PROFILE"] == "generated-busy"
 
 
-def test_the_snapshot_pannes_can_be_skipped(saved_snapshot, monkeypatch):
-    started = []
-    monkeypatch.setattr(start, "_start_server", lambda *a: started.append(a))
+def test_exact_dates_leave_the_calendar_as_saved(saved_snapshot, monkeypatch):
+    overrides, _, _, calendar, _ = started_with(
+        monkeypatch, "--snapshot", saved_snapshot, "--snapshot-dates", "exact"
+    )
 
-    start.main(["--snapshot", saved_snapshot, "--no-snapshot-failures"])
+    assert not {"SEMESTER_WEEK", "SEMESTER_GAP", "BETWEEN_SESSIONS"} & set(overrides)
+    assert calendar == "dates du 2026-09-25 (semaine 4, congé de 16 jours)"
 
-    overrides = started[0][0]
+
+def test_exact_dates_still_hide_the_next_session(monkeypatch):
+    start.snapshots.write("shared", snapshot_body(anchor=BETWEEN_NO_NEXT))
+
+    overrides, _, _, calendar, _ = started_with(
+        monkeypatch, "--snapshot", "examen-final", "--snapshot-dates", "exact"
+    )
+
+    assert overrides["NO_NEXT_SESSION"] == "true"
+    assert "BETWEEN_SESSIONS" not in overrides
+    assert calendar == (
+        "dates du 2026-12-22 (entre deux sessions, aucune session suivante)"
+    )
+
+
+def test_each_part_of_a_snapshot_can_be_skipped(saved_snapshot, monkeypatch):
+    overrides, _, _, calendar, plan = started_with(
+        monkeypatch,
+        "--snapshot",
+        saved_snapshot,
+        "--no-snapshot-schedule",
+        "--no-snapshot-student",
+        "--no-snapshot-failures",
+    )
+
+    assert plan.schedule == {}
+    assert plan.student is None
+    assert plan.failures is None
     assert not set(overrides) & set(start.FAILURE_ENV.values())
-    assert started[0][4].failures is None
+    assert calendar == "semaine 4 + congé de 16 jours"
+
+
+def fake_start(monkeypatch, tmp_path):
+    monkeypatch.setattr(start, "SEED", tmp_path)
+    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
+    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: None)
+    (tmp_path / start.STUDENT_OVERRIDES_FILENAME).write_text('{"nom": "Old"}', encoding="utf-8")
 
 
 def test_a_snapshot_is_written_after_the_old_overrides_are_cleared(
     saved_snapshot, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr(start, "SEED", tmp_path)
-    monkeypatch.setattr(start, "_stop_existing_servers", lambda: None)
-    monkeypatch.setattr(start.subprocess, "run", lambda *a, **k: None)
-    (tmp_path / start.STUDENT_OVERRIDES_FILENAME).write_text('{"nom": "Old"}', encoding="utf-8")
-    plan = start.snapshots.plan(start.snapshots.read("shared", "examen-final"), "setup")
+    fake_start(monkeypatch, tmp_path)
+    snapshot = start.snapshots.read("shared", "examen-final")
+    plan = start.snapshots.plan(snapshot, schedule=False)
 
     start._start_server({}, "normal", "none", None, plan)
 
@@ -734,14 +792,30 @@ def test_a_snapshot_is_written_after_the_old_overrides_are_cleared(
     assert not (tmp_path / start.OVERRIDES_FILENAME).exists()
 
 
+def test_a_skipped_student_profile_starts_from_the_default_one(
+    saved_snapshot, monkeypatch, tmp_path
+):
+    fake_start(monkeypatch, tmp_path)
+    snapshot = start.snapshots.read("shared", "examen-final")
+    plan = start.snapshots.plan(snapshot, student=False)
+
+    start._start_server({}, "normal", "none", None, plan)
+
+    assert not (tmp_path / start.STUDENT_OVERRIDES_FILENAME).exists()
+    assert (tmp_path / start.OVERRIDES_FILENAME).exists()
+
+
 @pytest.mark.parametrize(
     "argv",
     [
         ("--snapshot", "missing"),
         ("--snapshot", "examen-final", "--profile", "normal"),
         ("--snapshot", "examen-final", "--failures", "flaky"),
-        ("--snapshot", "examen-final", "--snapshot-dates", "tomorrow"),
+        ("--snapshot", "examen-final", "--semester-gap", "10"),
+        ("--snapshot", "examen-final", "--snapshot-dates", "setup"),
         ("--snapshot-dates", "exact"),
+        ("--no-snapshot-schedule",),
+        ("--no-snapshot-student",),
         ("--no-snapshot-failures",),
     ],
 )
@@ -762,11 +836,25 @@ def test_a_name_in_both_scopes_must_be_qualified(saved_snapshot, monkeypatch, ca
     assert "personal/examen-final ou shared/examen-final" in capsys.readouterr().err
 
 
-def test_the_help_lists_the_saved_snapshots(saved_snapshot, capsys):
+def test_the_help_lists_the_saved_snapshots_with_their_position(saved_snapshot, capsys):
     with pytest.raises(SystemExit):
         start._build_parser().parse_args(["--help"])
 
-    assert "shared/examen-final" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "shared/examen-final" in printed
+    assert (
+        "Examen final (partagé, A2026 semaine 4, congé de 16 jours, "
+        "enregistré le vendredi 2026-09-25)"
+    ) in printed
+
+
+def test_a_snapshot_saved_between_sessions_is_labelled_so():
+    item = {"name": "Congé", "scope": "personal", "anchor": BETWEEN_NO_NEXT}
+
+    assert start._snapshot_label(item) == (
+        "Congé (personnel, A2026 entre deux sessions, aucune session suivante, "
+        "enregistré le mardi 2026-12-22)"
+    )
 
 
 def test_the_menu_offers_snapshots_only_when_there_are_some(monkeypatch, capsys):
@@ -779,27 +867,49 @@ def test_the_menu_offers_snapshots_only_when_there_are_some(monkeypatch, capsys)
     assert start._select_profile() == "__snapshot__"
 
 
-def test_the_menu_loads_a_snapshot_with_the_chosen_dates(saved_snapshot, monkeypatch):
-    left = answer(monkeypatch, "i", "1", "3", "n")
+def test_the_menu_applies_everything_by_default(saved_snapshot, monkeypatch, capsys):
+    left = answer(monkeypatch, "i", "1", "", "", "", "")
 
-    overrides, display, scenario, calendar, plan = start._config_from_menu()
+    overrides, _, _, calendar, plan = start._config_from_menu()
 
     assert left == []
-    assert overrides["PROFILE"] == "generated-busy"
-    assert "LATENCY_MS" not in overrides
-    assert plan.failures is None
-    assert plan.schedule == {}
-    assert calendar == "semaine 3"
-
-
-def test_the_menu_applies_the_pannes_by_default(saved_snapshot, monkeypatch, capsys):
-    answer(monkeypatch, "i", "1", "", "")
-
-    overrides, _, _, _, plan = start._config_from_menu()
-
     assert overrides["ERROR_RATE"] == "0.3"
+    assert calendar == "semaine 4 + congé de 16 jours"
+    assert plan.schedule
+    assert plan.student == {"prenom": "Marie"}
     assert plan.failures == {"latencyMs": "100-800", "errorRate": 0.3}
-    assert "latence 100-800 ms, erreurs aléatoires 30 %" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "semaine 4, congé de 16 jours" in printed
+    assert "enregistré un vendredi, un « examen demain » ne revient qu'un vendredi" in printed
+    assert "Horaire enregistré: A2026" in printed
+    assert "Profil étudiant enregistré: prenom" in printed
+    assert "latence 100-800 ms, erreurs aléatoires 30 %" in printed
+
+
+def test_the_menu_asks_the_same_things_as_the_flags(saved_snapshot, monkeypatch):
+    left = answer(monkeypatch, "i", "1", "2", "n", "n", "n")
+
+    overrides, _, _, calendar, plan = start._config_from_menu()
+
+    assert left == []
+    assert calendar == "dates du 2026-09-25 (semaine 4, congé de 16 jours)"
+    assert plan.schedule == {}
+    assert plan.student is None
+    assert plan.failures is None
+    assert "LATENCY_MS" not in overrides
+
+
+def test_the_menu_only_asks_about_what_the_snapshot_holds(monkeypatch, capsys):
+    start.snapshots.write(
+        "shared", snapshot_body(sessions={}, student={}, failures={})
+    )
+    left = answer(monkeypatch, "i", "1", "")
+
+    _, _, _, _, plan = start._config_from_menu()
+
+    assert left == []
+    assert "Appliquer" not in capsys.readouterr().out
+    assert plan.schedule == {}
 
 
 def test_leaving_the_snapshot_menu_starts_nothing(saved_snapshot, monkeypatch):
