@@ -929,24 +929,22 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   overflow-wrap: anywhere;
 }
 .snapshot__meta { font-size: var(--fontSizeBase200); color: var(--colorNeutralForeground3); }
-.snapshot__tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 2px; }
+.snapshot__details { font-size: var(--fontSizeBase200); color: var(--colorNeutralForeground2); }
+.snapshot__detail { white-space: nowrap; }
+.snapshot__detail + .snapshot__detail::before {
+  content: "·";
+  display: inline-block;
+  margin: 0 6px;
+  color: var(--colorNeutralForeground4);
+}
+.snapshot__detail--warn {
+  color: var(--colorStatusWarningForeground1);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
+}
 .snapshot__actions { display: flex; align-items: center; gap: 2px; flex: none; }
 .snapshot__actions [data-act="load"] { margin-right: 6px; }
-
-.tag {
-  display: inline-flex; align-items: center;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: var(--borderRadiusCircular);
-  background: var(--colorNeutralBackground4);
-  font-size: var(--fontSizeBase200);
-  color: var(--colorNeutralForeground2);
-  white-space: nowrap;
-}
-.tag--warn {
-  background: var(--colorPaletteMarigoldBackground2);
-  color: var(--colorPaletteMarigoldForeground2);
-}
 
 .setup {
   display: grid;

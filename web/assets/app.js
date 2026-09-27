@@ -2792,39 +2792,51 @@ const includedFailures = (config) => {
   }));
 };
 
-function snapshotTags(item) {
-  const tags = [positionText(item.anchor), nextText(item.anchor), ...setupParts(item.setup)].map(
+const SEASON_AFTER = { H: "É", É: "A", E: "A" };
+
+function sessionAfter(code) {
+  const year = Number(code.slice(1));
+  return code[0] in SEASON_AFTER ? `${SEASON_AFTER[code[0]]}${year}` : `H${year + 1}`;
+}
+
+const holdsUsualSessions = ({ anchor, sessions }) =>
+  sessions.join() === [anchor.session, sessionAfter(anchor.session)].join();
+
+function snapshotDetails(item) {
+  const details = [positionText(item.anchor), nextText(item.anchor), ...setupParts(item.setup)].map(
     (text) => ({ text })
   );
-  if (item.sessions.length) tags.push({ text: `horaire ${item.sessions.join(", ")}` });
+  if (item.sessions.length && !holdsUsualSessions(item)) {
+    details.push({ text: `horaire ${item.sessions.join(", ")}` });
+  }
   if (item.student.length) {
-    tags.push({ text: `profil étudiant (${plural(item.student.length, "champ")})` });
+    details.push({ text: `profil étudiant (${plural(item.student.length, "champ")})` });
   }
   const failures = includedFailures(item.failures);
   if (failures.length) {
-    tags.push({
+    details.push({
       text: plural(failures.length, "panne"),
       title: failures.map((f) => `${f.kind.label} : ${f.summary}`).join("\n"),
       warn: true,
     });
   }
-  return tags;
+  return details;
 }
 
 function snapshotHtml(item) {
   const name = escapeHtml(item.name);
-  const tags = snapshotTags(item)
+  const details = snapshotDetails(item)
     .map(
-      (tag) => `<span class="tag${tag.warn ? " tag--warn" : ""}"${
-        tag.title ? ` title="${escapeHtml(tag.title)}"` : ""
-      }>${escapeHtml(tag.text)}</span>`
+      (detail) => `<span class="snapshot__detail${detail.warn ? " snapshot__detail--warn" : ""}"${
+        detail.title ? ` title="${escapeHtml(detail.title)}"` : ""
+      }>${escapeHtml(detail.text)}</span>`
     )
     .join("");
   return `<li class="snapshot" data-id="${escapeHtml(item.id)}">
       <div class="snapshot__main">
         <span class="snapshot__name">${name}</span>
         <span class="snapshot__meta">${escapeHtml(item.anchor.session)} · ${escapeHtml(fmtSavedAt(item))}</span>
-        <span class="snapshot__tags">${tags}</span>
+        <span class="snapshot__details">${details}</span>
       </div>
       <div class="snapshot__actions">
         <fluent-button appearance="primary" size="small" data-act="load">Charger</fluent-button>

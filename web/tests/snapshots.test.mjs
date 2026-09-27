@@ -92,11 +92,11 @@ describe("the snapshots tab", () => {
     app.close();
   });
 
-  test("tags what each snapshot contains, starting with its calendar position", async () => {
+  test("lists what each snapshot contains, starting with its calendar position", async () => {
     const app = await onSnapshots();
 
-    const tags = (id) => [...rowFor(app, id).querySelectorAll(".tag")].map((t) => t.textContent);
-    assert.deepEqual(tags("demo"), [
+    const details = (id) => [...rowFor(app, id).querySelectorAll(".snapshot__detail")].map((t) => t.textContent);
+    assert.deepEqual(details("demo"), [
       "semaine 4",
       "congé de 16 jours",
       "profil normal",
@@ -105,7 +105,7 @@ describe("the snapshots tab", () => {
       "profil étudiant (1 champ)",
       "2 pannes",
     ]);
-    assert.deepEqual(tags("examen-final"), [
+    assert.deepEqual(details("examen-final"), [
       "entre deux sessions",
       "aucune session suivante",
       "profil generated-busy",
@@ -116,11 +116,23 @@ describe("the snapshots tab", () => {
     app.close();
   });
 
+  test("leaves out the schedule when it holds just the saved session and the next one", async () => {
+    const app = await onSnapshots({
+      snapshots: [{ ...clone(SNAPSHOT_ITEMS[0]), sessions: ["A2026", "H2027"] }],
+    });
+
+    const details = [...rowFor(app, "demo").querySelectorAll(".snapshot__detail")].map(
+      (d) => d.textContent,
+    );
+    assert.ok(!details.some((text) => text.startsWith("horaire")), details.join(" · "));
+    app.close();
+  });
+
   test("names the pannes a snapshot carries", async () => {
     const app = await onSnapshots();
 
-    const tag = rowFor(app, "demo").querySelector(".tag--warn");
-    assert.equal(tag.getAttribute("title"), "Latence : 100-800 ms\nErreurs aléatoires : 30 % d'erreurs");
+    const detail = rowFor(app, "demo").querySelector(".snapshot__detail--warn");
+    assert.equal(detail.getAttribute("title"), "Latence : 100-800 ms\nErreurs aléatoires : 30 % d'erreurs");
     app.close();
   });
 
@@ -337,10 +349,10 @@ describe("loading a snapshot", () => {
         savedOn({ session: "A2026", date: "2020-12-22", betweenSessions: true, gap: 10 }),
       ],
     });
-    const tags = [...rowFor(app, "demo").querySelectorAll(".tag")].map((t) => t.textContent);
+    const details = [...rowFor(app, "demo").querySelectorAll(".snapshot__detail")].map((t) => t.textContent);
     await openLoad(app);
 
-    assert.deepEqual(tags.slice(0, 2), ["entre deux sessions", "rentrée dans 10 jours"]);
+    assert.deepEqual(details.slice(0, 2), ["entre deux sessions", "rentrée dans 10 jours"]);
     assert.match(
       firstHint(app),
       /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence dans 10 jours\. .*enregistrée un mardi,/,
