@@ -187,6 +187,7 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         ("TOKEN_EXPIRED_CALLS", "-1"),
         ("TOKEN_LIFETIME_S", "abc"),
         ("TOKEN_LIFETIME_S", "-1"),
+        ("TOKEN_LIFETIME_S", "inf"),
     ],
 )
 def test_a_broken_environment_value_falls_back_to_the_default(monkeypatch, name, value):
@@ -233,6 +234,8 @@ def test_a_broken_latency_patch_is_rejected():
         {"tokenExpiredCalls": -1},
         {"tokenExpiredCalls": 1.5},
         {"tokenLifetimeS": -1},
+        {"tokenLifetimeS": float("inf")},
+        {"tokenLifetimeS": float("nan")},
         {"inconnu": True},
     ],
 )
@@ -350,12 +353,13 @@ def test_a_new_token_starts_its_own_clock(client, clock):
     assert client.get(ENDPOINT, headers=bearer("new")).status_code == 401
 
 
-def test_a_token_lifetime_leaves_calls_without_a_token_alone(client, clock):
+@pytest.mark.parametrize("headers", [{}, bearer("null"), {"Authorization": "Bearer"}])
+def test_a_token_lifetime_leaves_calls_without_a_token_alone(client, clock, headers):
     client.patch("/admin/failures", json={"tokenLifetimeS": 30})
-    client.get(ENDPOINT)
+    client.get(ENDPOINT, headers=headers)
     clock(60)
 
-    assert client.get(ENDPOINT).status_code == 200
+    assert client.get(ENDPOINT, headers=headers).status_code == 200
 
 
 def test_a_new_token_lifetime_restarts_every_clock(client, clock):

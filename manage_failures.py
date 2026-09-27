@@ -8,6 +8,7 @@ import urllib.error
 import urllib.request
 
 from lib._paths import SEED
+from start import _count, _seconds
 
 DEFAULT_URL = "http://localhost:8080"
 PRESETS_FILE = SEED / "failure_presets.json"
@@ -135,7 +136,7 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         help="Require Authorization header",
     )
     parser.add_argument(
-        "--token-expired", type=int, help="Answer the next N API calls with 401"
+        "--token-expired", type=_count, help="Answer the next N API calls with 401"
     )
     parser.add_argument(
         "--tokens-rejected",
@@ -145,7 +146,7 @@ def _build_custom_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--token-lifetime",
-        type=float,
+        type=_seconds,
         help="Refuse a token with 401 once it is older than this many seconds",
     )
     return parser

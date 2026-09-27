@@ -255,6 +255,7 @@ def test_failure_label_appears_in_the_startup_summary():
         ("--token-expired", "-1"),
         ("--token-expired", "1.5"),
         ("--token-lifetime", "abc"),
+        ("--token-lifetime", "inf"),
         ("--failures", "nope"),
     ],
 )

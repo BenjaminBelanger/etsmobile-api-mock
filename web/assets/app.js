@@ -29,6 +29,7 @@ const state = {
   failuresFuture: [],
   failureKind: "latency",
   failuresPoll: null,
+  failuresSeq: 0,
   staged: [],
   endpoints: [],
   presets: [],
@@ -1842,15 +1843,16 @@ function failureError(data, res) {
   return detail || data.error || res.statusText || "Échec de l'opération";
 }
 
-async function adminFetch(path, options, message, record = true) {
+async function adminFetch(path, options, message, record = true, setsCountdown = true) {
   const before = state.failures;
   setStatus("Enregistrement…", true);
   try {
     const res = await fetch(`${ADMIN}${path}`, options);
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
-    if (record && before && !sameFailures(before, data)) {
-      state.failuresPast.push({ before, after: data });
+    const change = record && before && failureChange(before, data, setsCountdown);
+    if (change) {
+      state.failuresPast.push(change);
       state.failuresFuture = [];
     }
     applyFailures(data);
@@ -1874,10 +1876,12 @@ const patchFailures = (body, message, record) =>
       body: JSON.stringify(body),
     },
     message,
-    record
+    record,
+    "tokenExpiredCalls" in body
   );
 
 function applyFailures(cfg) {
+  state.failuresSeq += 1;
   state.failures = cfg;
   el.failuresDot.hidden = !activeKinds(cfg).length;
   renderFailures();
@@ -1891,27 +1895,44 @@ function scheduleFailuresPoll() {
   }
 }
 
+const editingInjection = () => !!document.activeElement?.closest?.("[data-field]");
+
 async function pollFailures() {
+  const seq = state.failuresSeq;
   const res = await fetch(ADMIN).catch(() => null);
   const cfg = res && res.ok ? await res.json() : null;
-  if (cfg && !sameFailures(cfg, state.failures)) applyFailures(cfg);
+  if (seq !== state.failuresSeq) return;
+  if (cfg && !sameFailures(cfg, state.failures) && !editingInjection()) applyFailures(cfg);
   else scheduleFailuresPoll();
 }
 
-const failureFields = (cfg) =>
-  Object.fromEntries(Object.keys(NO_FAILURES).map((key) => [key, cfg[key]]));
+const pickFields = (cfg, keys) => Object.fromEntries(keys.map((key) => [key, cfg[key]]));
 
-const sameFailures = (a, b) =>
-  JSON.stringify(failureFields(a)) === JSON.stringify(failureFields(b));
+const FAILURE_FIELDS = Object.keys(NO_FAILURES);
+const SETTING_FIELDS = FAILURE_FIELDS.filter((key) => key !== "tokenExpiredCalls");
+
+const sameFields = (a, b, keys) =>
+  JSON.stringify(pickFields(a, keys)) === JSON.stringify(pickFields(b, keys));
+
+const sameFailures = (a, b) => sameFields(a, b, FAILURE_FIELDS);
+const sameSettings = (a, b) => sameFields(a, b, SETTING_FIELDS);
+
+function failureChange(before, after, setsCountdown) {
+  const countdown = setsCountdown && before.tokenExpiredCalls !== after.tokenExpiredCalls;
+  return countdown || !sameSettings(before, after) ? { before, after, countdown } : null;
+}
+
+const changeBody = (change, target) =>
+  pickFields(change[target], change.countdown ? FAILURE_FIELDS : SETTING_FIELDS);
 
 const canUndoFailures = () => {
   const change = state.failuresPast.at(-1);
-  return !!change && !!state.failures && sameFailures(change.after, state.failures);
+  return !!change && !!state.failures && sameSettings(change.after, state.failures);
 };
 
 const canRedoFailures = () => {
   const change = state.failuresFuture.at(-1);
-  return !!change && !!state.failures && sameFailures(change.before, state.failures);
+  return !!change && !!state.failures && sameSettings(change.before, state.failures);
 };
 
 function renderFailureHistory() {
@@ -1922,7 +1943,7 @@ function renderFailureHistory() {
 function stepFailures(from, to, target, message) {
   const change = from.pop();
   renderFailureHistory();
-  patchFailures(failureFields(change[target]), message, false).then(
+  patchFailures(changeBody(change, target), message, false).then(
     () => {
       to.push(change);
       renderFailureHistory();

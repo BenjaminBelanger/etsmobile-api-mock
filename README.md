@@ -301,8 +301,8 @@ header holds, to exercise the app's token refresh and 401 handling:
 - **Token lifetime** (`tokenLifetimeS`): each distinct `Authorization` value is
   timed from the first call that carries it. Once it is older than S seconds,
   it gets 401 with `{"error": "Jeton expiré."}`. A new token is accepted and
-  starts its own clock. Calls without the header are not timed. Changing the
-  lifetime or resetting the config restarts every clock.
+  starts its own clock. Calls without a token (no header, or `Bearer null`) are
+  not timed. Changing the lifetime or resetting the config restarts every clock.
 
 ### Runtime control via admin endpoint
 

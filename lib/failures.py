@@ -1,7 +1,8 @@
-"""Runtime failure injection (latency, errors, auth, tokens, malformed responses)."""
+"""Runtime failure injection (latency, errors, auth, malformed responses)."""
 
 import asyncio
 import json
+import math
 import os
 import random
 import time
@@ -170,7 +171,7 @@ def load_from_env() -> FailureConfig:
     if "TOKEN_LIFETIME_S" in os.environ:
         try:
             s = float(os.environ["TOKEN_LIFETIME_S"])
-            if s >= 0.0:
+            if math.isfinite(s) and s >= 0.0:
                 cfg.token_lifetime_s = s
         except ValueError:
             pass
@@ -214,7 +215,7 @@ class FailureConfigUpdate(BaseModel):
     authRequired: bool | None = None
     tokenExpiredCalls: int | None = Field(default=None, ge=0)
     tokensRejected: bool | None = None
-    tokenLifetimeS: float | None = Field(default=None, ge=0.0)
+    tokenLifetimeS: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
     model_config = {"extra": "forbid"}
 
@@ -276,6 +277,13 @@ async def _truncate_response(response: Response) -> Response:
     )
 
 
+def _carries_token(header: str) -> bool:
+    scheme, _, value = header.partition(" ")
+    if scheme.lower() != "bearer":
+        return bool(header)
+    return value.strip() not in ("", "null")
+
+
 def _token_age(token: str) -> float:
     now = time.monotonic()
     return now - _token_first_seen.setdefault(token, now)
@@ -291,7 +299,7 @@ TOKEN_ERRORS = {
 def _token_rejection(cfg: FailureConfig, token: str) -> str | None:
     expired = (
         cfg.token_lifetime_s > 0.0
-        and bool(token)
+        and _carries_token(token)
         and _token_age(token) > cfg.token_lifetime_s
     )
     if cfg.tokens_rejected:

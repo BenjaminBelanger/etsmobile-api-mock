@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ENDPOINTS, PRESETS, baseState, defaultFailures, flush, mount } from "./harness.mjs";
+import {
+  ENDPOINTS,
+  PRESETS,
+  baseState,
+  clone,
+  defaultFailures,
+  flush,
+  mount,
+} from "./harness.mjs";
 
 const BROKEN = {
   latencyMs: "500-2000",
@@ -29,6 +37,8 @@ const ALL_KINDS = [
 ];
 
 const POLL_MS = 2000;
+
+const withoutCountdown = ({ tokenExpiredCalls, ...settings }) => settings;
 
 async function openFailures(app) {
   app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewFailures") });
@@ -95,6 +105,23 @@ function holdPolls(app) {
       due.forEach((fn) => fn());
       await flush();
     },
+  };
+}
+
+function holdNextRead(app) {
+  const serve = app.window.fetch;
+  let release;
+  app.window.fetch = (url, request) => {
+    if (url !== "/admin/failures" || request) return serve(url, request);
+    app.window.fetch = serve;
+    const reading = clone(app.server.admin.config);
+    return new Promise((resolve) => {
+      release = () => resolve({ ok: true, status: 200, json: async () => reading });
+    });
+  };
+  return async () => {
+    release();
+    await flush();
   };
 }
 
@@ -302,6 +329,70 @@ describe("an expired token countdown", () => {
     app.close();
   });
 
+  test("leaves the field being typed in alone", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3, latencyMs: 500 });
+    const input = field(app, "latency", "latencyMs");
+    input.tabIndex = 0;
+    input.focus();
+    app.server.admin.config.tokenExpiredCalls = 2;
+
+    await polls.run();
+
+    assert.equal(field(app, "latency", "latencyMs"), input);
+    assert.equal(app.document.activeElement, input);
+    assert.equal(polls.size, 1);
+
+    input.blur();
+    await polls.run();
+
+    assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "2");
+    app.close();
+  });
+
+  test("ignores a reading that a newer change overtook", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2 });
+    const answer = holdNextRead(app);
+    await polls.run();
+    await app.click(app.query('[data-remove="tokenExpired"]'));
+
+    await answer();
+
+    assert.deepEqual(kinds(app), []);
+    assert.equal(undoBtn(app).disabled, false);
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("stays out of undoing another change", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 3, latencyMs: 500 });
+    app.server.admin.config.tokenExpiredCalls = 1;
+    app.select(field(app, "latency", "latencyMs"), "800");
+    await flush();
+
+    await app.click(undoBtn(app));
+
+    assert.equal("tokenExpiredCalls" in lastPatch(app).body, false);
+    assert.equal(app.server.admin.config.latencyMs, 500);
+    assert.equal(app.server.admin.config.tokenExpiredCalls, 1);
+    app.close();
+  });
+
+  test("can still be undone while the app uses it up", async () => {
+    const { app, polls } = await onFailuresPolled({});
+    await openDialog(app, "tokenExpired");
+    app.select(app.byId("fTokenExpiredCalls"), "3");
+    await app.click(app.byId("failureSubmit"));
+    app.server.admin.config.tokenExpiredCalls = 1;
+    await polls.run();
+
+    assert.equal(undoBtn(app).disabled, false);
+    await app.click(undoBtn(app));
+
+    assert.equal(app.server.admin.config.tokenExpiredCalls, 0);
+    assert.deepEqual(kinds(app), []);
+    app.close();
+  });
+
   test("is not watched from the schedule tab", async () => {
     const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3 });
 
@@ -470,7 +561,10 @@ describe("undo and redo on the failures tab", () => {
     assert.equal(undoBtn(app).disabled, false);
     await app.click(undoBtn(app));
 
-    assert.deepEqual(lastPatch(app).body, { ...defaultFailures(), latencyMs: 500 });
+    assert.deepEqual(
+      lastPatch(app).body,
+      withoutCountdown({ ...defaultFailures(), latencyMs: 500 }),
+    );
     assert.equal(field(app, "latency", "latencyMs").getAttribute("value"), "500");
     assert.equal(app.toast().text, "Modification annulée");
     assert.equal(undoBtn(app).disabled, true);
@@ -617,7 +711,11 @@ describe("undoing what a single click took away", () => {
     await app.click(app.query('[data-remove="fail"]'));
     await app.click(undoBtn(app));
 
-    assert.deepEqual(lastPatch(app), { path: "", method: "PATCH", body: BROKEN });
+    assert.deepEqual(lastPatch(app), {
+      path: "",
+      method: "PATCH",
+      body: withoutCountdown(BROKEN),
+    });
     assert.deepEqual(chips(app, "fail"), BROKEN.failEndpoints);
     assert.equal(app.toast().text, "Modification annulée");
     app.close();

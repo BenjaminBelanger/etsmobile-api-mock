@@ -2,6 +2,7 @@ import argparse
 import contextlib
 import ctypes
 import json
+import math
 import os
 import signal
 import subprocess
@@ -174,7 +175,7 @@ def _seconds(raw: str) -> float:
         raise argparse.ArgumentTypeError(
             f"expected a number of seconds, got {raw!r}"
         ) from None
-    if val < 0:
+    if not math.isfinite(val) or val < 0:
         raise argparse.ArgumentTypeError(f"expected a number of seconds, got {val}")
     return val
 
