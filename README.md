@@ -272,7 +272,7 @@ calls each injection hit.
 | `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
 | `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
 | `--malformed` | Truncate every successful 2xx response body in half |
-| `--auth` | Return 401 on API requests without an `Authorization` header |
+| `--auth` | Return 401 on API requests without an `Authorization` header. Never fires for ÉTSMobile, which always sends one (even `Bearer null`) |
 | `--token-expired N` | The next N API calls return 401, then calls succeed again |
 | `--tokens-rejected` | Every API call returns 401, whatever the token |
 
@@ -285,18 +285,6 @@ python start.py --profile semester-off --auth
 A preset can be adjusted by adding flags after it. `--failures flaky
 --error-rate 0.9` keeps the preset's latency and replaces its error rate.
 `--malformed`, `--auth` and `--tokens-rejected` each have a `--no-` form.
-
-### Token expiry
-
-ÉTSMobile sends a bearer token on every call (even `Bearer null`), so `--auth`
-never fires for the real app. These two modes return 401 no matter what the
-header holds, to exercise the app's token refresh and 401 handling:
-
-- **Token expired** (`tokenExpiredCalls`): the next N API calls return 401 with
-  `{"error": "Jeton expiré."}`, then calls succeed again. The count goes down
-  with each call, and `/admin/failures` reports the calls left.
-- **Tokens rejected** (`tokensRejected`): every API call returns 401 with
-  `{"error": "Jeton refusé."}`.
 
 ### Runtime control via admin endpoint
 
@@ -387,7 +375,7 @@ The mock server returns data for a fictional ÉTS software engineering student w
 
 ## Authentication
 
-No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all). To test 401 handling, see [Token expiry](#token-expiry).
+No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all). To test 401 handling, see [Startup flags](#startup-flags).
 
 ## Customizing Data
 
