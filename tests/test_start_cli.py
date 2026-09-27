@@ -709,7 +709,7 @@ def test_a_snapshot_turns_its_setup_and_position_into_the_env_vars(
         "LATENCY_MS": "100-800",
         "ERROR_RATE": "0.3",
     }
-    assert display == "generated-busy + instantané « Examen final »"
+    assert display == "generated-busy + sauvegarde « Examen final »"
     assert (scenario, calendar) == ("friday-off", "semaine 4 + congé de 16 jours")
     assert plan.student == {"prenom": "Marie"}
     assert plan.schedule
@@ -833,7 +833,7 @@ def test_the_help_lists_the_saved_snapshots_with_their_position(saved_snapshot, 
     assert "examen-final" in printed
     assert (
         "Examen final (A2026 semaine 4, congé de 16 jours, "
-        "enregistré le vendredi 2026-09-25)"
+        "enregistrée le vendredi 2026-09-25)"
     ) in printed
 
 
@@ -851,22 +851,22 @@ def test_a_snapshot_saved_between_sessions_is_labelled_so(anchor, position):
     item = {"name": "Congé", "anchor": anchor}
 
     assert start._snapshot_label(item) == (
-        f"Congé (A2026 {position}, enregistré le mardi 2026-12-22)"
+        f"Congé (A2026 {position}, enregistrée le mardi 2026-12-22)"
     )
 
 
 def test_the_menu_offers_snapshots_only_when_there_are_some(monkeypatch, capsys):
     answer(monkeypatch, "0")
     start._select_profile()
-    assert "instantané" not in capsys.readouterr().out
+    assert "sauvegarde" not in capsys.readouterr().out
 
     start.snapshots.write(snapshot_body())
-    answer(monkeypatch, "i")
+    answer(monkeypatch, "s")
     assert start._select_profile() == "__snapshot__"
 
 
 def test_the_menu_applies_everything_by_default(saved_snapshot, monkeypatch, capsys):
-    left = answer(monkeypatch, "i", "1", "", "", "", "")
+    left = answer(monkeypatch, "s", "1", "", "", "", "")
 
     overrides, _, _, calendar, plan = start._config_from_menu()
 
@@ -878,14 +878,14 @@ def test_the_menu_applies_everything_by_default(saved_snapshot, monkeypatch, cap
     assert plan.failures == {"latencyMs": "100-800", "errorRate": 0.3}
     printed = capsys.readouterr().out
     assert "semaine 4, congé de 16 jours" in printed
-    assert "enregistré un vendredi, un « examen demain » ne revient qu'un vendredi" in printed
+    assert "enregistrée un vendredi, un « examen demain » ne revient qu'un vendredi" in printed
     assert "Horaire enregistré: A2026" in printed
     assert "Profil étudiant enregistré: prenom" in printed
     assert "latence 100-800 ms, erreurs aléatoires 30 %" in printed
 
 
 def test_the_menu_asks_the_same_things_as_the_flags(saved_snapshot, monkeypatch):
-    left = ["i", "1", "2", "n", "n", "n"]
+    left = ["s", "1", "2", "n", "n", "n"]
     prompts = []
     monkeypatch.setattr(
         "builtins.input", lambda prompt="": prompts.append(prompt) or left.pop(0)
@@ -904,7 +904,7 @@ def test_the_menu_asks_the_same_things_as_the_flags(saved_snapshot, monkeypatch)
 
 def test_the_menu_only_asks_about_what_the_snapshot_holds(monkeypatch, capsys):
     start.snapshots.write(snapshot_body(sessions={}, student={}, failures={}))
-    left = answer(monkeypatch, "i", "1", "")
+    left = answer(monkeypatch, "s", "1", "")
 
     _, _, _, _, plan = start._config_from_menu()
 
@@ -914,7 +914,7 @@ def test_the_menu_only_asks_about_what_the_snapshot_holds(monkeypatch, capsys):
 
 
 def test_leaving_the_snapshot_menu_starts_nothing(saved_snapshot, monkeypatch):
-    answer(monkeypatch, "i", "0")
+    answer(monkeypatch, "s", "0")
     assert start._config_from_menu() is None
 
 

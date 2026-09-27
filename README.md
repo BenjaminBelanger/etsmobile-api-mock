@@ -61,7 +61,7 @@ The page has five tabs:
 - **Pannes**: the [failure injection](#failure-injection) panel.
 - **Étudiant**: edits the student profile served by `infoEtudiant`.
 - **Logs**: the [call log](#call-log).
-- **Instantanés**: [snapshots](#snapshots-tab) of the whole mock state.
+- **Sauvegardes**: [snapshots](#snapshots-tab) of the whole mock state.
 
 `python start.py` clears every editor change at each launch.
 
@@ -84,7 +84,7 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 ### Snapshots tab
 
-The **Instantanés** tab saves the mock state under a name: profile, scenario,
+The **Sauvegardes** tab saves the mock state under a name: profile, scenario,
 generation options, calendar position, schedule edits, student profile edits
 and Pannes. Snapshots are saved in `snapshots/`, which git ignores: to share
 one, export it and import the file on the other machine. Loading one applies

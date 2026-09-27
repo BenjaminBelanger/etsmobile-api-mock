@@ -320,7 +320,7 @@ def _target_week(active: str, saved_week: int, notices: list[str]) -> int:
     count = sessions.week_count(meta)
     if saved_week < 1:
         notices.append(
-            f"L'instantané a été enregistré avant le début de sa session: "
+            f"La sauvegarde a été enregistrée avant le début de sa session: "
             f"la semaine 1 de {active} est utilisée."
         )
     elif saved_week > count:

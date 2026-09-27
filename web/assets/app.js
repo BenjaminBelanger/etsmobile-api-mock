@@ -2700,7 +2700,7 @@ function realignHint(item, current) {
   const { anchor } = item;
   if (unchangedToday(anchor, current)) {
     const when = anchor.betweenSessions ? "aujourd’hui" : "cette semaine";
-    return `Enregistré ${when}: rien à décaler, tout est chargé tel quel.`;
+    return `Enregistrée ${when}: rien à décaler, tout est chargé tel quel.`;
   }
   const where = anchor.betweenSessions
     ? "la session active s’est terminée hier"
@@ -2718,7 +2718,7 @@ function realignHint(item, current) {
       : "";
   return (
     `Retrouve la même situation: ${where} et ${next}. Les cours gardent leur jour de ` +
-    `semaine: enregistré un ${weekday}, un « examen demain » ne revient qu’un ${weekday}.` +
+    `semaine: enregistrée un ${weekday}, un « examen demain » ne revient qu’un ${weekday}.` +
     `${moved}${clampHint(anchor, current)}`
   );
 }
@@ -2922,7 +2922,7 @@ async function loadSnapshots() {
     if (!res.ok) throw new Error(failureError(data, res));
     applySnapshots(data);
   } catch (err) {
-    setStatus("Impossible de lire les instantanés.", false, true);
+    setStatus("Impossible de lire les sauvegardes.", false, true);
     toast(err.message || "Serveur injoignable", true);
   }
 }
@@ -2956,12 +2956,12 @@ async function submitSnapshotSave() {
     { quiet409: true }
   );
   if (result.conflict) {
-    setSaveConflict("Un instantané porte déjà ce nom. Enregistrez à nouveau pour le remplacer.");
+    setSaveConflict("Une sauvegarde porte déjà ce nom. Enregistrez à nouveau pour la remplacer.");
     return;
   }
   if (result.data) {
     el.snapshotSaveDialog.hide();
-    toast(`Instantané « ${name} » enregistré`);
+    toast(`Sauvegarde « ${name} » enregistrée`);
   }
 }
 
@@ -3080,8 +3080,8 @@ async function submitSnapshotLoad() {
     toast(err.message || "Serveur injoignable", true);
   }
   const notices = result.data.notices || [];
-  setStatus(notices.length ? notices.join(" ") : `Instantané « ${item.name} » chargé.`, false);
-  toast(`Instantané « ${item.name} » chargé`);
+  setStatus(notices.length ? notices.join(" ") : `Sauvegarde « ${item.name} » chargée.`, false);
+  toast(`Sauvegarde « ${item.name} » chargée`);
 }
 
 function askSnapshot({ title, text, action, run }) {
@@ -3112,7 +3112,7 @@ function runSnapshotAction(item, action) {
       action: "Supprimer",
       run: () =>
         snapshotRequest("/delete", { id: item.id }).then((result) => {
-          if (result.data) toast("Instantané supprimé");
+          if (result.data) toast("Sauvegarde supprimée");
         }),
     });
   }
@@ -3127,12 +3127,12 @@ async function importSnapshot(snapshot, overwrite = false) {
   if (result.conflict) {
     askSnapshot({
       title: `Remplacer « ${snapshot.name} » ?`,
-      text: "Un instantané porte déjà ce nom. Il sera remplacé par le fichier importé.",
+      text: "Une sauvegarde porte déjà ce nom. Elle sera remplacée par le fichier importé.",
       action: "Remplacer",
       run: () => importSnapshot(snapshot, true),
     });
   } else if (result.data) {
-    toast(`Instantané « ${snapshot.name} » importé`);
+    toast(`Sauvegarde « ${snapshot.name} » importée`);
   }
 }
 
@@ -3144,7 +3144,7 @@ async function readSnapshotFile() {
   try {
     snapshot = JSON.parse(await file.text());
   } catch {
-    toast("Ce fichier n'est pas un instantané JSON valide", true);
+    toast("Ce fichier n'est pas une sauvegarde JSON valide", true);
     return;
   }
   importSnapshot(snapshot);
@@ -3173,7 +3173,7 @@ const VIEWS = {
   },
   snapshots: {
     tab: "viewSnapshots",
-    title: "Instantanés",
+    title: "Sauvegardes",
     panes: [el.snapshotsView, el.snapshotsToolbar],
   },
 };

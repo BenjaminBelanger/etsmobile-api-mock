@@ -240,7 +240,7 @@ def _snapshot_label(item: dict) -> str:
     anchor = item["anchor"]
     return (
         f"{item['name']} ({anchor['session']} "
-        f"{_position_label(anchor)}, enregistré le {_saved_weekday(anchor)} "
+        f"{_position_label(anchor)}, enregistrée le {_saved_weekday(anchor)} "
         f"{anchor['date']})"
     )
 
@@ -259,7 +259,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     for name, body in presets.items():
         lines.append(f"  {name:<20}{body.get('description', '')}")
     lines.append("")
-    lines.append("instantanés (onglet Instantanés de l'éditeur):")
+    lines.append("sauvegardes (onglet Sauvegardes de l'éditeur):")
     items = snapshots.list_all()
     for item in items:
         lines.append(f"  {item['id']:<28}{_snapshot_label(item)}")
@@ -451,8 +451,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     snapshot = parser.add_argument_group(
-        "instantanés",
-        "Charge un instantané enregistré depuis l'onglet Instantanés de l'éditeur. "
+        "sauvegardes",
+        "Charge une sauvegarde enregistrée depuis l'onglet Sauvegardes de l'éditeur. "
         "Ne se combine pas avec les options ci-dessus.",
     )
     snapshot.add_argument(
@@ -460,7 +460,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--preset",
         dest="snapshot",
         metavar="NOM",
-        help="Nom de l'instantané à charger.",
+        help="Nom de la sauvegarde à charger.",
         default=None,
     )
     snapshot.add_argument(
@@ -488,7 +488,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--no-snapshot-failures",
         dest="snapshot_failures",
         action="store_false",
-        help="N'applique pas les pannes enregistrées dans l'instantané.",
+        help="N'applique pas les pannes enregistrées dans la sauvegarde.",
         default=None,
     )
 
@@ -676,7 +676,7 @@ def _snapshot_config(
     overrides = snapshots.setup_to_env(plan.setup)
     if plan.failures:
         overrides.update(_failure_env(plan.failures))
-    display = f"{plan.setup['profile']} + instantané « {snapshot['name']} »"
+    display = f"{plan.setup['profile']} + sauvegarde « {snapshot['name']} »"
     scenario = plan.setup.get("scenario") or "none"
     anchor = snapshot["anchor"]
     calendar = (
@@ -701,7 +701,7 @@ def _config_from_snapshot(
     if snapshot_id is None:
         known = ", ".join(item["id"] for item in snapshots.list_all())
         parser.error(
-            f"instantané introuvable: {args.snapshot!r} "
+            f"sauvegarde introuvable: {args.snapshot!r} "
             f"(disponibles: {known or 'aucun'})"
         )
     try:
@@ -713,7 +713,7 @@ def _config_from_snapshot(
             failures=args.snapshot_failures is not False,
         )
     except snapshots.SnapshotError as exc:
-        parser.error(f"instantané illisible: {exc}")
+        parser.error(f"sauvegarde illisible: {exc}")
 
 
 def _validate_menu_choice(raw: str, max_choices: int) -> int | None:
@@ -738,7 +738,7 @@ def _select_profile() -> str | None:
     print("\n  C) Personnalisé (choisir nombre de cours, jours, etc.)")
     has_snapshots = bool(snapshots.list_all())
     if has_snapshots:
-        print("  I) Charger un instantané")
+        print("  S) Charger une sauvegarde")
     print("  0) Quitter")
 
     while True:
@@ -749,7 +749,7 @@ def _select_profile() -> str | None:
 
         if raw.lower() == "c":
             return "__custom__"
-        if raw.lower() == "i" and has_snapshots:
+        if raw.lower() == "s" and has_snapshots:
             return "__snapshot__"
         if raw == "0":
             return None
@@ -941,7 +941,7 @@ def _configure_custom() -> dict | None:
 
 def _select_snapshot() -> dict | None:
     items = snapshots.list_all()
-    print("\n=== Instantanés ===\n")
+    print("\n=== Sauvegardes ===\n")
     for i, item in enumerate(items, 1):
         print(f"  {i}) {_snapshot_label(item)}")
     print("\n  0) Annuler")
@@ -965,12 +965,12 @@ def _prompt_snapshot_dates(item: dict) -> str:
     weekday = _saved_weekday(anchor)
     details = {
         "week": f"retrouve la même situation aujourd'hui ({_position_label(anchor)}); "
-        "les dates avancent par semaines entières, donc enregistré un "
+        "les dates avancent par semaines entières, donc enregistrée un "
         f"{weekday}, un « examen demain » ne revient qu'un {weekday}",
         "exact": f"rien n'est décalé, l'horaire garde les dates du {anchor['date']} "
         "(réglez l'horloge du téléphone)",
     }
-    print("\n=== Dates de l'instantané ===\n")
+    print("\n=== Dates de la sauvegarde ===\n")
     for i, mode in enumerate(snapshots.DATE_MODES, 1):
         print(f"  {i}) {DATE_MODE_LABELS[mode]}: {details[mode]}")
     while True:

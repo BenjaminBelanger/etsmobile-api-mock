@@ -59,7 +59,7 @@ describe("the snapshots tab", () => {
     for (const id of ["scheduleView", "scheduleToolbar", "failuresView", "studentView"]) {
       assert.equal(app.byId(id).hidden, true, id);
     }
-    assert.equal(app.document.title, "Instantanés - ÉTS Mock");
+    assert.equal(app.document.title, "Sauvegardes - ÉTS Mock");
     app.close();
   });
 
@@ -220,7 +220,7 @@ describe("saving a snapshot", () => {
 
     assert.deepEqual(posted(app, "/save"), { name: "Examen demain", overwrite: false });
     assert.equal(app.byId("snapshotSaveDialog").open, false);
-    assert.equal(app.toast().text, "Instantané « Examen demain » enregistré");
+    assert.equal(app.toast().text, "Sauvegarde « Examen demain » enregistrée");
     assert.ok(rowFor(app, "examen-demain"));
     app.close();
   });
@@ -326,7 +326,7 @@ describe("loading a snapshot", () => {
       firstHint(app),
       "Retrouve la même situation: aujourd’hui tombe à la semaine 4 de la session et la " +
         "suivante commence après 16 jours de congé. Les cours gardent leur jour de " +
-        "semaine: enregistré un vendredi, un « examen demain » ne revient qu’un vendredi.",
+        "semaine: enregistrée un vendredi, un « examen demain » ne revient qu’un vendredi.",
     );
     app.close();
   });
@@ -343,7 +343,7 @@ describe("loading a snapshot", () => {
     assert.deepEqual(tags.slice(0, 2), ["entre deux sessions", "rentrée dans 10 jours"]);
     assert.match(
       firstHint(app),
-      /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence dans 10 jours\. .*enregistré un mardi,/,
+      /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence dans 10 jours\. .*enregistrée un mardi,/,
     );
     app.close();
   });
@@ -376,7 +376,7 @@ describe("loading a snapshot", () => {
     });
     await openLoad(app);
 
-    assert.equal(firstHint(app), "Enregistré cette semaine: rien à décaler, tout est chargé tel quel.");
+    assert.equal(firstHint(app), "Enregistrée cette semaine: rien à décaler, tout est chargé tel quel.");
     app.close();
   });
 
@@ -389,7 +389,7 @@ describe("loading a snapshot", () => {
     });
     await openLoad(sameWeek);
 
-    assert.equal(firstHint(sameDay), "Enregistré aujourd’hui: rien à décaler, tout est chargé tel quel.");
+    assert.equal(firstHint(sameDay), "Enregistrée aujourd’hui: rien à décaler, tout est chargé tel quel.");
     assert.match(firstHint(sameWeek), /^Retrouve la même situation/);
     sameDay.close();
     sameWeek.close();
@@ -530,8 +530,8 @@ describe("loading a snapshot", () => {
 
     assert.equal(app.server.called("/state").length, before + 1);
     assert.equal(app.server.admin.called("").length, pannes + 1);
-    assert.equal(app.status(), "Instantané « Démo » chargé.");
-    assert.equal(app.toast().text, "Instantané « Démo » chargé");
+    assert.equal(app.status(), "Sauvegarde « Démo » chargée.");
+    assert.equal(app.toast().text, "Sauvegarde « Démo » chargée");
     app.close();
   });
 
@@ -617,7 +617,7 @@ describe("managing snapshots", () => {
       snapshot: { format: 1, name: "Reçu" },
       overwrite: false,
     });
-    assert.equal(app.toast().text, "Instantané « Reçu » importé");
+    assert.equal(app.toast().text, "Sauvegarde « Reçu » importée");
     app.close();
   });
 

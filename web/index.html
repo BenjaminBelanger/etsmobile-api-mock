@@ -18,7 +18,7 @@
             <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
             <fluent-tab id="viewStudent" data-view="student">Étudiant</fluent-tab>
             <fluent-tab id="viewCalls" data-view="calls">Logs</fluent-tab>
-            <fluent-tab id="viewSnapshots" data-view="snapshots">Instantanés</fluent-tab>
+            <fluent-tab id="viewSnapshots" data-view="snapshots">Sauvegardes</fluent-tab>
           </fluent-tablist>
 
           <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
@@ -239,7 +239,7 @@
         <section class="board board--list" id="snapshotsBoard">
           <ul class="snapshots" id="snapshotList"></ul>
           <div class="board__empty" id="snapshotEmpty" hidden>
-            <p>Aucun instantané. Enregistrez l’état actuel pour le retrouver plus tard ou le partager.</p>
+            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver plus tard ou le partager.</p>
           </div>
         </section>
 
@@ -345,7 +345,7 @@
       </fluent-dialog-body>
     </fluent-dialog>
 
-    <fluent-dialog id="snapshotSaveDialog" type="modal" aria-label="Enregistrer un instantané">
+    <fluent-dialog id="snapshotSaveDialog" type="modal" aria-label="Enregistrer une sauvegarde">
       <fluent-dialog-body>
         <span slot="title">Enregistrer l’état actuel</span>
         <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-save></fluent-button>
@@ -353,11 +353,11 @@
         <form id="snapshotSaveForm" class="form" novalidate>
           <fluent-field label-position="above">
             <fluent-label slot="label" required>Nom</fluent-label>
-            <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Examen final demain" aria-label="Nom de l’instantané"></fluent-text-input>
+            <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Examen final demain" aria-label="Nom de la sauvegarde"></fluent-text-input>
           </fluent-field>
         </form>
         <p class="dialog__hint">Comprend le profil, le scénario, la semaine, les options de génération, l’horaire modifié, le profil étudiant et les pannes actives.</p>
-        <p class="dialog__hint">Enregistré dans snapshots/, ignoré par git. Exportez-le pour le partager.</p>
+        <p class="dialog__hint">Enregistrée dans snapshots/, ignorée par git. Exportez-la pour la partager.</p>
         <p class="dialog__hint dialog__hint--warn" id="snapshotSaveConflict" hidden></p>
 
         <fluent-button slot="action" appearance="secondary" data-close-snapshot-save>Annuler</fluent-button>
@@ -365,9 +365,9 @@
       </fluent-dialog-body>
     </fluent-dialog>
 
-    <fluent-dialog id="snapshotLoadDialog" type="modal" aria-label="Charger un instantané">
+    <fluent-dialog id="snapshotLoadDialog" type="modal" aria-label="Charger une sauvegarde">
       <fluent-dialog-body>
-        <span slot="title" id="snapshotLoadTitle">Charger l’instantané</span>
+        <span slot="title" id="snapshotLoadTitle">Charger la sauvegarde</span>
         <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-load></fluent-button>
 
         <form id="snapshotLoadForm" class="form" novalidate>
