@@ -198,7 +198,6 @@ const DEFAULT_FAILURES = {
   authRequired: false,
   tokenExpiredCalls: 0,
   tokensRejected: false,
-  tokenLifetimeS: 0,
 };
 
 export const ENDPOINTS = ["helloWorld", "listeCoequipiers", "listeCours"];

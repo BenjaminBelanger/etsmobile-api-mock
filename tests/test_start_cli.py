@@ -221,10 +221,7 @@ def test_boolean_failure_flags_render_as_env_booleans():
 
 
 def test_token_failure_flags_map_to_env_vars():
-    assert failure_env("--token-expired", "3", "--token-lifetime", "30") == {
-        "TOKEN_EXPIRED_CALLS": "3",
-        "TOKEN_LIFETIME_S": "30.0",
-    }
+    assert failure_env("--token-expired", "3") == {"TOKEN_EXPIRED_CALLS": "3"}
 
 
 def test_explicit_flags_override_the_preset():
@@ -252,10 +249,9 @@ def test_failure_label_appears_in_the_startup_summary():
         ("--error-rate", "1.5"),
         ("--error-rate", "abc"),
         ("--timeout-duration", "-1"),
+        ("--timeout-duration", "inf"),
         ("--token-expired", "-1"),
         ("--token-expired", "1.5"),
-        ("--token-lifetime", "abc"),
-        ("--token-lifetime", "inf"),
         ("--failures", "nope"),
     ],
 )

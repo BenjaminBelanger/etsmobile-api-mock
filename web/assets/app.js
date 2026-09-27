@@ -1600,7 +1600,6 @@ const NO_FAILURES = {
   authRequired: false,
   tokenExpiredCalls: 0,
   tokensRejected: false,
-  tokenLifetimeS: 0,
 };
 
 const FAILURES_POLL_MS = 2000;
@@ -1815,25 +1814,6 @@ const FAILURE_KINDS = [
     form: () => "",
     read: () => ({ body: { tokensRejected: true } }),
   },
-  {
-    id: "tokenLifetime",
-    label: "Durée de vie du jeton",
-    icon: "passwordClock",
-    hint: "Un jeton plus vieux que ce délai répond 401. Un nouveau jeton repart à zéro.",
-    active: (cfg) => cfg.tokenLifetimeS > 0,
-    summary: (cfg) => `jetons valides ${cfg.tokenLifetimeS} s`,
-    value: (cfg) =>
-      injectionInput("tokenLifetimeS", cfg.tokenLifetimeS, "sm", "s", "Durée de vie du jeton"),
-    clear: () => ({ tokenLifetimeS: 0 }),
-    form: () => numberField("fTokenLifetime", "Durée de vie en s", "", "30"),
-    read: () => {
-      const seconds = Number(el.failureParams.querySelector("#fTokenLifetime").value);
-      if (!Number.isFinite(seconds) || seconds <= 0) {
-        return { error: "Une durée en secondes est requise" };
-      }
-      return { body: { tokenLifetimeS: seconds } };
-    },
-  },
 ];
 
 const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
@@ -2046,7 +2026,6 @@ const NUMBER_FIELDS = {
     valid: (n) => Number.isInteger(n) && n >= 0,
     error: "Un nombre d'appels est requis",
   },
-  tokenLifetimeS: { valid: (n) => n >= 0, error: "Une durée en secondes est requise" },
 };
 
 function commitFailureField(fieldName, value) {
@@ -2321,7 +2300,6 @@ const CALL_FAILURES = {
   auth: () => "Authentification manquante",
   tokenExpired: () => "Jeton expiré",
   tokensRejected: () => "Jeton refusé",
-  tokenLifetime: () => "Durée de vie du jeton dépassée",
 };
 
 const decimal = (value, digits = 1) =>

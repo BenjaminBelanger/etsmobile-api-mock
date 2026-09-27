@@ -21,7 +21,6 @@ const BROKEN = {
   authRequired: true,
   tokenExpiredCalls: 3,
   tokensRejected: true,
-  tokenLifetimeS: 30,
 };
 
 const ALL_KINDS = [
@@ -33,7 +32,6 @@ const ALL_KINDS = [
   "auth",
   "tokenExpired",
   "tokensRejected",
-  "tokenLifetime",
 ];
 
 const POLL_MS = 2000;
@@ -225,7 +223,6 @@ describe("active injections", () => {
       authRequired: true,
       tokenExpiredCalls: 2,
       tokensRejected: true,
-      tokenLifetimeS: 30,
     });
 
     assert.deepEqual(kinds(app), ALL_KINDS);
@@ -263,14 +260,6 @@ describe("active injections", () => {
     const app = await onFailures({ tokenExpiredCalls: 1 });
 
     assert.equal(unitOf(app, "tokenExpired"), "appel restant");
-    app.close();
-  });
-
-  test("show the token lifetime", async () => {
-    const app = await onFailures({ tokenLifetimeS: 45 });
-
-    assert.equal(field(app, "tokenLifetime", "tokenLifetimeS").getAttribute("value"), "45");
-    assert.equal(unitOf(app, "tokenLifetime"), "s");
     app.close();
   });
 });
@@ -342,7 +331,7 @@ describe("an expired token countdown", () => {
   });
 
   test("is not watched without a countdown", async () => {
-    const { app, polls } = await onFailuresPolled({ tokenLifetimeS: 30 });
+    const { app, polls } = await onFailuresPolled({ tokensRejected: true });
 
     assert.equal(polls.size, 0);
     app.close();
@@ -513,16 +502,6 @@ describe("editing an injection", () => {
     assert.equal(app.server.admin.calls.length, before);
     assert.equal(app.toast().text, "Un nombre d'appels est requis");
     assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "3");
-    app.close();
-  });
-
-  test("saves a new token lifetime", async () => {
-    const app = await onFailures({ tokenLifetimeS: 30 });
-
-    app.select(field(app, "tokenLifetime", "tokenLifetimeS"), "90");
-    await flush();
-
-    assert.deepEqual(lastPatch(app).body, { tokenLifetimeS: 90 });
     app.close();
   });
 
@@ -917,31 +896,6 @@ describe("registering a failure", () => {
 
     assert.deepEqual(lastPatch(app).body, { tokensRejected: true });
     assert.deepEqual(kinds(app), ["tokensRejected"]);
-    app.close();
-  });
-
-  test("registers a token lifetime", async () => {
-    const app = await onFailures();
-
-    await openDialog(app, "tokenLifetime");
-    app.select(app.byId("fTokenLifetime"), "45");
-    await app.click(app.byId("failureSubmit"));
-
-    assert.deepEqual(lastPatch(app).body, { tokenLifetimeS: 45 });
-    assert.deepEqual(kinds(app), ["tokenLifetime"]);
-    app.close();
-  });
-
-  test("asks for a token lifetime longer than zero", async () => {
-    const app = await onFailures();
-    const before = app.server.admin.calls.length;
-
-    await openDialog(app, "tokenLifetime");
-    app.select(app.byId("fTokenLifetime"), "0");
-    await app.click(app.byId("failureSubmit"));
-
-    assert.equal(app.server.admin.calls.length, before);
-    assert.equal(app.toast().text, "Une durée en secondes est requise");
     app.close();
   });
 

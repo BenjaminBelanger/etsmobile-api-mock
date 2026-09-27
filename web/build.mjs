@@ -24,7 +24,6 @@ const ICONS = {
   hourglass: "hourglass_20_regular",
   keyReset: "key_reset_20_regular",
   lockClosed: "lock_closed_20_regular",
-  passwordClock: "password_clock_20_regular",
   plugDisconnected: "plug_disconnected_20_regular",
   redo: "arrow_redo_20_regular",
   reset: "arrow_reset_20_regular",

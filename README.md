@@ -275,7 +275,6 @@ calls each injection hit.
 | `--auth` | Return 401 on API requests without an `Authorization` header |
 | `--token-expired N` | The next N API calls return 401, then calls succeed again |
 | `--tokens-rejected` | Every API call returns 401, whatever the token |
-| `--token-lifetime S` | Refuse a token with 401 once it is older than S seconds |
 
 ```bash
 python start.py --failures flaky
@@ -290,7 +289,7 @@ A preset can be adjusted by adding flags after it. `--failures flaky
 ### Token expiry
 
 ÉTSMobile sends a bearer token on every call (even `Bearer null`), so `--auth`
-never fires for the real app. These three modes return 401 no matter what the
+never fires for the real app. These two modes return 401 no matter what the
 header holds, to exercise the app's token refresh and 401 handling:
 
 - **Token expired** (`tokenExpiredCalls`): the next N API calls return 401 with
@@ -298,11 +297,6 @@ header holds, to exercise the app's token refresh and 401 handling:
   with each call, and `/admin/failures` reports the calls left.
 - **Tokens rejected** (`tokensRejected`): every API call returns 401 with
   `{"error": "Jeton refusé."}`.
-- **Token lifetime** (`tokenLifetimeS`): each distinct `Authorization` value is
-  timed from the first call that carries it. Once it is older than S seconds,
-  it gets 401 with `{"error": "Jeton expiré."}`. A new token is accepted and
-  starts its own clock. Calls without a token (no header, or `Bearer null`) are
-  not timed. Changing the lifetime or resetting the config restarts every clock.
 
 ### Runtime control via admin endpoint
 
@@ -327,7 +321,7 @@ curl -X POST http://localhost:8080/admin/failures/preset \
   -d '{"name": "flaky"}'
 ```
 
-PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool), `tokenLifetimeS` (float, `0` turns it off). All optional.
+PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool). All optional.
 
 ### Named presets via manage_failures.py
 
@@ -351,7 +345,6 @@ python manage_failures.py custom --token-expired 3   # next 3 calls get 401
 | `auth` | Require an Authorization header |
 | `token-expired` | The next 3 API calls return 401, then calls succeed |
 | `token-rejected` | Every API call returns 401 |
-| `token-lifetime` | A token is refused once it is 30s old |
 | `corrupt` | Truncate every successful response body |
 | `timeout-grades` | Grade endpoints hang for 30s before returning 504 |
 | `chaos` | Latency + errors + corrupted bodies all at once |

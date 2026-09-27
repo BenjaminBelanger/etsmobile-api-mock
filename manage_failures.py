@@ -148,11 +148,6 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         default=None,
         help="Answer every API call with 401",
     )
-    parser.add_argument(
-        "--token-lifetime",
-        type=_seconds,
-        help="Refuse a token with 401 once it is older than this many seconds",
-    )
     return parser
 
 
@@ -176,8 +171,6 @@ def _custom_args_to_config(args: argparse.Namespace) -> dict:
         config["tokenExpiredCalls"] = args.token_expired
     if args.tokens_rejected is not None:
         config["tokensRejected"] = args.tokens_rejected
-    if args.token_lifetime is not None:
-        config["tokenLifetimeS"] = args.token_lifetime
     return config
 
 

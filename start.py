@@ -42,7 +42,6 @@ FAILURE_ENV = {
     "authRequired": "AUTH_REQUIRED",
     "tokenExpiredCalls": "TOKEN_EXPIRED_CALLS",
     "tokensRejected": "TOKENS_REJECTED",
-    "tokenLifetimeS": "TOKEN_LIFETIME_S",
 }
 
 MANAGED_ENV = (
@@ -78,7 +77,6 @@ CONFIG_FLAGS = (
     "auth",
     "token_expired",
     "tokens_rejected",
-    "token_lifetime",
 )
 
 DAY_NAMES = {
@@ -404,13 +402,6 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Chaque appel retourne 401, peu importe le jeton.",
         default=None,
     )
-    failures.add_argument(
-        "--token-lifetime",
-        type=_seconds,
-        metavar="S",
-        help="Refuse un jeton (401) une fois qu'il a plus de S secondes.",
-        default=None,
-    )
 
     app = parser.add_argument_group(
         "app flutter",
@@ -490,7 +481,6 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
         "authRequired": args.auth,
         "tokenExpiredCalls": args.token_expired,
         "tokensRejected": args.tokens_rejected,
-        "tokenLifetimeS": args.token_lifetime,
     }
     overrides = {k: v for k, v in explicit.items() if v is not None}
     if overrides:

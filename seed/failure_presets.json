@@ -46,12 +46,6 @@
       "tokensRejected": true
     }
   },
-  "token-lifetime": {
-    "description": "A token is refused with 401 once it is 30s old; a new token starts its own clock",
-    "config": {
-      "tokenLifetimeS": 30
-    }
-  },
   "corrupt": {
     "description": "Truncate every successful response body in half",
     "config": {

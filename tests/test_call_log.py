@@ -144,21 +144,6 @@ def test_a_refused_token_is_logged_with_why_it_was_refused(client):
     assert (rejected["status"], rejected["failures"]) == (401, [{"kind": "tokensRejected"}])
 
 
-def test_a_token_past_its_lifetime_is_logged_as_such(client, monkeypatch):
-    now = [1000.0]
-    monkeypatch.setattr(failures, "time", types.SimpleNamespace(monotonic=lambda: now[0]))
-    token = {"Authorization": "Bearer token"}
-    client.patch("/admin/failures", json={"tokenLifetimeS": 30})
-
-    client.get(ENDPOINT, headers=token)
-    now[0] += 31
-    client.get(ENDPOINT, headers=token)
-
-    fresh, stale = entries(client)
-    assert (fresh["status"], fresh["failures"]) == (200, [])
-    assert (stale["status"], stale["failures"]) == (401, [{"kind": "tokenLifetime"}])
-
-
 def test_a_timeout_is_logged_with_how_long_it_held_the_call(client, no_sleep):
     client.patch(
         "/admin/failures",

@@ -104,8 +104,6 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "--token-expired",
             "3",
             "--tokens-rejected",
-            "--token-lifetime",
-            "30",
         ]
     )
 
@@ -123,7 +121,6 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "authRequired": True,
             "tokenExpiredCalls": 3,
             "tokensRejected": True,
-            "tokenLifetimeS": 30.0,
         },
     )
 
@@ -153,8 +150,6 @@ def test_a_custom_config_resets_before_patching(http):
         ["--timeout-duration", "inf"],
         ["--token-expired", "-3"],
         ["--token-expired", "1.5"],
-        ["--token-lifetime", "-1"],
-        ["--token-lifetime", "inf"],
         ["--latency", "200", "--error-rate", "5"],
     ],
 )

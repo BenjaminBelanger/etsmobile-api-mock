@@ -5,7 +5,6 @@ import json
 import math
 import os
 import random
-import time
 from dataclasses import dataclass, field
 
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -32,7 +31,6 @@ class FailureConfig:
     auth_required: bool = False
     token_expired_calls: int = 0
     tokens_rejected: bool = False
-    token_lifetime_s: float = 0.0
 
     def is_default(self) -> bool:
         return (
@@ -45,7 +43,6 @@ class FailureConfig:
             and not self.auth_required
             and self.token_expired_calls == 0
             and not self.tokens_rejected
-            and self.token_lifetime_s == 0.0
         )
 
     def to_dict(self) -> dict:
@@ -61,12 +58,10 @@ class FailureConfig:
             "authRequired": self.auth_required,
             "tokenExpiredCalls": self.token_expired_calls,
             "tokensRejected": self.tokens_rejected,
-            "tokenLifetimeS": self.token_lifetime_s,
         }
 
 
 _config = FailureConfig()
-_token_first_seen: dict[str, float] = {}
 
 
 def get_config() -> FailureConfig:
@@ -76,7 +71,6 @@ def get_config() -> FailureConfig:
 def reset_config() -> None:
     global _config
     _config = FailureConfig()
-    _token_first_seen.clear()
 
 
 def parse_latency(raw) -> tuple[int, int]:
@@ -159,15 +153,7 @@ def load_from_env() -> FailureConfig:
 
     cfg.tokens_rejected = env_bool("TOKENS_REJECTED")
 
-    cfg.token_lifetime_s = env_number(
-        "TOKEN_LIFETIME_S",
-        float,
-        lambda s: math.isfinite(s) and s >= 0.0,
-        cfg.token_lifetime_s,
-    )
-
     _config = cfg
-    _token_first_seen.clear()
     return _config
 
 
@@ -205,7 +191,6 @@ class FailureConfigUpdate(BaseModel):
     authRequired: bool | None = None
     tokenExpiredCalls: int | None = Field(default=None, ge=0)
     tokensRejected: bool | None = None
-    tokenLifetimeS: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
 
     model_config = {"extra": "forbid"}
 
@@ -232,11 +217,6 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
         _config.token_expired_calls = int(data["tokenExpiredCalls"])
     if "tokensRejected" in data:
         _config.tokens_rejected = bool(data["tokensRejected"])
-    if "tokenLifetimeS" in data:
-        lifetime = float(data["tokenLifetimeS"])
-        if lifetime != _config.token_lifetime_s:
-            _token_first_seen.clear()
-        _config.token_lifetime_s = lifetime
 
     return _config
 
@@ -267,38 +247,18 @@ async def _truncate_response(response: Response) -> Response:
     )
 
 
-def _carries_token(header: str) -> bool:
-    scheme, _, value = header.partition(" ")
-    if scheme.lower() != "bearer":
-        return bool(header)
-    return value.strip() not in ("", "null")
-
-
-def _token_age(token: str) -> float:
-    now = time.monotonic()
-    return now - _token_first_seen.setdefault(token, now)
-
-
 TOKEN_ERRORS = {
     "tokensRejected": "Jeton refusé.",
     "tokenExpired": "Jeton expiré.",
-    "tokenLifetime": "Jeton expiré.",
 }
 
 
-def _token_rejection(cfg: FailureConfig, token: str) -> str | None:
-    expired = (
-        cfg.token_lifetime_s > 0.0
-        and _carries_token(token)
-        and _token_age(token) > cfg.token_lifetime_s
-    )
+def _token_rejection(cfg: FailureConfig) -> str | None:
     if cfg.tokens_rejected:
         return "tokensRejected"
     if cfg.token_expired_calls > 0:
         cfg.token_expired_calls -= 1
         return "tokenExpired"
-    if expired:
-        return "tokenLifetime"
     return None
 
 
@@ -310,13 +270,11 @@ async def failure_middleware(request: Request, call_next):
     cfg = _config
     name = endpoint_name(path)
 
-    token = request.headers.get("authorization", "").strip()
-
-    if cfg.auth_required and not token:
+    if cfg.auth_required and not request.headers.get("authorization", "").strip():
         _inject(request, "auth")
         return JSONResponse({"error": "Authentification requise."}, status_code=401)
 
-    rejection = _token_rejection(cfg, token)
+    rejection = _token_rejection(cfg)
     if rejection:
         _inject(request, rejection)
         return JSONResponse({"error": TOKEN_ERRORS[rejection]}, status_code=401)
