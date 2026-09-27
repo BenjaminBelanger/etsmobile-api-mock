@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from ._env import env_bool
+from ._env import env_bool, env_number
 from ._paths import SEED
 
 API_PREFIX = "/api/"
@@ -136,45 +136,32 @@ def load_from_env() -> FailureConfig:
         except ValueError:
             pass
 
-    if "ERROR_RATE" in os.environ:
-        try:
-            r = float(os.environ["ERROR_RATE"])
-            if 0.0 <= r <= 1.0:
-                cfg.error_rate = r
-        except ValueError:
-            pass
+    cfg.error_rate = env_number(
+        "ERROR_RATE", float, lambda r: 0.0 <= r <= 1.0, cfg.error_rate
+    )
 
     cfg.fail_endpoints = parse_endpoint_set(os.environ.get("FAIL_ENDPOINTS", ""))
     cfg.timeout_endpoints = parse_endpoint_set(os.environ.get("TIMEOUT_ENDPOINTS", ""))
 
-    if "TIMEOUT_DURATION_S" in os.environ:
-        try:
-            d = float(os.environ["TIMEOUT_DURATION_S"])
-            if d >= 0.0:
-                cfg.timeout_duration_s = d
-        except ValueError:
-            pass
+    cfg.timeout_duration_s = env_number(
+        "TIMEOUT_DURATION_S", float, lambda d: d >= 0.0, cfg.timeout_duration_s
+    )
 
     cfg.malformed = env_bool("MALFORMED")
     cfg.auth_required = env_bool("AUTH_REQUIRED")
 
-    if "TOKEN_EXPIRED_CALLS" in os.environ:
-        try:
-            n = int(os.environ["TOKEN_EXPIRED_CALLS"])
-            if n >= 0:
-                cfg.token_expired_calls = n
-        except ValueError:
-            pass
+    cfg.token_expired_calls = env_number(
+        "TOKEN_EXPIRED_CALLS", int, lambda n: n >= 0, cfg.token_expired_calls
+    )
 
     cfg.tokens_rejected = env_bool("TOKENS_REJECTED")
 
-    if "TOKEN_LIFETIME_S" in os.environ:
-        try:
-            s = float(os.environ["TOKEN_LIFETIME_S"])
-            if math.isfinite(s) and s >= 0.0:
-                cfg.token_lifetime_s = s
-        except ValueError:
-            pass
+    cfg.token_lifetime_s = env_number(
+        "TOKEN_LIFETIME_S",
+        float,
+        lambda s: math.isfinite(s) and s >= 0.0,
+        cfg.token_lifetime_s,
+    )
 
     _config = cfg
     _token_first_seen.clear()

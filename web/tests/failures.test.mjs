@@ -322,6 +322,25 @@ describe("an expired token countdown", () => {
     app.close();
   });
 
+  test("keeps watching after a reading it cannot parse", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2 });
+    const serve = app.window.fetch;
+    app.window.fetch = (url, request) =>
+      url === "/admin/failures" && !request
+        ? Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+          })
+        : serve(url, request);
+
+    await polls.run();
+
+    assert.deepEqual(kinds(app), ["tokenExpired"]);
+    assert.equal(polls.size, 1);
+    app.close();
+  });
+
   test("is not watched without a countdown", async () => {
     const { app, polls } = await onFailuresPolled({ tokenLifetimeS: 30 });
 
@@ -393,13 +412,33 @@ describe("an expired token countdown", () => {
     app.close();
   });
 
-  test("is not watched from the schedule tab", async () => {
+  test("keeps the tab's dot current from another tab", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 1 });
+    app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewSchedule") });
+    await flush();
+    app.server.admin.config.tokenExpiredCalls = 0;
+
+    await polls.run();
+
+    assert.equal(app.byId("failuresDot").hidden, true);
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("is not watched while the page is hidden", async () => {
     const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3 });
 
-    app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewSchedule") });
+    Object.defineProperty(app.document, "hidden", { value: true, configurable: true });
+    app.fire(app.document, "visibilitychange");
     await flush();
 
     assert.equal(polls.size, 0);
+
+    Object.defineProperty(app.document, "hidden", { value: false, configurable: true });
+    app.fire(app.document, "visibilitychange");
+    await flush();
+
+    assert.equal(polls.size, 1);
     app.close();
   });
 });

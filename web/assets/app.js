@@ -1621,6 +1621,8 @@ const countLabel = (names, one, many) =>
     ? `tous les endpoints ${many}`
     : `${names.length} endpoint${names.length > 1 ? "s" : ""} ${names.length > 1 ? many : one}`;
 
+const hintNote = (_, kind) => `<span class="injection__note">${kind.hint}</span>`;
+
 function injectionInput(field, value, size, unit, label) {
   return `<fluent-text-input class="injection__input injection__input--${size}" control-size="small"
       appearance="filled-lighter" data-field="${field}" value="${escapeHtml(value)}"
@@ -1759,7 +1761,7 @@ const FAILURE_KINDS = [
     hint: "Le corps de chaque réponse 2xx est coupé en deux.",
     active: (cfg) => cfg.malformed,
     summary: () => "réponses tronquées",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ malformed: false }),
     form: () => "",
     read: () => ({ body: { malformed: true } }),
@@ -1771,7 +1773,7 @@ const FAILURE_KINDS = [
     hint: "Un appel sans en-tête Authorization répond 401.",
     active: (cfg) => cfg.authRequired,
     summary: () => "authentification requise",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ authRequired: false }),
     form: () => "",
     read: () => ({ body: { authRequired: true } }),
@@ -1808,7 +1810,7 @@ const FAILURE_KINDS = [
     hint: "Chaque appel répond 401, peu importe le jeton.",
     active: (cfg) => cfg.tokensRejected,
     summary: () => "jetons refusés",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ tokensRejected: false }),
     form: () => "",
     read: () => ({ body: { tokensRejected: true } }),
@@ -1836,7 +1838,6 @@ const FAILURE_KINDS = [
 
 const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
 const activeKinds = (cfg) => (cfg ? FAILURE_KINDS.filter((k) => k.active(cfg)) : []);
-const parameterless = (kind) => ["malformed", "auth", "tokensRejected"].includes(kind.id);
 
 function failureError(data, res) {
   const detail = typeof data.detail === "string" ? data.detail : null;
@@ -1890,7 +1891,7 @@ function applyFailures(cfg) {
 
 function scheduleFailuresPoll() {
   clearTimeout(state.failuresPoll);
-  if (state.view === "failures" && state.failures?.tokenExpiredCalls > 0) {
+  if (!document.hidden && state.failures?.tokenExpiredCalls > 0) {
     state.failuresPoll = setTimeout(pollFailures, FAILURES_POLL_MS);
   }
 }
@@ -1900,7 +1901,7 @@ const editingInjection = () => !!document.activeElement?.closest?.("[data-field]
 async function pollFailures() {
   const seq = state.failuresSeq;
   const res = await fetch(ADMIN).catch(() => null);
-  const cfg = res && res.ok ? await res.json() : null;
+  const cfg = res && res.ok ? await res.json().catch(() => null) : null;
   if (seq !== state.failuresSeq) return;
   if (cfg && !sameFailures(cfg, state.failures) && !editingInjection()) applyFailures(cfg);
   else scheduleFailuresPoll();
@@ -1991,7 +1992,7 @@ function injectionHtml(kind, cfg) {
   return `<li class="injection" data-kind="${kind.id}">
       <span class="injection__icon">${icon(kind.icon, 16)}</span>
       <span class="injection__name" title="${escapeHtml(kind.hint)}">${kind.label}</span>
-      <span class="injection__value">${kind.value(parameterless(kind) ? kind : cfg)}</span>
+      <span class="injection__value">${kind.value(cfg, kind)}</span>
       <fluent-button class="injection__x" appearance="subtle" size="small" icon-only
         data-remove="${kind.id}" title="Retirer la panne"
         aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("delete", 16)}</fluent-button>
@@ -2700,7 +2701,6 @@ function setView(view) {
     renderBlocks(false);
   }
   if (view === "failures") loadFailures();
-  else clearTimeout(state.failuresPoll);
   if (view === "student") loadStudent();
   if (view === "calls") loadCalls(true);
   else scheduleCallsPoll();
@@ -2798,6 +2798,7 @@ el.callRows.addEventListener("click", (e) => {
   if (button) removeMarker(button);
 });
 document.addEventListener("visibilitychange", () => {
+  scheduleFailuresPoll();
   if (state.view !== "calls") return;
   if (document.hidden) scheduleCallsPoll();
   else loadCalls();

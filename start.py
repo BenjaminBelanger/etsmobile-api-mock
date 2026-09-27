@@ -180,32 +180,22 @@ def _seconds(raw: str) -> float:
     return val
 
 
-def _count(raw: str) -> int:
-    try:
-        val = int(raw)
-    except ValueError:
-        raise argparse.ArgumentTypeError(
-            f"expected a whole number of calls, got {raw!r}"
-        ) from None
-    if val < 0:
-        raise argparse.ArgumentTypeError(
-            f"expected a whole number of calls, got {val}"
-        )
-    return val
+def _bounded_int(low: int, high: int | None = None):
+    expected = (
+        f"an integer of at least {low}"
+        if high is None
+        else f"an integer between {low} and {high}"
+    )
 
-
-def _bounded_int(low: int, high: int):
     def parse(raw: str) -> int:
         try:
             val = int(raw)
         except ValueError:
             raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {raw!r}"
+                f"expected {expected}, got {raw!r}"
             ) from None
-        if val < low or val > high:
-            raise argparse.ArgumentTypeError(
-                f"expected an integer between {low} and {high}, got {val}"
-            )
+        if val < low or (high is not None and val > high):
+            raise argparse.ArgumentTypeError(f"expected {expected}, got {val}")
         return val
 
     return parse
@@ -403,7 +393,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     failures.add_argument(
         "--token-expired",
-        type=_count,
+        type=_bounded_int(0),
         metavar="N",
         help="Les N prochains appels retournent 401 (jeton expiré).",
         default=None,
