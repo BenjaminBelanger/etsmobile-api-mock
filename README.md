@@ -11,6 +11,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 - [Endpoints](#endpoints)
 - [Managing Courses](#managing-courses)
 - [Profiles](#profiles)
+- [Session Calendar](#session-calendar)
 - [Scenarios](#scenarios)
 - [Failure Injection](#failure-injection)
 - [Call Log](#call-log)
@@ -208,15 +209,28 @@ python start.py --profile generated-busy --time evening
 
 Invalid values are rejected before the server starts.
 
-### Semester week (shift the session calendar)
+## Session Calendar
 
-By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. To simulate being at a specific week of the active session, set:
+By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. These flags move the active session and the one after it relative to today. The `start.py` menu asks the same two questions after the scenario.
+
+| Flag | Effect |
+|------|--------|
+| `--semester-week N` | Today falls in week N (1-15) of the active session |
+| `--between-sessions` | The active session ended yesterday, so today is in the break before the next one |
+| `--semester-gap DAYS` | Days off (0-180) between the end of the active session and the start of the next one |
+| `--no-next-session` | No session after the active one: it is not listed and has no courses |
+
+`--semester-week` can't be combined with `--between-sessions`, nor `--semester-gap` with `--no-next-session`. Without `--semester-gap`, the next session keeps its real weekday and about its real break.
 
 ```bash
-python start.py --semester-week 3
+python start.py --semester-week 14 --semester-gap 60       # end of term, next session two months away
+python start.py --between-sessions --semester-gap 10       # break, next session starts in 10 days
+python start.py --between-sessions --no-next-session       # break, next session not published yet
 ```
 
-This shifts the active session's `dateDebut` (and all other date fields) so that today falls at the chosen week. The next session is shifted by the same offset to preserve the gap between them.
+ÉTSMobile shows the "session starts soon" message when the next session is 30 days away or less, so `--between-sessions` with `--semester-gap 10` or `--semester-gap 45` tests either side of it.
+
+`--no-next-session` also hides [schedule editor](#schedule-editor-ui) edits for the next session until the flag is left out.
 
 ## Scenarios
 
