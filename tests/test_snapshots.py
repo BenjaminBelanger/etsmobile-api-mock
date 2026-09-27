@@ -543,6 +543,17 @@ def test_the_loaded_setup_survives_a_data_reload(client):
     assert data_store.PROFILE_NAME == "semester-off"
 
 
+def test_loading_replaces_the_startup_calendar_options(client, reconfigure):
+    reconfigure(BETWEEN_SESSIONS="true", NO_NEXT_SESSION="true")
+    snapshots.write("personal", snapshot(setup={"profile": "normal", "semesterWeek": 3}))
+
+    api(client, "/load", scope="personal", id="mi-session", dates="setup")
+
+    assert data_store.SEMESTER_WEEK == 3
+    assert data_store.BETWEEN_SESSIONS is False
+    assert data_store.NO_NEXT_SESSION is False
+
+
 def test_setup_only_keeps_the_student_edits_and_clears_the_schedule(client):
     move_block()
     snapshots.write("personal", snapshot())

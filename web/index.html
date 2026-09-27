@@ -17,6 +17,7 @@
             <fluent-tab id="viewSchedule" data-view="schedule">Horaire</fluent-tab>
             <fluent-tab id="viewFailures" data-view="failures"><span class="tab__label">Pannes<span class="tab__dot" id="failuresDot" hidden title="Des pannes sont actives"></span></span></fluent-tab>
             <fluent-tab id="viewStudent" data-view="student">Étudiant</fluent-tab>
+            <fluent-tab id="viewCalls" data-view="calls">Logs</fluent-tab>
             <fluent-tab id="viewSnapshots" data-view="snapshots">Instantanés</fluent-tab>
           </fluent-tablist>
 
@@ -95,6 +96,22 @@
           <fluent-tooltip positioning="below" anchor="studentResetBtn">Tout réinitialiser</fluent-tooltip>
         </div>
 
+        <div class="toolbar" id="callsToolbar" hidden>
+          <fluent-button id="callsClearBtn" appearance="subtle" icon-only data-icon="delete" aria-label="Effacer le journal" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="callsClearBtn">Effacer le journal</fluent-tooltip>
+
+          <fluent-button id="callsExportBtn" appearance="subtle" icon-only data-icon="download" aria-label="Exporter le journal" disabled></fluent-button>
+          <fluent-tooltip positioning="below" anchor="callsExportBtn">Exporter le journal (JSON)</fluent-tooltip>
+
+          <fluent-divider orientation="vertical" role="presentation"></fluent-divider>
+
+          <fluent-text-input id="markerLabel" appearance="filled-darker" placeholder="Nom du marqueur" maxlength="120" aria-label="Nom du marqueur"></fluent-text-input>
+          <fluent-button id="markerAddBtn" appearance="primary">
+            <span slot="start" data-icon="add" data-icon-size="16"></span>
+            Ajouter un marqueur
+          </fluent-button>
+        </div>
+
         <div class="toolbar" id="snapshotsToolbar" hidden>
           <input type="file" id="snapshotFile" accept=".json,application/json" hidden />
           <fluent-button id="snapshotImportBtn" appearance="secondary">
@@ -121,7 +138,6 @@
         <aside class="sidebar">
           <section class="panel" id="sessionPanel" hidden>
             <header class="panel__head">
-              <span class="panel__icon" data-icon="calendar" data-icon-size="16"></span>
               <h2>Dates de la session</h2>
               <fluent-button id="sessionDatesReset" class="detail__act" appearance="subtle" size="small" icon-only data-icon="reset" data-icon-size="16" title="Rétablir les dates" aria-label="Rétablir les dates" hidden></fluent-button>
             </header>
@@ -130,7 +146,6 @@
 
           <section class="panel" id="detailPanel" hidden>
             <header class="panel__head">
-              <span class="panel__icon" data-icon="book" data-icon-size="16"></span>
               <h2>Cours</h2>
             </header>
             <fluent-dropdown id="detailSelect" appearance="filled-darker" aria-label="Cours">
@@ -141,7 +156,6 @@
 
           <section class="panel">
             <header class="panel__head">
-              <span class="panel__icon" data-icon="delete" data-icon-size="16"></span>
               <h2>Corbeille</h2>
             </header>
             <ul class="trash" id="trashList"></ul>
@@ -160,7 +174,6 @@
         <aside class="sidebar">
           <section class="panel">
             <header class="panel__head">
-              <span class="panel__icon" data-icon="flash" data-icon-size="16"></span>
               <h2>Scénarios</h2>
             </header>
             <ul class="presets" id="presetList"></ul>
@@ -169,13 +182,57 @@
       </main>
 
       <main class="layout layout--single" id="studentView" hidden>
-        <section class="panel profile">
-          <header class="panel__head">
-            <span class="panel__icon" data-icon="person" data-icon-size="16"></span>
-            <h2>Profil</h2>
-          </header>
+        <section class="board board--list">
           <ul class="fields" id="profileFields"></ul>
         </section>
+      </main>
+
+      <main class="layout" id="callsView" hidden>
+        <section class="board board--list board--log" id="callsBoard">
+          <table class="calls" id="callsTable" hidden>
+            <thead>
+              <tr>
+                <th scope="col">Heure</th>
+                <th scope="col">Endpoint</th>
+                <th scope="col">Paramètres</th>
+                <th scope="col" class="calls__num">Statut</th>
+                <th scope="col" class="calls__num">Durée</th>
+                <th scope="col" class="calls__num">Taille</th>
+                <th scope="col">Panne</th>
+              </tr>
+            </thead>
+            <tbody class="calls__older" id="callsOlder" hidden>
+              <tr><td colspan="7" id="callsOlderNote"></td></tr>
+            </tbody>
+            <tbody id="callRows"></tbody>
+          </table>
+          <div class="board__empty" id="callsEmpty">
+            <p>Aucun appel reçu. Les requêtes vers /api/ s’afficheront ici.</p>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <header class="panel__head">
+              <h2>Par endpoint</h2>
+            </header>
+            <table class="endpoint-stats" id="endpointStats" hidden>
+              <thead>
+                <tr>
+                  <th scope="col">Endpoint</th>
+                  <th scope="col" class="endpoint-stats__num">Appels</th>
+                  <th scope="col" class="endpoint-stats__num" title="Appels identiques à un appel précédent">Répétés</th>
+                  <th scope="col" class="endpoint-stats__num" title="Taille totale">Taille</th>
+                </tr>
+              </thead>
+              <tbody id="endpointStatsRows"></tbody>
+              <tfoot>
+                <tr id="callsTotal"></tr>
+              </tfoot>
+            </table>
+            <p class="endpoint-stats__empty" id="endpointStatsEmpty">Aucun appel.</p>
+          </section>
+        </aside>
       </main>
 
       <main class="layout" id="snapshotsView" hidden>
@@ -189,7 +246,6 @@
         <aside class="sidebar">
           <section class="panel">
             <header class="panel__head">
-              <span class="panel__icon" data-icon="settings" data-icon-size="16"></span>
               <h2>Configuration actuelle</h2>
             </header>
             <dl class="setup" id="currentSetup"></dl>

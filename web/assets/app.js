@@ -28,11 +28,17 @@ const state = {
   failuresPast: [],
   failuresFuture: [],
   failureKind: "latency",
+  failuresPoll: null,
+  failuresSeq: 0,
   staged: [],
   endpoints: [],
   presets: [],
   student: null,
   otherDatesOpen: false,
+  calls: [],
+  callsSeq: 0,
+  callsFailed: false,
+  callsGroup: null,
   snapshots: null,
   snapshotTarget: null,
   snapshotOverwrite: false,
@@ -69,6 +75,22 @@ const el = {
   sessionPanel: document.getElementById("sessionPanel"),
   sessionDates: document.getElementById("sessionDates"),
   sessionDatesReset: document.getElementById("sessionDatesReset"),
+  callsView: document.getElementById("callsView"),
+  callsToolbar: document.getElementById("callsToolbar"),
+  callsBoard: document.getElementById("callsBoard"),
+  callsTable: document.getElementById("callsTable"),
+  callsOlder: document.getElementById("callsOlder"),
+  callsOlderNote: document.getElementById("callsOlderNote"),
+  callRows: document.getElementById("callRows"),
+  callsEmpty: document.getElementById("callsEmpty"),
+  callsClearBtn: document.getElementById("callsClearBtn"),
+  callsExportBtn: document.getElementById("callsExportBtn"),
+  callsTotal: document.getElementById("callsTotal"),
+  endpointStats: document.getElementById("endpointStats"),
+  endpointStatsRows: document.getElementById("endpointStatsRows"),
+  endpointStatsEmpty: document.getElementById("endpointStatsEmpty"),
+  markerLabel: document.getElementById("markerLabel"),
+  markerAddBtn: document.getElementById("markerAddBtn"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -1003,11 +1025,18 @@ function wireDetail(course) {
 let redrawing = false;
 const typingIn = new WeakSet();
 
+function keepCaret(previous, fresh) {
+  const from = previous.control;
+  if (from?.selectionStart == null || !fresh.control) return;
+  fresh.control.setSelectionRange(from.selectionStart, from.selectionEnd, from.selectionDirection);
+}
+
 function keepFocus(container, previous) {
   const fresh = container.querySelector(`[data-key="${previous.dataset.key}"]`);
   if (!fresh) return;
   if (!typingIn.has(previous)) {
     fresh.focus();
+    keepCaret(previous, fresh);
     return;
   }
   ["class", "title"].forEach((name) => {
@@ -1596,7 +1625,11 @@ const NO_FAILURES = {
   timeoutDurationS: 60,
   malformed: false,
   authRequired: false,
+  tokenExpiredCalls: 0,
+  tokensRejected: false,
 };
+
+const FAILURES_POLL_MS = 2000;
 
 const latencyMax = (raw) => {
   const parts = String(raw ?? "").split("-");
@@ -1607,10 +1640,14 @@ const latencyMax = (raw) => {
 const percent = (rate) => Math.round(rate * 100);
 const endpointLabel = (name) => (name === "*" ? "tous les endpoints" : name);
 
+const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
+
 const countLabel = (names, one, many) =>
   names.includes("*")
     ? `tous les endpoints ${many}`
     : `${names.length} endpoint${names.length > 1 ? "s" : ""} ${names.length > 1 ? many : one}`;
+
+const hintNote = (_, kind) => `<span class="injection__note">${kind.hint}</span>`;
 
 function injectionInput(field, value, size, unit, label) {
   return `<fluent-text-input class="injection__input injection__input--${size}" control-size="small"
@@ -1750,7 +1787,7 @@ const FAILURE_KINDS = [
     hint: "Le corps de chaque réponse 2xx est coupé en deux.",
     active: (cfg) => cfg.malformed,
     summary: () => "réponses tronquées",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ malformed: false }),
     form: () => "",
     read: () => ({ body: { malformed: true } }),
@@ -1762,31 +1799,68 @@ const FAILURE_KINDS = [
     hint: "Un appel sans en-tête Authorization répond 401.",
     active: (cfg) => cfg.authRequired,
     summary: () => "authentification requise",
-    value: (kind) => `<span class="injection__note">${kind.hint}</span>`,
+    value: hintNote,
     clear: () => ({ authRequired: false }),
     form: () => "",
     read: () => ({ body: { authRequired: true } }),
+  },
+  {
+    id: "tokenExpired",
+    label: "Jeton expiré",
+    icon: "keyReset",
+    hint: "Les prochains appels répondent 401, puis les appels réussissent de nouveau.",
+    active: (cfg) => cfg.tokenExpiredCalls > 0,
+    summary: (cfg) => `jeton expiré pour ${plural(cfg.tokenExpiredCalls, "appel")}`,
+    value: (cfg) =>
+      injectionInput(
+        "tokenExpiredCalls",
+        cfg.tokenExpiredCalls,
+        "sm",
+        cfg.tokenExpiredCalls > 1 ? "appels restants" : "appel restant",
+        "Appels restants"
+      ),
+    clear: () => ({ tokenExpiredCalls: 0 }),
+    form: () => numberField("fTokenExpiredCalls", "Nombre d'appels", "", "3"),
+    read: () => {
+      const calls = Number(el.failureParams.querySelector("#fTokenExpiredCalls").value);
+      if (!Number.isInteger(calls) || calls < 1) {
+        return { error: "Un nombre d'appels est requis" };
+      }
+      return { body: { tokenExpiredCalls: calls } };
+    },
+  },
+  {
+    id: "tokensRejected",
+    label: "Jetons refusés",
+    icon: "shieldDismiss",
+    hint: "Chaque appel répond 401, peu importe le jeton.",
+    active: (cfg) => cfg.tokensRejected,
+    summary: () => "jetons refusés",
+    value: hintNote,
+    clear: () => ({ tokensRejected: false }),
+    form: () => "",
+    read: () => ({ body: { tokensRejected: true } }),
   },
 ];
 
 const kindById = (id) => FAILURE_KINDS.find((k) => k.id === id);
 const activeKinds = (cfg) => (cfg ? FAILURE_KINDS.filter((k) => k.active(cfg)) : []);
-const parameterless = (kind) => kind.id === "malformed" || kind.id === "auth";
 
 function failureError(data, res) {
   const detail = typeof data.detail === "string" ? data.detail : null;
   return detail || data.error || res.statusText || "Échec de l'opération";
 }
 
-async function adminFetch(path, options, message, record = true) {
+async function adminFetch(path, options, message, record = true, setsCountdown = true) {
   const before = state.failures;
   setStatus("Enregistrement…", true);
   try {
     const res = await fetch(`${ADMIN}${path}`, options);
     const data = await res.json();
     if (!res.ok) throw new Error(failureError(data, res));
-    if (record && before && !sameFailures(before, data)) {
-      state.failuresPast.push({ before, after: data });
+    const change = record && before && failureChange(before, data, setsCountdown);
+    if (change) {
+      state.failuresPast.push(change);
       state.failuresFuture = [];
     }
     applyFailures(data);
@@ -1810,29 +1884,63 @@ const patchFailures = (body, message, record) =>
       body: JSON.stringify(body),
     },
     message,
-    record
+    record,
+    "tokenExpiredCalls" in body
   );
 
 function applyFailures(cfg) {
+  state.failuresSeq += 1;
   state.failures = cfg;
   el.failuresDot.hidden = !activeKinds(cfg).length;
   renderFailures();
+  scheduleFailuresPoll();
 }
 
-const failureFields = (cfg) =>
-  Object.fromEntries(Object.keys(NO_FAILURES).map((key) => [key, cfg[key]]));
+function scheduleFailuresPoll() {
+  clearTimeout(state.failuresPoll);
+  if (!document.hidden && state.failures?.tokenExpiredCalls > 0) {
+    state.failuresPoll = setTimeout(pollFailures, FAILURES_POLL_MS);
+  }
+}
 
-const sameFailures = (a, b) =>
-  JSON.stringify(failureFields(a)) === JSON.stringify(failureFields(b));
+const editingInjection = () => !!document.activeElement?.closest?.("[data-field]");
+
+async function pollFailures() {
+  const seq = state.failuresSeq;
+  const res = await fetch(ADMIN).catch(() => null);
+  const cfg = res && res.ok ? await res.json().catch(() => null) : null;
+  if (seq !== state.failuresSeq) return;
+  if (cfg && !sameFailures(cfg, state.failures) && !editingInjection()) applyFailures(cfg);
+  else scheduleFailuresPoll();
+}
+
+const pickFields = (cfg, keys) => Object.fromEntries(keys.map((key) => [key, cfg[key]]));
+
+const FAILURE_FIELDS = Object.keys(NO_FAILURES);
+const SETTING_FIELDS = FAILURE_FIELDS.filter((key) => key !== "tokenExpiredCalls");
+
+const sameFields = (a, b, keys) =>
+  JSON.stringify(pickFields(a, keys)) === JSON.stringify(pickFields(b, keys));
+
+const sameFailures = (a, b) => sameFields(a, b, FAILURE_FIELDS);
+const sameSettings = (a, b) => sameFields(a, b, SETTING_FIELDS);
+
+function failureChange(before, after, setsCountdown) {
+  const countdown = setsCountdown && before.tokenExpiredCalls !== after.tokenExpiredCalls;
+  return countdown || !sameSettings(before, after) ? { before, after, countdown } : null;
+}
+
+const changeBody = (change, target) =>
+  pickFields(change[target], change.countdown ? FAILURE_FIELDS : SETTING_FIELDS);
 
 const canUndoFailures = () => {
   const change = state.failuresPast.at(-1);
-  return !!change && !!state.failures && sameFailures(change.after, state.failures);
+  return !!change && !!state.failures && sameSettings(change.after, state.failures);
 };
 
 const canRedoFailures = () => {
   const change = state.failuresFuture.at(-1);
-  return !!change && !!state.failures && sameFailures(change.before, state.failures);
+  return !!change && !!state.failures && sameSettings(change.before, state.failures);
 };
 
 function renderFailureHistory() {
@@ -1843,7 +1951,7 @@ function renderFailureHistory() {
 function stepFailures(from, to, target, message) {
   const change = from.pop();
   renderFailureHistory();
-  patchFailures(failureFields(change[target]), message, false).then(
+  patchFailures(changeBody(change, target), message, false).then(
     () => {
       to.push(change);
       renderFailureHistory();
@@ -1891,7 +1999,7 @@ function injectionHtml(kind, cfg) {
   return `<li class="injection" data-kind="${kind.id}">
       <span class="injection__icon">${icon(kind.icon, 16)}</span>
       <span class="injection__name" title="${escapeHtml(kind.hint)}">${kind.label}</span>
-      <span class="injection__value">${kind.value(parameterless(kind) ? kind : cfg)}</span>
+      <span class="injection__value">${kind.value(cfg, kind)}</span>
       <fluent-button class="injection__x" appearance="subtle" size="small" icon-only
         data-remove="${kind.id}" title="Retirer la panne"
         aria-label="Retirer : ${escapeHtml(kind.label)}">${icon("delete", 16)}</fluent-button>
@@ -1934,28 +2042,32 @@ function wireInjections(cfg) {
   });
 }
 
+const NUMBER_FIELDS = {
+  errorRate: {
+    valid: (n) => n >= 0 && n <= 100,
+    toBody: (n) => n / 100,
+    error: "Un taux entre 0 et 100 est requis",
+  },
+  timeoutDurationS: { valid: (n) => n >= 0, error: "Un délai en secondes est requis" },
+  tokenExpiredCalls: {
+    valid: (n) => Number.isInteger(n) && n >= 0,
+    error: "Un nombre d'appels est requis",
+  },
+};
+
 function commitFailureField(fieldName, value) {
-  if (fieldName === "errorRate") {
-    const pct = Number(value);
-    if (!Number.isFinite(pct) || pct < 0 || pct > 100) {
-      toast("Un taux entre 0 et 100 est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ errorRate: pct / 100 }, "Panne modifiée");
+  const numeric = NUMBER_FIELDS[fieldName];
+  if (!numeric) {
+    patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
     return;
   }
-  if (fieldName === "timeoutDurationS") {
-    const seconds = Number(value);
-    if (!Number.isFinite(seconds) || seconds < 0) {
-      toast("Un délai en secondes est requis", true);
-      renderFailures();
-      return;
-    }
-    patchFailures({ timeoutDurationS: seconds }, "Panne modifiée");
+  const n = Number(value);
+  if (!Number.isFinite(n) || !numeric.valid(n)) {
+    toast(numeric.error, true);
+    renderFailures();
     return;
   }
-  patchFailures({ [fieldName]: String(value).trim() }, "Panne modifiée");
+  patchFailures({ [fieldName]: numeric.toBody ? numeric.toBody(n) : n }, "Panne modifiée");
 }
 
 function presetSummary(config) {
@@ -2202,6 +2314,360 @@ function commitProfile(field, value, message) {
   studentPost("/set", { field, value }, message);
 }
 
+const CALLS = "/admin/calls";
+const CALLS_POLL_MS = 1000;
+const CALLS_SHOWN = 1000;
+
+const CALL_FAILURES = {
+  latency: (failure) => `Latence ${fmtDuration(failure.ms)}`,
+  errorRate: () => "Erreur aléatoire",
+  fail: () => "Endpoint en panne",
+  timeout: (failure) => `Expiration après ${decimal(failure.seconds)} s`,
+  malformed: () => "Réponse tronquée",
+  auth: () => "Authentification manquante",
+  tokenExpired: () => "Jeton expiré",
+  tokensRejected: () => "Jeton refusé",
+};
+
+const decimal = (value, digits = 1) =>
+  String(Number(value.toFixed(digits))).replace(".", ",");
+
+function fmtDuration(ms) {
+  if (ms < 10) return `${decimal(ms)} ms`;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${decimal(ms / 1000)} s`;
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${decimal(bytes / 1024)} ko`;
+  return `${decimal(bytes / (1024 * 1024))} Mo`;
+}
+
+const pad = (value, width = 2) => String(value).padStart(width, "0");
+
+function fmtClock(iso) {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(
+    d.getMilliseconds(),
+    3
+  )}`;
+}
+
+const isCall = (entry) => entry.kind === "call";
+const isPending = (entry) => isCall(entry) && entry.status == null;
+
+const callKeys = new WeakMap();
+
+function callKey(call) {
+  if (!callKeys.has(call)) {
+    callKeys.set(call, JSON.stringify([call.endpoint, Object.entries(call.params).sort()]));
+  }
+  return callKeys.get(call);
+}
+
+function repeatsOf(calls) {
+  const totals = new Map();
+  calls.forEach((call) => {
+    const key = callKey(call);
+    totals.set(key, (totals.get(key) || 0) + 1);
+  });
+  const seen = new Map();
+  const firsts = new Map();
+  return new Map(
+    calls.map((call) => {
+      const key = callKey(call);
+      const nth = (seen.get(key) || 0) + 1;
+      seen.set(key, nth);
+      if (nth === 1) firsts.set(key, call.id);
+      return [call.id, { nth, total: totals.get(key), group: String(firsts.get(key)) }];
+    })
+  );
+}
+
+function markerSections(entries) {
+  const sections = new Map();
+  let current = null;
+  entries.forEach((entry) => {
+    if (!isCall(entry)) {
+      current = { calls: 0, bytes: 0 };
+      sections.set(entry.id, current);
+    } else if (current) {
+      current.calls += 1;
+      current.bytes += entry.bytes || 0;
+    }
+  });
+  return sections;
+}
+
+function statusHtml(status) {
+  if (status == null) return `<span class="status is-pending">en cours</span>`;
+  const tone = status >= 500 ? "error" : status >= 400 ? "warn" : "ok";
+  return `<span class="status status--${tone}">${status}</span>`;
+}
+
+const paramsHtml = (params) =>
+  Object.entries(params)
+    .map(
+      ([key, value]) =>
+        `<span class="param"><span class="param__key">${escapeHtml(key)}=</span>${escapeHtml(
+          value
+        )}</span>`
+    )
+    .join(" ");
+
+function callFailureHtml(failure) {
+  const label = CALL_FAILURES[failure.kind]?.(failure) ?? failure.kind;
+  return `<span class="call-failure">${escapeHtml(label)}</span>`;
+}
+
+function repeatHtml({ nth, total }) {
+  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">${nth}/${total}</span>`;
+}
+
+function callRowHtml(call, repeat) {
+  const pending = call.status == null;
+  const classes = ["call", repeat.nth > 1 ? "is-repeat" : "", pending ? "is-pending" : ""];
+  const group = repeat.total > 1 ? ` data-group="${repeat.group}"` : "";
+  return `<tr class="${classes.join(" ").trim()}" data-id="${call.id}"${group}>
+      <td class="calls__time">${fmtClock(call.time)}</td>
+      <td class="calls__endpoint" title="${escapeHtml(call.path)}"><span class="calls__name">${escapeHtml(
+        call.endpoint || call.path
+      )}</span>${repeat.total > 1 ? repeatHtml(repeat) : ""}</td>
+      <td class="calls__params">${paramsHtml(call.params)}</td>
+      <td class="calls__num calls__status">${statusHtml(call.status)}</td>
+      <td class="calls__num calls__duration">${pending ? "" : fmtDuration(call.durationMs)}</td>
+      <td class="calls__num calls__size">${pending ? "" : fmtBytes(call.bytes)}</td>
+      <td class="calls__failures">${call.failures.map(callFailureHtml).join(", ")}</td>
+    </tr>`;
+}
+
+function markerRowHtml(marker, section) {
+  const summary = section.calls
+    ? `${plural(section.calls, "appel")} · ${fmtBytes(section.bytes)}`
+    : "aucun appel";
+  return `<tr class="marker" data-id="${marker.id}">
+      <td class="calls__time">${fmtClock(marker.time)}</td>
+      <td colspan="5"><span class="marker__label">${escapeHtml(
+        marker.label
+      )}</span><span class="marker__summary">${summary}</span></td>
+      <td class="marker__actions"><button type="button" class="marker__x" data-remove-marker="${
+        marker.id
+      }" title="Retirer le marqueur" aria-label="Retirer ${escapeHtml(marker.label)}">${icon(
+        "dismiss",
+        12
+      )}</button></td>
+    </tr>`;
+}
+
+function endpointStats(calls, repeats) {
+  const rows = new Map();
+  calls.forEach((call) => {
+    const row = rows.get(call.endpoint) || {
+      endpoint: call.endpoint,
+      calls: 0,
+      repeated: 0,
+      done: 0,
+      bytes: 0,
+    };
+    row.calls += 1;
+    if (repeats.get(call.id).nth > 1) row.repeated += 1;
+    if (call.status != null) {
+      row.done += 1;
+      row.bytes += call.bytes;
+    }
+    rows.set(call.endpoint, row);
+  });
+  return [...rows.values()].sort(
+    (a, b) => b.calls - a.calls || a.endpoint.localeCompare(b.endpoint)
+  );
+}
+
+const statCells = (row) => `
+      <td class="endpoint-stats__num">${row.calls}</td>
+      <td class="endpoint-stats__num endpoint-stats__repeated">${row.repeated || ""}</td>
+      <td class="endpoint-stats__num">${row.done ? fmtBytes(row.bytes) : ""}</td>`;
+
+function renderEndpointStats(calls, repeats) {
+  const rows = endpointStats(calls, repeats);
+  const total = rows.reduce(
+    (sum, row) => ({
+      calls: sum.calls + row.calls,
+      repeated: sum.repeated + row.repeated,
+      done: sum.done + row.done,
+      bytes: sum.bytes + row.bytes,
+    }),
+    { calls: 0, repeated: 0, done: 0, bytes: 0 }
+  );
+  el.endpointStats.hidden = !total.calls;
+  el.endpointStatsEmpty.hidden = total.calls > 0;
+  el.endpointStatsRows.innerHTML = rows
+    .map(
+      (row) => `<tr data-endpoint="${escapeHtml(row.endpoint)}">
+        <th scope="row" title="${escapeHtml(row.endpoint)}">${escapeHtml(row.endpoint)}</th>${statCells(
+          row
+        )}
+      </tr>`
+    )
+    .join("");
+  el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
+}
+
+function olderNote(count) {
+  const s = count > 1 ? "s" : "";
+  return `${count} entrée${s} plus ancienne${s} masquée${s}. Toujours dans les statistiques et l'export.`;
+}
+
+function markCallGroup() {
+  el.callRows
+    .querySelectorAll("tr[data-group]")
+    .forEach((row) => row.classList.toggle("is-grouped", row.dataset.group === state.callsGroup));
+}
+
+function hoverCallGroup(group) {
+  if (state.callsGroup === group) return;
+  state.callsGroup = group;
+  markCallGroup();
+}
+
+function renderCalls(stick) {
+  const board = el.callsBoard;
+  const atBottom = stick || board.scrollHeight - board.scrollTop - board.clientHeight < 24;
+  const entries = state.calls;
+  const calls = entries.filter(isCall);
+  const repeats = repeatsOf(calls);
+  const sections = markerSections(entries);
+  const shown = entries.slice(-CALLS_SHOWN);
+  const older = entries.length - shown.length;
+  el.callRows.innerHTML = shown
+    .map((entry) =>
+      isCall(entry)
+        ? callRowHtml(entry, repeats.get(entry.id))
+        : markerRowHtml(entry, sections.get(entry.id))
+    )
+    .join("");
+  el.callsOlder.hidden = !older;
+  el.callsOlderNote.textContent = older ? olderNote(older) : "";
+  markCallGroup();
+  el.callsTable.hidden = !entries.length;
+  el.callsEmpty.hidden = entries.length > 0;
+  el.callsClearBtn.disabled = !entries.length;
+  el.callsExportBtn.disabled = !entries.length;
+  renderEndpointStats(calls, repeats);
+  if (atBottom) board.scrollTop = board.scrollHeight;
+}
+
+function applyCalls({ entries, firstId }, after, stick) {
+  const known = state.calls.filter((entry) => entry.id <= after);
+  const kept = known.filter((entry) => entry.id >= firstId);
+  const replaced = state.calls.slice(known.length);
+  const changed =
+    kept.length !== known.length || JSON.stringify(entries) !== JSON.stringify(replaced);
+  state.calls = [...kept, ...entries];
+  if (changed || stick) renderCalls(stick);
+}
+
+let callsTimer = null;
+
+function scheduleCallsPoll() {
+  clearTimeout(callsTimer);
+  callsTimer =
+    state.view === "calls" && !document.hidden
+      ? setTimeout(() => loadCalls(), CALLS_POLL_MS)
+      : null;
+}
+
+async function loadCalls(stick) {
+  const seq = ++state.callsSeq;
+  const pending = state.calls.find(isPending);
+  const last = state.calls.at(-1);
+  const after = pending ? pending.id - 1 : last ? last.id : 0;
+  try {
+    const res = await fetch(`${CALLS}?after=${after}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    if (seq !== state.callsSeq) return;
+    applyCalls(data, after, stick);
+    if (state.callsFailed) {
+      state.callsFailed = false;
+      setStatus("Prêt.", false);
+    }
+  } catch (err) {
+    if (seq !== state.callsSeq) return;
+    if (!state.callsFailed) {
+      state.callsFailed = true;
+      setStatus("Impossible de lire le journal des appels.", false, true);
+    }
+  }
+  scheduleCallsPoll();
+}
+
+async function changeCalls(path, options, message, stick = true) {
+  setStatus("Enregistrement…", true);
+  let saved = false;
+  try {
+    const res = await fetch(`${CALLS}${path}`, options);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    setStatus("Enregistré.", false);
+    toast(message);
+    saved = true;
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+  }
+  await loadCalls(stick);
+  return saved;
+}
+
+function exportCalls() {
+  if (!state.calls.length) return;
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(
+    now.getHours()
+  )}${pad(now.getMinutes())}`;
+  const body = JSON.stringify({ entries: state.calls, firstId: state.calls[0].id }, null, 2);
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `api-calls-${stamp}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url));
+}
+
+function addMarker() {
+  const typed = String(el.markerLabel.value || "").trim();
+  const markers = state.calls.filter((entry) => !isCall(entry));
+  const labels = new Set(markers.map((marker) => marker.label));
+  let number = markers.length + 1;
+  while (labels.has(`Marqueur ${number}`)) number += 1;
+  const label = typed || `Marqueur ${number}`;
+  changeCalls(
+    "/marker",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    },
+    "Marqueur ajouté"
+  ).then((saved) => {
+    if (saved) el.markerLabel.value = "";
+  });
+}
+
+async function removeMarker(button) {
+  const id = Number(button.dataset.removeMarker);
+  button.disabled = true;
+  const removed = await changeCalls(
+    `/marker/${id}`,
+    { method: "DELETE" },
+    "Marqueur retiré",
+    false
+  );
+  if (removed) state.calls = state.calls.filter((entry) => entry.id !== id);
+  renderCalls();
+}
+
 const SNAPSHOT_API = `${API}/snapshots`;
 
 const SNAPSHOT_SCOPES = [
@@ -2312,18 +2778,16 @@ const includedFailures = (config) => {
   }));
 };
 
-const plural = (count, one, many) => `${count} ${count > 1 ? many : one}`;
-
 function snapshotTags(item) {
   const tags = setupParts(item.setup).map((text) => ({ text }));
   if (item.sessions.length) tags.push({ text: `horaire ${item.sessions.join(", ")}` });
   if (item.student.length) {
-    tags.push({ text: `profil étudiant (${plural(item.student.length, "champ", "champs")})` });
+    tags.push({ text: `profil étudiant (${plural(item.student.length, "champ")})` });
   }
   const failures = includedFailures(item.failures);
   if (failures.length) {
     tags.push({
-      text: plural(failures.length, "panne", "pannes"),
+      text: plural(failures.length, "panne"),
       title: failures.map((f) => `${f.kind.label} : ${f.summary}`).join("\n"),
       warn: true,
     });
@@ -2642,14 +3106,27 @@ const VIEWS = {
   schedule: {
     tab: "viewSchedule",
     title: "Horaire",
-    parts: ["scheduleView", "scheduleControls", "scheduleToolbar"],
+    panes: [el.scheduleView, el.scheduleControls, el.scheduleToolbar],
   },
-  failures: { tab: "viewFailures", title: "Pannes", parts: ["failuresView", "failuresToolbar"] },
-  student: { tab: "viewStudent", title: "Étudiant", parts: ["studentView", "studentToolbar"] },
+  failures: {
+    tab: "viewFailures",
+    title: "Pannes",
+    panes: [el.failuresView, el.failuresToolbar],
+  },
+  student: {
+    tab: "viewStudent",
+    title: "Étudiant",
+    panes: [el.studentView, el.studentToolbar],
+  },
+  calls: {
+    tab: "viewCalls",
+    title: "Logs",
+    panes: [el.callsView, el.callsToolbar],
+  },
   snapshots: {
     tab: "viewSnapshots",
     title: "Instantanés",
-    parts: ["snapshotsView", "snapshotsToolbar"],
+    panes: [el.snapshotsView, el.snapshotsToolbar],
   },
 };
 
@@ -2659,20 +3136,19 @@ function setView(view) {
   if (el.viewToggle.activeid !== target.tab) el.viewToggle.activeid = target.tab;
   if (state.view === view) return;
   state.view = view;
-  Object.entries(VIEWS).forEach(([name, { parts }]) =>
-    parts.forEach((part) => (el[part].hidden = name !== view))
+  Object.entries(VIEWS).forEach(([name, { panes }]) =>
+    panes.forEach((pane) => (pane.hidden = name !== view))
   );
   document.title = `${target.title} - ÉTS Mock`;
-  if (view === "failures") {
-    loadFailures();
-  } else if (view === "student") {
-    loadStudent();
-  } else if (view === "snapshots") {
-    loadSnapshots();
-  } else if (state.data) {
+  if (view === "schedule" && state.data) {
     renderScaffold();
     renderBlocks(false);
   }
+  if (view === "failures") loadFailures();
+  if (view === "student") loadStudent();
+  if (view === "snapshots") loadSnapshots();
+  if (view === "calls") loadCalls(true);
+  else scheduleCallsPoll();
 }
 paintIcons();
 
@@ -2783,6 +3259,30 @@ el.sessionDatesReset.addEventListener("click", () =>
     toast("Dates de la session rétablies")
   )
 );
+el.callsClearBtn.addEventListener("click", () =>
+  changeCalls("", { method: "DELETE" }, "Journal effacé")
+);
+el.callsExportBtn.addEventListener("click", exportCalls);
+el.markerAddBtn.addEventListener("click", addMarker);
+el.markerLabel.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  addMarker();
+});
+el.callRows.addEventListener("mouseover", (e) =>
+  hoverCallGroup(e.target.closest("tr[data-group]")?.dataset.group ?? null)
+);
+el.callRows.addEventListener("mouseleave", () => hoverCallGroup(null));
+el.callRows.addEventListener("click", (e) => {
+  const button = e.target.closest("[data-remove-marker]");
+  if (button) removeMarker(button);
+});
+document.addEventListener("visibilitychange", () => {
+  scheduleFailuresPoll();
+  if (state.view !== "calls") return;
+  if (document.hidden) scheduleCallsPoll();
+  else loadCalls();
+});
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -2826,6 +3326,7 @@ const TEXT_ENTRY =
   'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
 
 document.addEventListener("keydown", (e) => {
+  if (state.view === "calls") return;
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||

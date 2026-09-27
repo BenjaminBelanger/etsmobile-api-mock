@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { ENDPOINTS, PRESETS, baseState, defaultFailures, flush, mount } from "./harness.mjs";
+import {
+  ENDPOINTS,
+  PRESETS,
+  baseState,
+  clone,
+  defaultFailures,
+  flush,
+  mount,
+} from "./harness.mjs";
 
 const BROKEN = {
   latencyMs: "500-2000",
@@ -11,9 +19,24 @@ const BROKEN = {
   timeoutDurationS: 30,
   malformed: true,
   authRequired: true,
+  tokenExpiredCalls: 3,
+  tokensRejected: true,
 };
 
-const ALL_KINDS = ["latency", "errorRate", "fail", "timeout", "malformed", "auth"];
+const ALL_KINDS = [
+  "latency",
+  "errorRate",
+  "fail",
+  "timeout",
+  "malformed",
+  "auth",
+  "tokenExpired",
+  "tokensRejected",
+];
+
+const POLL_MS = 2000;
+
+const withoutCountdown = ({ tokenExpiredCalls, ...settings }) => settings;
 
 async function openFailures(app) {
   app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewFailures") });
@@ -54,6 +77,58 @@ async function undoKey(app) {
 
 const stagedChips = (app) =>
   app.queryAll(".chips--staged .chip").map((node) => node.textContent.trim());
+
+const unitOf = (app, kind) =>
+  app.text(`.injection[data-kind="${kind}"] .injection__unit`);
+
+function holdPolls(app) {
+  const held = new Map();
+  const { setTimeout: realSet, clearTimeout: realClear } = app.window;
+  let next = 0;
+  app.window.setTimeout = (fn, ms, ...args) => {
+    if (ms !== POLL_MS) return realSet.call(app.window, fn, ms, ...args);
+    next -= 1;
+    held.set(next, fn);
+    return next;
+  };
+  app.window.clearTimeout = (id) =>
+    id < 0 ? held.delete(id) : realClear.call(app.window, id);
+  return {
+    get size() {
+      return held.size;
+    },
+    async run() {
+      const due = [...held.values()];
+      held.clear();
+      due.forEach((fn) => fn());
+      await flush();
+    },
+  };
+}
+
+function holdNextRead(app) {
+  const serve = app.window.fetch;
+  let release;
+  app.window.fetch = (url, request) => {
+    if (url !== "/admin/failures" || request) return serve(url, request);
+    app.window.fetch = serve;
+    const reading = clone(app.server.admin.config);
+    return new Promise((resolve) => {
+      release = () => resolve({ ok: true, status: 200, json: async () => reading });
+    });
+  };
+  return async () => {
+    release();
+    await flush();
+  };
+}
+
+async function onFailuresPolled(failures) {
+  const app = await mount({ failures });
+  const polls = holdPolls(app);
+  await openFailures(app);
+  return { app, polls };
+}
 
 async function openDialog(app, kind) {
   await app.click(app.byId("failureAddBtn"));
@@ -146,16 +221,11 @@ describe("active injections", () => {
       timeoutDurationS: 30,
       malformed: true,
       authRequired: true,
+      tokenExpiredCalls: 2,
+      tokensRejected: true,
     });
 
-    assert.deepEqual(kinds(app), [
-      "latency",
-      "errorRate",
-      "fail",
-      "timeout",
-      "malformed",
-      "auth",
-    ]);
+    assert.deepEqual(kinds(app), ALL_KINDS);
     assert.equal(app.byId("injectionEmpty").hidden, true);
     assert.equal(app.byId("failuresResetBtn").disabled, false);
     app.close();
@@ -175,6 +245,189 @@ describe("active injections", () => {
     assert.deepEqual(chips(app, "fail"), ["tous les endpoints", "listeCours"]);
     assert.deepEqual(chips(app, "timeout"), ["listeCoequipiers"]);
     assert.equal(field(app, "timeout", "timeoutDurationS").getAttribute("value"), "30");
+    app.close();
+  });
+
+  test("show how many calls an expired token still fails", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 3 });
+
+    assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "3");
+    assert.equal(unitOf(app, "tokenExpired"), "appels restants");
+    app.close();
+  });
+
+  test("speak of a single remaining call in the singular", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 1 });
+
+    assert.equal(unitOf(app, "tokenExpired"), "appel restant");
+    app.close();
+  });
+});
+
+describe("an expired token countdown", () => {
+  test("follows the calls the app uses up", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3 });
+    assert.equal(polls.size, 1);
+
+    app.server.admin.config.tokenExpiredCalls = 1;
+    await polls.run();
+
+    assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "1");
+    assert.equal(polls.size, 1);
+    app.close();
+  });
+
+  test("drops the row once the calls are used up", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 1 });
+
+    app.server.admin.config.tokenExpiredCalls = 0;
+    await polls.run();
+
+    assert.deepEqual(kinds(app), []);
+    assert.equal(app.byId("failuresDot").hidden, true);
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("leaves the rows alone while nothing changes", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2, latencyMs: 500 });
+    const input = field(app, "latency", "latencyMs");
+
+    await polls.run();
+
+    assert.equal(field(app, "latency", "latencyMs"), input);
+    assert.equal(polls.size, 1);
+    app.close();
+  });
+
+  test("keeps watching when the server cannot be read", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2 });
+    app.server.admin.reply("", { error: "server unavailable" }, 500);
+
+    await polls.run();
+
+    assert.deepEqual(kinds(app), ["tokenExpired"]);
+    assert.equal(polls.size, 1);
+    app.close();
+  });
+
+  test("keeps watching after a reading it cannot parse", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2 });
+    const serve = app.window.fetch;
+    app.window.fetch = (url, request) =>
+      url === "/admin/failures" && !request
+        ? Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.reject(new SyntaxError("Unexpected token '<'")),
+          })
+        : serve(url, request);
+
+    await polls.run();
+
+    assert.deepEqual(kinds(app), ["tokenExpired"]);
+    assert.equal(polls.size, 1);
+    app.close();
+  });
+
+  test("is not watched without a countdown", async () => {
+    const { app, polls } = await onFailuresPolled({ tokensRejected: true });
+
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("leaves the field being typed in alone", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3, latencyMs: 500 });
+    const input = field(app, "latency", "latencyMs");
+    input.tabIndex = 0;
+    input.focus();
+    app.server.admin.config.tokenExpiredCalls = 2;
+
+    await polls.run();
+
+    assert.equal(field(app, "latency", "latencyMs"), input);
+    assert.equal(app.document.activeElement, input);
+    assert.equal(polls.size, 1);
+
+    input.blur();
+    await polls.run();
+
+    assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "2");
+    app.close();
+  });
+
+  test("ignores a reading that a newer change overtook", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 2 });
+    const answer = holdNextRead(app);
+    await polls.run();
+    await app.click(app.query('[data-remove="tokenExpired"]'));
+
+    await answer();
+
+    assert.deepEqual(kinds(app), []);
+    assert.equal(undoBtn(app).disabled, false);
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("stays out of undoing another change", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 3, latencyMs: 500 });
+    app.server.admin.config.tokenExpiredCalls = 1;
+    app.select(field(app, "latency", "latencyMs"), "800");
+    await flush();
+
+    await app.click(undoBtn(app));
+
+    assert.equal("tokenExpiredCalls" in lastPatch(app).body, false);
+    assert.equal(app.server.admin.config.latencyMs, 500);
+    assert.equal(app.server.admin.config.tokenExpiredCalls, 1);
+    app.close();
+  });
+
+  test("can still be undone while the app uses it up", async () => {
+    const { app, polls } = await onFailuresPolled({});
+    await openDialog(app, "tokenExpired");
+    app.select(app.byId("fTokenExpiredCalls"), "3");
+    await app.click(app.byId("failureSubmit"));
+    app.server.admin.config.tokenExpiredCalls = 1;
+    await polls.run();
+
+    assert.equal(undoBtn(app).disabled, false);
+    await app.click(undoBtn(app));
+
+    assert.equal(app.server.admin.config.tokenExpiredCalls, 0);
+    assert.deepEqual(kinds(app), []);
+    app.close();
+  });
+
+  test("keeps the tab's dot current from another tab", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 1 });
+    app.fire(app.byId("viewToggle"), "change", { detail: app.byId("viewSchedule") });
+    await flush();
+    app.server.admin.config.tokenExpiredCalls = 0;
+
+    await polls.run();
+
+    assert.equal(app.byId("failuresDot").hidden, true);
+    assert.equal(polls.size, 0);
+    app.close();
+  });
+
+  test("is not watched while the page is hidden", async () => {
+    const { app, polls } = await onFailuresPolled({ tokenExpiredCalls: 3 });
+
+    Object.defineProperty(app.document, "hidden", { value: true, configurable: true });
+    app.fire(app.document, "visibilitychange");
+    await flush();
+
+    assert.equal(polls.size, 0);
+
+    Object.defineProperty(app.document, "hidden", { value: false, configurable: true });
+    app.fire(app.document, "visibilitychange");
+    await flush();
+
+    assert.equal(polls.size, 1);
     app.close();
   });
 });
@@ -226,6 +479,29 @@ describe("editing an injection", () => {
     assert.equal(app.server.admin.calls.length, before);
     assert.equal(app.toast().intent, "error");
     assert.equal(field(app, "errorRate", "errorRate").getAttribute("value"), "30");
+    app.close();
+  });
+
+  test("saves a new count of calls for an expired token", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 3 });
+
+    app.select(field(app, "tokenExpired", "tokenExpiredCalls"), "5");
+    await flush();
+
+    assert.deepEqual(lastPatch(app).body, { tokenExpiredCalls: 5 });
+    app.close();
+  });
+
+  test("refuses a partial call", async () => {
+    const app = await onFailures({ tokenExpiredCalls: 3 });
+    const before = app.server.admin.calls.length;
+
+    app.select(field(app, "tokenExpired", "tokenExpiredCalls"), "1.5");
+    await flush();
+
+    assert.equal(app.server.admin.calls.length, before);
+    assert.equal(app.toast().text, "Un nombre d'appels est requis");
+    assert.equal(field(app, "tokenExpired", "tokenExpiredCalls").getAttribute("value"), "3");
     app.close();
   });
 
@@ -303,7 +579,10 @@ describe("undo and redo on the failures tab", () => {
     assert.equal(undoBtn(app).disabled, false);
     await app.click(undoBtn(app));
 
-    assert.deepEqual(lastPatch(app).body, { ...defaultFailures(), latencyMs: 500 });
+    assert.deepEqual(
+      lastPatch(app).body,
+      withoutCountdown({ ...defaultFailures(), latencyMs: 500 }),
+    );
     assert.equal(field(app, "latency", "latencyMs").getAttribute("value"), "500");
     assert.equal(app.toast().text, "Modification annulée");
     assert.equal(undoBtn(app).disabled, true);
@@ -450,7 +729,11 @@ describe("undoing what a single click took away", () => {
     await app.click(app.query('[data-remove="fail"]'));
     await app.click(undoBtn(app));
 
-    assert.deepEqual(lastPatch(app), { path: "", method: "PATCH", body: BROKEN });
+    assert.deepEqual(lastPatch(app), {
+      path: "",
+      method: "PATCH",
+      body: withoutCountdown(BROKEN),
+    });
     assert.deepEqual(chips(app, "fail"), BROKEN.failEndpoints);
     assert.equal(app.toast().text, "Modification annulée");
     app.close();
@@ -574,6 +857,45 @@ describe("registering a failure", () => {
 
     assert.deepEqual(lastPatch(app).body, { authRequired: true });
     assert.deepEqual(kinds(app), ["auth"]);
+    app.close();
+  });
+
+  test("registers an expired token for a number of calls", async () => {
+    const app = await onFailures();
+
+    await openDialog(app, "tokenExpired");
+    app.select(app.byId("fTokenExpiredCalls"), "3");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, { tokenExpiredCalls: 3 });
+    assert.deepEqual(kinds(app), ["tokenExpired"]);
+    app.close();
+  });
+
+  test("asks how many calls an expired token fails", async () => {
+    const app = await onFailures();
+    const before = app.server.admin.calls.length;
+
+    await openDialog(app, "tokenExpired");
+    app.select(app.byId("fTokenExpiredCalls"), "0");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.equal(app.server.admin.calls.length, before);
+    assert.equal(app.toast().text, "Un nombre d'appels est requis");
+    app.close();
+  });
+
+  test("registers rejected tokens without a parameter", async () => {
+    const app = await onFailures();
+
+    await openDialog(app, "tokensRejected");
+
+    assert.equal(app.byId("failureParams").children.length, 0);
+
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, { tokensRejected: true });
+    assert.deepEqual(kinds(app), ["tokensRejected"]);
     app.close();
   });
 

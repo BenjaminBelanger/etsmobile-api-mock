@@ -101,6 +101,9 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "10",
             "--malformed",
             "--auth",
+            "--token-expired",
+            "3",
+            "--tokens-rejected",
         ]
     )
 
@@ -116,18 +119,45 @@ def test_a_custom_config_is_built_from_the_flags(http):
             "timeoutDurationS": 10.0,
             "malformed": True,
             "authRequired": True,
+            "tokenExpiredCalls": 3,
+            "tokensRejected": True,
         },
     )
 
 
 def test_the_negative_form_of_a_boolean_flag_is_sent(http):
-    manage_failures.cmd_custom(["--no-malformed", "--no-auth"])
-    assert http.calls[-1][2] == {"malformed": False, "authRequired": False}
+    manage_failures.cmd_custom(["--no-malformed", "--no-auth", "--no-tokens-rejected"])
+    assert http.calls[-1][2] == {
+        "malformed": False,
+        "authRequired": False,
+        "tokensRejected": False,
+    }
 
 
 def test_a_custom_config_resets_before_patching(http):
     manage_failures.cmd_custom(["--latency", "200"])
     assert [call[0] for call in http.calls] == ["DELETE", "PATCH"]
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--latency", "abc"],
+        ["--latency", "800-100"],
+        ["--error-rate", "5"],
+        ["--error-rate", "nan"],
+        ["--timeout-duration", "-1"],
+        ["--timeout-duration", "inf"],
+        ["--token-expired", "-3"],
+        ["--token-expired", "1.5"],
+        ["--latency", "200", "--error-rate", "5"],
+    ],
+)
+def test_a_broken_flag_is_refused_before_the_config_is_reset(http, argv):
+    with pytest.raises(SystemExit) as exc:
+        manage_failures.cmd_custom(argv)
+    assert exc.value.code == 2
+    assert http.calls == []
 
 
 def test_a_custom_config_needs_at_least_one_flag(http):

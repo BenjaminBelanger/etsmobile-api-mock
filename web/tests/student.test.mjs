@@ -212,6 +212,21 @@ describe("the student profile", () => {
     assert.equal(app.server.student.called("/set").length, 1);
     app.close();
   });
+
+  test("keeps the caret of a clicked field when another save redraws the list", async () => {
+    const app = await onStudent();
+    const clicked = field(app, "codePerm");
+    clicked.setAttribute("tabindex", "0");
+    clicked.focus();
+    clicked.control.setSelectionRange(4, 4);
+    await typeAndLeave(app, "prenom", "Mari");
+
+    const fresh = field(app, "codePerm");
+    assert.notEqual(fresh, clicked);
+    assert.equal(fresh.control.selectionStart, 4);
+    assert.equal(fresh.control.selectionEnd, 4);
+    app.close();
+  });
 });
 
 describe("the student history", () => {
