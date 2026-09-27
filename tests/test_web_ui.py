@@ -6,13 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from lib import schedule_editor
+from lib import schedule_editor, student_editor
 from lib._paths import ROOT
 
 WEB = ROOT / "web"
 UI_TESTS = WEB / "tests"
 HARNESS = UI_TESTS / "harness.mjs"
 FIXTURE = UI_TESTS / "fixtures" / "state.json"
+STUDENT_FIXTURE = UI_TESTS / "fixtures" / "student.json"
 SESSION = "H2026"
 
 
@@ -148,3 +149,84 @@ def test_the_failures_panel_only_talks_to_routes_the_server_serves():
 
     assert called
     assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
+
+
+def test_the_ui_fixture_dates_match_the_served_shape():
+    served = schedule_editor.get_state(SESSION)["dates"]
+    fixture = fixture_state()["dates"]
+
+    assert keys_of(fixture[0]) == keys_of(served[0])
+    assert [row["key"] for row in fixture] == [row["key"] for row in served]
+
+
+def test_the_ui_student_fixture_matches_the_state_the_server_sends():
+    served = student_editor.get_state()
+    fixture = json.loads(STUDENT_FIXTURE.read_text(encoding="utf-8"))
+
+    assert keys_of(fixture) == keys_of(served)
+    assert keys_of(fixture["student"][0]) == keys_of(served["student"][0])
+    assert [row["key"] for row in fixture["student"]] == [
+        row["key"] for row in served["student"]
+    ]
+
+
+def test_the_student_tab_only_talks_to_routes_the_server_serves():
+    from lib import editor_routes
+
+    script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+    served = {
+        route.path.replace("/editor/api/student", "")
+        for route in editor_routes.router.routes
+        if route.path.startswith("/editor/api/student")
+    }
+
+    called = set(re.findall(r'studentPost\(\s*"([^"]*)"', script))
+    called |= set(re.findall(r"\$\{STUDENT_API\}(/\w+)", script))
+
+    assert called
+    assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
+
+
+def test_the_ui_call_mock_matches_the_entries_the_server_sends(client):
+    client.get("/api/Etudiant/listeCours")
+    client.post("/admin/calls/marker", json={"label": "notes ouvertes"})
+
+    call, marker = client.get("/admin/calls").json()["entries"]
+
+    assert js_literal_keys("CALL_ENTRY", "};") == set(call)
+    assert js_literal_keys("MARKER_ENTRY", "};") == set(marker)
+
+
+def test_the_calls_view_only_talks_to_routes_the_server_serves():
+    from lib import call_log
+
+    script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+
+    def shape(path):
+        return re.sub(r"\$?\{\w+\}", "{}", path)
+
+    served = {shape(route.path.replace("/admin/calls", "")) for route in call_log.router.routes}
+
+    called = set(re.findall(r'\$\{CALLS\}(/\w+)?', script))
+    called |= set(re.findall(r'changeCalls\(\s*["`]([^"`]*)["`]', script))
+    called = {shape(path) for path in called}
+
+    assert called
+    assert called <= served, f"the UI calls routes the server does not serve: {called - served}"
+
+
+def test_the_calls_view_names_every_failure_the_server_injects():
+    source = (ROOT / "lib" / "failures.py").read_text(encoding="utf-8")
+    script = (WEB / "assets" / "app.js").read_text(encoding="utf-8")
+
+    injected = set(re.findall(r'_inject\(request, "(\w+)"', source))
+    labelled = set(
+        re.findall(r"^\s+(\w+):", script.split("const CALL_FAILURES = {")[1].split("};")[0], re.M)
+    )
+    with_icon = set(
+        re.findall(r'id: "(\w+)"', script.split("const FAILURE_KINDS = [")[1].split("];")[0])
+    )
+
+    assert injected == {"auth", "fail", "timeout", "errorRate", "latency", "malformed"}
+    assert injected <= labelled, f"no label for {injected - labelled}"
+    assert injected <= with_icon, f"no icon for {injected - with_icon}"

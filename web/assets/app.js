@@ -32,6 +32,12 @@ const state = {
   staged: [],
   endpoints: [],
   presets: [],
+  student: null,
+  otherDatesOpen: false,
+  calls: [],
+  callsSeq: 0,
+  callsFailed: false,
+  callsGroup: null,
 };
 
 const el = {
@@ -55,6 +61,31 @@ const el = {
   injectionList: document.getElementById("injectionList"),
   injectionEmpty: document.getElementById("injectionEmpty"),
   presetList: document.getElementById("presetList"),
+  studentView: document.getElementById("studentView"),
+  studentToolbar: document.getElementById("studentToolbar"),
+  studentUndoBtn: document.getElementById("studentUndoBtn"),
+  studentRedoBtn: document.getElementById("studentRedoBtn"),
+  studentResetBtn: document.getElementById("studentResetBtn"),
+  profileFields: document.getElementById("profileFields"),
+  sessionPanel: document.getElementById("sessionPanel"),
+  sessionDates: document.getElementById("sessionDates"),
+  sessionDatesReset: document.getElementById("sessionDatesReset"),
+  callsView: document.getElementById("callsView"),
+  callsToolbar: document.getElementById("callsToolbar"),
+  callsBoard: document.getElementById("callsBoard"),
+  callsTable: document.getElementById("callsTable"),
+  callsOlder: document.getElementById("callsOlder"),
+  callsOlderNote: document.getElementById("callsOlderNote"),
+  callRows: document.getElementById("callRows"),
+  callsEmpty: document.getElementById("callsEmpty"),
+  callsClearBtn: document.getElementById("callsClearBtn"),
+  callsExportBtn: document.getElementById("callsExportBtn"),
+  callsTotal: document.getElementById("callsTotal"),
+  endpointStats: document.getElementById("endpointStats"),
+  endpointStatsRows: document.getElementById("endpointStatsRows"),
+  endpointStatsEmpty: document.getElementById("endpointStatsEmpty"),
+  markerLabel: document.getElementById("markerLabel"),
+  markerAddBtn: document.getElementById("markerAddBtn"),
   sessionSelect: document.getElementById("sessionSelect"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
@@ -206,6 +237,11 @@ function defaultWeekIndex(semester) {
   const today = todayWeekIndex(semester);
   return today != null ? today : semester.weeks[0].index;
 }
+function closestWeekIndex(semester, start) {
+  if (!semester || !semester.weeks.length) return null;
+  const reached = semester.weeks.filter((w) => w.start <= start);
+  return (reached.length ? reached[reached.length - 1] : semester.weeks[0]).index;
+}
 
 const occurrenceMode = () => state.editScope === "occurrence" && !!currentWeek();
 
@@ -257,6 +293,7 @@ async function apiPost(path, body) {
 
 function applyState(data, opts) {
   const prevSession = state.session;
+  const shownStart = prevSession === data.session ? currentWeek()?.start : null;
   state.session = data.session;
   state.data = data;
   const meta = data.meta;
@@ -267,13 +304,9 @@ function applyState(data, opts) {
   state.days = meta.days;
   assignTints(data.courses || []);
   state.semester = meta.semester || null;
-  if (
-    prevSession !== data.session ||
-    state.weekIndex == null ||
-    !weekExists(state.weekIndex)
-  ) {
-    state.weekIndex = defaultWeekIndex(state.semester);
-  }
+  state.weekIndex = shownStart
+    ? closestWeekIndex(state.semester, shownStart)
+    : defaultWeekIndex(state.semester);
   if (prevSession !== data.session) {
     state.detailCourseId = null;
     state.evalIndex = null;
@@ -282,6 +315,7 @@ function applyState(data, opts) {
   renderWeekPicker();
   renderScaffold();
   renderBlocks(opts && opts.animate);
+  renderSessionDates();
   renderDetail();
   renderTrash(data.trash);
   renderCatalog(meta.catalog);
@@ -749,9 +783,9 @@ function propInput(key, label, value, type, opts = {}) {
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
   }${opts.narrow ? " props__input--narrow" : ""}`;
-  const title = pinned
-    ? ' title="Valeur modifiée, videz le champ pour rétablir la valeur générée"'
-    : "";
+  const hint = opts.hint || "Valeur modifiée, videz le champ pour rétablir la valeur générée";
+  const tips = [opts.tip, pinned && hint].filter(Boolean);
+  const title = tips.length ? ` title="${escapeHtml(tips.join(" · "))}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
 }
@@ -898,8 +932,6 @@ function detailHtml(course) {
       <section class="detail__section">${examHtml(course.exam)}</section>`;
 }
 
-let renderingDetail = false;
-
 function renderDetail() {
   const courses = detailCourses();
   const course = currentDetail();
@@ -914,18 +946,7 @@ function renderDetail() {
     state.evalIndex = evals.length ? evals.length - 1 : null;
   }
   fillDetailSelect(courses, course.courseId);
-
-  const active = document.activeElement;
-  const focusKey = el.detail.contains(active) ? active.dataset.key : null;
-  const html = detailHtml(course);
-  renderingDetail = true;
-  el.detail.innerHTML = html;
-  renderingDetail = false;
-  wireDetail(course);
-  if (focusKey) {
-    const node = el.detail.querySelector(`[data-key="${focusKey}"]`);
-    if (node) node.focus();
-  }
+  redraw(el.detail, detailHtml(course), () => wireDetail(course));
 }
 
 function wireDetail(course) {
@@ -973,14 +994,49 @@ function wireDetail(course) {
   });
 }
 
+let redrawing = false;
+const typingIn = new WeakSet();
+
+function keepCaret(previous, fresh) {
+  const from = previous.control;
+  if (from?.selectionStart == null || !fresh.control) return;
+  fresh.control.setSelectionRange(from.selectionStart, from.selectionEnd, from.selectionDirection);
+}
+
+function keepFocus(container, previous) {
+  const fresh = container.querySelector(`[data-key="${previous.dataset.key}"]`);
+  if (!fresh) return;
+  if (!typingIn.has(previous)) {
+    fresh.focus();
+    keepCaret(previous, fresh);
+    return;
+  }
+  ["class", "title"].forEach((name) => {
+    if (fresh.hasAttribute(name)) previous.setAttribute(name, fresh.getAttribute(name));
+    else previous.removeAttribute(name);
+  });
+  fresh.replaceWith(previous);
+  previous.focus();
+}
+
+function redraw(container, html, wire) {
+  const active = document.activeElement;
+  const focused = container.contains(active) && active.dataset.key ? active : null;
+  redrawing = true;
+  container.innerHTML = html;
+  redrawing = false;
+  wire();
+  if (focused) keepFocus(container, focused);
+}
+
 function wireTextField(node, commit) {
   let saved = node.value;
-  let typing = false;
   let incomplete = false;
   const save = () => {
-    typing = false;
+    if (redrawing) return;
+    typingIn.delete(node);
     const value = incomplete ? "" : node.value;
-    if (renderingDetail || value === saved) return;
+    if (value === saved) return;
     saved = value;
     commit(value);
   };
@@ -992,17 +1048,115 @@ function wireTextField(node, commit) {
     },
     true,
   );
-  node.addEventListener("pointerdown", () => {
-    typing = false;
-  });
+  node.addEventListener("pointerdown", () => typingIn.delete(node));
   node.addEventListener("keydown", (e) => {
     if (e.key === "Enter") node.blur();
-    else typing = true;
+    else typingIn.add(node);
   });
   node.addEventListener("change", () => {
-    if (!typing) save();
+    if (!typingIn.has(node)) save();
   });
   node.addEventListener("focusout", save);
+}
+
+const MAIN_DATES = ["dateDebut", "dateFinCours", "dateFin"];
+
+const DATE_LABELS = {
+  dateDebut: "Début de la session",
+  dateFin: "Fin de la session",
+  dateFinCours: "Fin des cours",
+  dateDebutChemiNot: "Début ChemiNot",
+  dateFinChemiNot: "Fin ChemiNot",
+  dateDebutAnnulationAvecRemboursement: "Début de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursement: "Fin de l'annulation avec remboursement",
+  dateFinAnnulationAvecRemboursementNouveauxEtudiants:
+    "Fin de l'annulation avec remboursement (nouveaux étudiants)",
+  dateDebutAnnulationSansRemboursementNouveauxEtudiants:
+    "Début de l'annulation sans remboursement (nouveaux étudiants)",
+  dateFinAnnulationSansRemboursementNouveauxEtudiants:
+    "Fin de l'annulation sans remboursement (nouveaux étudiants)",
+  dateLimitePourAnnulerASEQ: "Date limite pour annuler l'ASEQ",
+};
+
+const DATE_ORDER = [
+  ["dateDebut", "dateFinCours"],
+  ["dateFinCours", "dateFin"],
+  ["dateDebutChemiNot", "dateFinChemiNot"],
+  ["dateDebutAnnulationAvecRemboursement", "dateFinAnnulationAvecRemboursement"],
+  [
+    "dateDebutAnnulationSansRemboursementNouveauxEtudiants",
+    "dateFinAnnulationSansRemboursementNouveauxEtudiants",
+  ],
+];
+
+const ORIGINAL_HINT = "Valeur modifiée, videz le champ pour rétablir la valeur d'origine";
+
+const dateLabel = (key) => DATE_LABELS[key] || key;
+
+function dateWarnings(dates) {
+  const values = Object.fromEntries(dates.map((row) => [row.key, row.value]));
+  return DATE_ORDER.filter(
+    ([start, end]) => values[start] && values[end] && values[end] < values[start]
+  ).map(([start, end]) => `« ${dateLabel(end)} » précède « ${dateLabel(start)} »`);
+}
+
+function dateField(row) {
+  return propInput(`date:${row.key}`, escapeHtml(dateLabel(row.key)), row.value, "date", {
+    pinned: row.modified,
+    wide: true,
+    hint: ORIGINAL_HINT,
+    tip: row.key,
+  });
+}
+
+function sessionDatesHtml(dates) {
+  const main = MAIN_DATES.map((key) => dates.find((row) => row.key === key)).filter(Boolean);
+  const others = dates.filter((row) => !MAIN_DATES.includes(row.key));
+  const open = state.otherDatesOpen;
+  const othersPinned = others.some((row) => row.modified);
+  const toggle = others.length
+    ? `<button type="button" class="stats${open ? " is-open" : ""}${
+        othersPinned ? " is-pinned" : ""
+      }" data-act="toggleDates" aria-expanded="${open}"${
+        othersPinned ? ' title="Contient des dates modifiées"' : ""
+      }>${icon("chevronRight", 16)}<span>Autres dates</span></button>`
+    : "";
+  const rest =
+    open && others.length ? `<div class="props__grid">${others.map(dateField).join("")}</div>` : "";
+  const warnings = dateWarnings(dates);
+  const warn = warnings.length
+    ? `<div class="detail__warn">${warnings
+        .map((line) => `<span>${escapeHtml(line)}</span>`)
+        .join("")}</div>`
+    : "";
+  return `<div class="props__grid">${main.map(dateField).join("")}</div>${toggle}${rest}${warn}`;
+}
+
+function wireSessionDates() {
+  el.sessionDates.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
+    wireTextField(node, (value) => commitSessionDate(field, value));
+  });
+  const toggle = el.sessionDates.querySelector('[data-act="toggleDates"]');
+  if (!toggle) return;
+  toggle.addEventListener("click", () => {
+    state.otherDatesOpen = !state.otherDatesOpen;
+    renderSessionDates();
+    el.sessionDates.querySelector('[data-act="toggleDates"]').focus();
+  });
+}
+
+function renderSessionDates() {
+  const dates = (state.data && state.data.dates) || [];
+  el.sessionPanel.hidden = !dates.length;
+  el.sessionDatesReset.hidden = !dates.some((row) => row.modified);
+  redraw(el.sessionDates, sessionDatesHtml(dates), wireSessionDates);
+}
+
+function commitSessionDate(field, value) {
+  apiPost("/session/date", { session: state.session, field, value }).catch(() =>
+    renderSessionDates()
+  );
 }
 
 function commitField(course, key, value) {
@@ -2024,28 +2178,511 @@ function submitFailure() {
   patchFailures(body, "Panne enregistrée").then(() => el.failureDialog.hide());
 }
 
+const STUDENT_API = `${API}/student`;
+
+const PROFILE_LABELS = {
+  nom: "Nom",
+  prenom: "Prénom",
+  codePerm: "Code permanent",
+  codeUniversel: "Code universel",
+  soldeTotal: "Solde",
+  masculin: "Masculin",
+};
+
+const profileLabel = (key) => PROFILE_LABELS[key] || key;
+
+async function loadStudent() {
+  try {
+    const res = await fetch(`${STUDENT_API}/state`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applyStudent(data);
+  } catch (err) {
+    setStatus("Impossible de lire le profil étudiant.", false, true);
+    toast(err.message || "Serveur injoignable", true);
+  }
+}
+
+async function studentPost(path, body, message) {
+  setStatus("Enregistrement…", true);
+  try {
+    const res = await fetch(`${STUDENT_API}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    applyStudent(data);
+    setStatus("Enregistré.", false);
+    if (message) toast(message);
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+    renderStudent();
+  }
+}
+
+function applyStudent(data) {
+  state.student = data;
+  renderStudent();
+}
+
+function profileInput(row, label) {
+  const key = `student:${row.key}`;
+  if (typeof row.value === "boolean") {
+    return `<label class="check">
+        <input type="checkbox" data-key="${key}" aria-label="${label}"${row.value ? " checked" : ""} />
+        <span>${row.value ? "Oui" : "Non"}</span>
+      </label>`;
+  }
+  const title = row.modified ? ` title="${escapeHtml(`${row.key} · ${ORIGINAL_HINT}`)}"` : "";
+  return `<fluent-text-input class="field__input${row.modified ? " is-pinned" : ""}" control-size="small"
+      appearance="filled-lighter" data-key="${key}" value="${escapeHtml(row.value)}"
+      aria-label="${label}"${title}></fluent-text-input>`;
+}
+
+function profileRowHtml(row) {
+  const label = escapeHtml(profileLabel(row.key));
+  const key = escapeHtml(row.key);
+  const reset = row.modified
+    ? `<fluent-button class="field__reset" appearance="subtle" size="small" icon-only
+        data-reset="${key}" title="Rétablir la valeur d'origine"
+        aria-label="Rétablir : ${label}">${icon("reset", 16)}</fluent-button>`
+    : "";
+  return `<li class="field${row.modified ? " is-modified" : ""}" title="${key}">
+      <span class="field__label">${label}</span>
+      ${profileInput(row, label)}
+      ${reset}
+    </li>`;
+}
+
+function wireProfile() {
+  el.profileFields.querySelectorAll("[data-key]").forEach((node) => {
+    const field = node.dataset.key.split(":")[1];
+    if (node.type === "checkbox") {
+      node.addEventListener("change", () => commitProfile(field, node.checked));
+      return;
+    }
+    wireTextField(node, (value) => commitProfile(field, value));
+  });
+  el.profileFields.querySelectorAll("[data-reset]").forEach((node) => {
+    node.addEventListener("click", () =>
+      commitProfile(node.dataset.reset, null, "Valeur d'origine rétablie")
+    );
+  });
+}
+
+function renderStudent() {
+  const data = state.student;
+  if (!data) return;
+  redraw(el.profileFields, data.student.map(profileRowHtml).join(""), wireProfile);
+  el.studentUndoBtn.disabled = !data.canUndo;
+  el.studentRedoBtn.disabled = !data.canRedo;
+  el.studentResetBtn.disabled = !data.canReset;
+}
+
+function commitProfile(field, value, message) {
+  studentPost("/set", { field, value }, message);
+}
+
+const CALLS = "/admin/calls";
+const CALLS_POLL_MS = 1000;
+const CALLS_SHOWN = 1000;
+
+const CALL_FAILURES = {
+  latency: (failure) => `Latence ${fmtDuration(failure.ms)}`,
+  errorRate: () => "Erreur aléatoire",
+  fail: () => "Endpoint en panne",
+  timeout: (failure) => `Expiration après ${decimal(failure.seconds)} s`,
+  malformed: () => "Réponse tronquée",
+  auth: () => "Authentification manquante",
+  tokenExpired: () => "Jeton expiré",
+  tokensRejected: () => "Jeton refusé",
+  tokenLifetime: () => "Durée de vie du jeton dépassée",
+};
+
+const decimal = (value, digits = 1) =>
+  String(Number(value.toFixed(digits))).replace(".", ",");
+
+function fmtDuration(ms) {
+  if (ms < 10) return `${decimal(ms)} ms`;
+  if (ms < 1000) return `${Math.round(ms)} ms`;
+  return `${decimal(ms / 1000)} s`;
+}
+
+function fmtBytes(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 * 1024) return `${decimal(bytes / 1024)} ko`;
+  return `${decimal(bytes / (1024 * 1024))} Mo`;
+}
+
+const pad = (value, width = 2) => String(value).padStart(width, "0");
+
+function fmtClock(iso) {
+  const d = new Date(iso);
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(
+    d.getMilliseconds(),
+    3
+  )}`;
+}
+
+const isCall = (entry) => entry.kind === "call";
+const isPending = (entry) => isCall(entry) && entry.status == null;
+
+const callKeys = new WeakMap();
+
+function callKey(call) {
+  if (!callKeys.has(call)) {
+    callKeys.set(call, JSON.stringify([call.endpoint, Object.entries(call.params).sort()]));
+  }
+  return callKeys.get(call);
+}
+
+function repeatsOf(calls) {
+  const totals = new Map();
+  calls.forEach((call) => {
+    const key = callKey(call);
+    totals.set(key, (totals.get(key) || 0) + 1);
+  });
+  const seen = new Map();
+  const firsts = new Map();
+  return new Map(
+    calls.map((call) => {
+      const key = callKey(call);
+      const nth = (seen.get(key) || 0) + 1;
+      seen.set(key, nth);
+      if (nth === 1) firsts.set(key, call.id);
+      return [call.id, { nth, total: totals.get(key), group: String(firsts.get(key)) }];
+    })
+  );
+}
+
+function markerSections(entries) {
+  const sections = new Map();
+  let current = null;
+  entries.forEach((entry) => {
+    if (!isCall(entry)) {
+      current = { calls: 0, bytes: 0 };
+      sections.set(entry.id, current);
+    } else if (current) {
+      current.calls += 1;
+      current.bytes += entry.bytes || 0;
+    }
+  });
+  return sections;
+}
+
+function statusHtml(status) {
+  if (status == null) return `<span class="status is-pending">en cours</span>`;
+  const tone = status >= 500 ? "error" : status >= 400 ? "warn" : "ok";
+  return `<span class="status status--${tone}">${status}</span>`;
+}
+
+const paramsHtml = (params) =>
+  Object.entries(params)
+    .map(
+      ([key, value]) =>
+        `<span class="param"><span class="param__key">${escapeHtml(key)}=</span>${escapeHtml(
+          value
+        )}</span>`
+    )
+    .join(" ");
+
+function callFailureHtml(failure) {
+  const label = CALL_FAILURES[failure.kind]?.(failure) ?? failure.kind;
+  return `<span class="call-failure">${escapeHtml(label)}</span>`;
+}
+
+function repeatHtml({ nth, total }) {
+  return `<span class="repeat" title="Appel identique ${nth} sur ${total} (même endpoint, mêmes paramètres)">${nth}/${total}</span>`;
+}
+
+function callRowHtml(call, repeat) {
+  const pending = call.status == null;
+  const classes = ["call", repeat.nth > 1 ? "is-repeat" : "", pending ? "is-pending" : ""];
+  const group = repeat.total > 1 ? ` data-group="${repeat.group}"` : "";
+  return `<tr class="${classes.join(" ").trim()}" data-id="${call.id}"${group}>
+      <td class="calls__time">${fmtClock(call.time)}</td>
+      <td class="calls__endpoint" title="${escapeHtml(call.path)}"><span class="calls__name">${escapeHtml(
+        call.endpoint || call.path
+      )}</span>${repeat.total > 1 ? repeatHtml(repeat) : ""}</td>
+      <td class="calls__params">${paramsHtml(call.params)}</td>
+      <td class="calls__num calls__status">${statusHtml(call.status)}</td>
+      <td class="calls__num calls__duration">${pending ? "" : fmtDuration(call.durationMs)}</td>
+      <td class="calls__num calls__size">${pending ? "" : fmtBytes(call.bytes)}</td>
+      <td class="calls__failures">${call.failures.map(callFailureHtml).join(", ")}</td>
+    </tr>`;
+}
+
+function markerRowHtml(marker, section) {
+  const summary = section.calls
+    ? `${plural(section.calls, "appel")} · ${fmtBytes(section.bytes)}`
+    : "aucun appel";
+  return `<tr class="marker" data-id="${marker.id}">
+      <td class="calls__time">${fmtClock(marker.time)}</td>
+      <td colspan="5"><span class="marker__label">${escapeHtml(
+        marker.label
+      )}</span><span class="marker__summary">${summary}</span></td>
+      <td class="marker__actions"><button type="button" class="marker__x" data-remove-marker="${
+        marker.id
+      }" title="Retirer le marqueur" aria-label="Retirer ${escapeHtml(marker.label)}">${icon(
+        "dismiss",
+        12
+      )}</button></td>
+    </tr>`;
+}
+
+function endpointStats(calls, repeats) {
+  const rows = new Map();
+  calls.forEach((call) => {
+    const row = rows.get(call.endpoint) || {
+      endpoint: call.endpoint,
+      calls: 0,
+      repeated: 0,
+      done: 0,
+      bytes: 0,
+    };
+    row.calls += 1;
+    if (repeats.get(call.id).nth > 1) row.repeated += 1;
+    if (call.status != null) {
+      row.done += 1;
+      row.bytes += call.bytes;
+    }
+    rows.set(call.endpoint, row);
+  });
+  return [...rows.values()].sort(
+    (a, b) => b.calls - a.calls || a.endpoint.localeCompare(b.endpoint)
+  );
+}
+
+const statCells = (row) => `
+      <td class="endpoint-stats__num">${row.calls}</td>
+      <td class="endpoint-stats__num endpoint-stats__repeated">${row.repeated || ""}</td>
+      <td class="endpoint-stats__num">${row.done ? fmtBytes(row.bytes) : ""}</td>`;
+
+function renderEndpointStats(calls, repeats) {
+  const rows = endpointStats(calls, repeats);
+  const total = rows.reduce(
+    (sum, row) => ({
+      calls: sum.calls + row.calls,
+      repeated: sum.repeated + row.repeated,
+      done: sum.done + row.done,
+      bytes: sum.bytes + row.bytes,
+    }),
+    { calls: 0, repeated: 0, done: 0, bytes: 0 }
+  );
+  el.endpointStats.hidden = !total.calls;
+  el.endpointStatsEmpty.hidden = total.calls > 0;
+  el.endpointStatsRows.innerHTML = rows
+    .map(
+      (row) => `<tr data-endpoint="${escapeHtml(row.endpoint)}">
+        <th scope="row" title="${escapeHtml(row.endpoint)}">${escapeHtml(row.endpoint)}</th>${statCells(
+          row
+        )}
+      </tr>`
+    )
+    .join("");
+  el.callsTotal.innerHTML = `<th scope="row">Total</th>${statCells(total)}`;
+}
+
+function olderNote(count) {
+  const s = count > 1 ? "s" : "";
+  return `${count} entrée${s} plus ancienne${s} masquée${s}. Toujours dans les statistiques et l'export.`;
+}
+
+function markCallGroup() {
+  el.callRows
+    .querySelectorAll("tr[data-group]")
+    .forEach((row) => row.classList.toggle("is-grouped", row.dataset.group === state.callsGroup));
+}
+
+function hoverCallGroup(group) {
+  if (state.callsGroup === group) return;
+  state.callsGroup = group;
+  markCallGroup();
+}
+
+function renderCalls(stick) {
+  const board = el.callsBoard;
+  const atBottom = stick || board.scrollHeight - board.scrollTop - board.clientHeight < 24;
+  const entries = state.calls;
+  const calls = entries.filter(isCall);
+  const repeats = repeatsOf(calls);
+  const sections = markerSections(entries);
+  const shown = entries.slice(-CALLS_SHOWN);
+  const older = entries.length - shown.length;
+  el.callRows.innerHTML = shown
+    .map((entry) =>
+      isCall(entry)
+        ? callRowHtml(entry, repeats.get(entry.id))
+        : markerRowHtml(entry, sections.get(entry.id))
+    )
+    .join("");
+  el.callsOlder.hidden = !older;
+  el.callsOlderNote.textContent = older ? olderNote(older) : "";
+  markCallGroup();
+  el.callsTable.hidden = !entries.length;
+  el.callsEmpty.hidden = entries.length > 0;
+  el.callsClearBtn.disabled = !entries.length;
+  el.callsExportBtn.disabled = !entries.length;
+  renderEndpointStats(calls, repeats);
+  if (atBottom) board.scrollTop = board.scrollHeight;
+}
+
+function applyCalls({ entries, firstId }, after, stick) {
+  const known = state.calls.filter((entry) => entry.id <= after);
+  const kept = known.filter((entry) => entry.id >= firstId);
+  const replaced = state.calls.slice(known.length);
+  const changed =
+    kept.length !== known.length || JSON.stringify(entries) !== JSON.stringify(replaced);
+  state.calls = [...kept, ...entries];
+  if (changed || stick) renderCalls(stick);
+}
+
+let callsTimer = null;
+
+function scheduleCallsPoll() {
+  clearTimeout(callsTimer);
+  callsTimer =
+    state.view === "calls" && !document.hidden
+      ? setTimeout(() => loadCalls(), CALLS_POLL_MS)
+      : null;
+}
+
+async function loadCalls(stick) {
+  const seq = ++state.callsSeq;
+  const pending = state.calls.find(isPending);
+  const last = state.calls.at(-1);
+  const after = pending ? pending.id - 1 : last ? last.id : 0;
+  try {
+    const res = await fetch(`${CALLS}?after=${after}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = await res.json();
+    if (seq !== state.callsSeq) return;
+    applyCalls(data, after, stick);
+    if (state.callsFailed) {
+      state.callsFailed = false;
+      setStatus("Prêt.", false);
+    }
+  } catch (err) {
+    if (seq !== state.callsSeq) return;
+    if (!state.callsFailed) {
+      state.callsFailed = true;
+      setStatus("Impossible de lire le journal des appels.", false, true);
+    }
+  }
+  scheduleCallsPoll();
+}
+
+async function changeCalls(path, options, message, stick = true) {
+  setStatus("Enregistrement…", true);
+  let saved = false;
+  try {
+    const res = await fetch(`${CALLS}${path}`, options);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    setStatus("Enregistré.", false);
+    toast(message);
+    saved = true;
+  } catch (err) {
+    setStatus("Erreur.", false, true);
+    toast(err.message || "Échec de l'opération", true);
+  }
+  await loadCalls(stick);
+  return saved;
+}
+
+function exportCalls() {
+  if (!state.calls.length) return;
+  const now = new Date();
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${pad(
+    now.getHours()
+  )}${pad(now.getMinutes())}`;
+  const body = JSON.stringify({ entries: state.calls, firstId: state.calls[0].id }, null, 2);
+  const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `api-calls-${stamp}.json`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url));
+}
+
+function addMarker() {
+  const typed = String(el.markerLabel.value || "").trim();
+  const markers = state.calls.filter((entry) => !isCall(entry));
+  const labels = new Set(markers.map((marker) => marker.label));
+  let number = markers.length + 1;
+  while (labels.has(`Marqueur ${number}`)) number += 1;
+  const label = typed || `Marqueur ${number}`;
+  changeCalls(
+    "/marker",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label }),
+    },
+    "Marqueur ajouté"
+  ).then((saved) => {
+    if (saved) el.markerLabel.value = "";
+  });
+}
+
+async function removeMarker(button) {
+  const id = Number(button.dataset.removeMarker);
+  button.disabled = true;
+  const removed = await changeCalls(
+    `/marker/${id}`,
+    { method: "DELETE" },
+    "Marqueur retiré",
+    false
+  );
+  if (removed) state.calls = state.calls.filter((entry) => entry.id !== id);
+  renderCalls();
+}
+
+const VIEWS = {
+  schedule: {
+    tab: "viewSchedule",
+    title: "Horaire",
+    panes: [el.scheduleView, el.scheduleControls, el.scheduleToolbar],
+  },
+  failures: {
+    tab: "viewFailures",
+    title: "Pannes",
+    panes: [el.failuresView, el.failuresToolbar],
+  },
+  student: {
+    tab: "viewStudent",
+    title: "Étudiant",
+    panes: [el.studentView, el.studentToolbar],
+  },
+  calls: {
+    tab: "viewCalls",
+    title: "Logs",
+    panes: [el.callsView, el.callsToolbar],
+  },
+};
+
 function setView(view) {
-  if (view !== "schedule" && view !== "failures") return;
-  const tabId = view === "schedule" ? "viewSchedule" : "viewFailures";
-  if (el.viewToggle.activeid !== tabId) el.viewToggle.activeid = tabId;
+  const target = VIEWS[view];
+  if (!target) return;
+  if (el.viewToggle.activeid !== target.tab) el.viewToggle.activeid = target.tab;
   if (state.view === view) return;
   state.view = view;
-  const schedule = view === "schedule";
-  el.scheduleView.hidden = !schedule;
-  el.scheduleControls.hidden = !schedule;
-  el.scheduleToolbar.hidden = !schedule;
-  el.failuresView.hidden = schedule;
-  el.failuresToolbar.hidden = schedule;
-  document.title = `${schedule ? "Horaire" : "Pannes"} - ÉTS Mock`;
-  if (schedule) {
-    clearTimeout(state.failuresPoll);
-    if (state.data) {
-      renderScaffold();
-      renderBlocks(false);
-    }
-  } else {
-    loadFailures();
+  Object.entries(VIEWS).forEach(([name, { panes }]) =>
+    panes.forEach((pane) => (pane.hidden = name !== view))
+  );
+  document.title = `${target.title} - ÉTS Mock`;
+  if (view === "schedule" && state.data) {
+    renderScaffold();
+    renderBlocks(false);
   }
+  if (view === "failures") loadFailures();
+  else clearTimeout(state.failuresPoll);
+  if (view === "student") loadStudent();
+  if (view === "calls") loadCalls(true);
+  else scheduleCallsPoll();
 }
 paintIcons();
 
@@ -2107,6 +2744,43 @@ el.failuresResetBtn.addEventListener("click", () =>
 );
 el.failuresUndoBtn.addEventListener("click", undoFailures);
 el.failuresRedoBtn.addEventListener("click", redoFailures);
+el.studentUndoBtn.addEventListener("click", () =>
+  studentPost("/undo", {}, "Modification annulée")
+);
+el.studentRedoBtn.addEventListener("click", () =>
+  studentPost("/redo", {}, "Modification rétablie")
+);
+el.studentResetBtn.addEventListener("click", () =>
+  studentPost("/reset", {}, "Profil réinitialisé")
+);
+el.sessionDatesReset.addEventListener("click", () =>
+  apiPost("/session/dates/reset", { session: state.session }).then(() =>
+    toast("Dates de la session rétablies")
+  )
+);
+el.callsClearBtn.addEventListener("click", () =>
+  changeCalls("", { method: "DELETE" }, "Journal effacé")
+);
+el.callsExportBtn.addEventListener("click", exportCalls);
+el.markerAddBtn.addEventListener("click", addMarker);
+el.markerLabel.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  e.preventDefault();
+  addMarker();
+});
+el.callRows.addEventListener("mouseover", (e) =>
+  hoverCallGroup(e.target.closest("tr[data-group]")?.dataset.group ?? null)
+);
+el.callRows.addEventListener("mouseleave", () => hoverCallGroup(null));
+el.callRows.addEventListener("click", (e) => {
+  const button = e.target.closest("[data-remove-marker]");
+  if (button) removeMarker(button);
+});
+document.addEventListener("visibilitychange", () => {
+  if (state.view !== "calls") return;
+  if (document.hidden) scheduleCallsPoll();
+  else loadCalls();
+});
 el.scopeToggle.addEventListener("change", (e) => {
   const scope = e.detail && e.detail.dataset ? e.detail.dataset.scope : null;
   if (scope) setScope(scope);
@@ -2150,6 +2824,7 @@ const TEXT_ENTRY =
   'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
 
 document.addEventListener("keydown", (e) => {
+  if (state.view === "calls") return;
   const inDialog = !!document.activeElement?.closest?.("fluent-dialog");
   const typing =
     inDialog ||
@@ -2157,9 +2832,11 @@ document.addEventListener("keydown", (e) => {
     !!document.activeElement?.closest?.("fluent-dropdown, fluent-text-input");
   const editingText = !!document.activeElement?.closest?.(TEXT_ENTRY);
   const mod = e.ctrlKey || e.metaKey;
-  const failures = state.view === "failures";
-  const undoBtn = failures ? el.failuresUndoBtn : el.undoBtn;
-  const redoBtn = failures ? el.failuresRedoBtn : el.redoBtn;
+  const [undoBtn, redoBtn] = {
+    schedule: [el.undoBtn, el.redoBtn],
+    failures: [el.failuresUndoBtn, el.failuresRedoBtn],
+    student: [el.studentUndoBtn, el.studentRedoBtn],
+  }[state.view];
   if (mod && !editingText && e.key.toLowerCase() === "z") {
     e.preventDefault();
     if (e.shiftKey) {
@@ -2168,7 +2845,7 @@ document.addEventListener("keydown", (e) => {
   } else if (mod && !editingText && e.key.toLowerCase() === "y") {
     e.preventDefault();
     if (!redoBtn.disabled) redoBtn.click();
-  } else if (failures) {
+  } else if (state.view !== "schedule") {
     return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
     if (occurrenceMode()) {

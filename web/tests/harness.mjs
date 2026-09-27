@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { afterEach } from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { JSDOM } from "jsdom";
@@ -11,6 +12,9 @@ const HTML = readFileSync(join(WEB, "index.html"), "utf8");
 const APP = readFileSync(join(WEB, "assets", "app.js"), "utf8");
 const FIXTURE = JSON.parse(
   readFileSync(join(HERE, "fixtures", "state.json"), "utf8"),
+);
+const STUDENT_FIXTURE = JSON.parse(
+  readFileSync(join(HERE, "fixtures", "student.json"), "utf8"),
 );
 
 const VENDOR_IMPORTS = [
@@ -25,6 +29,11 @@ const GRID = { left: 0, top: 0, width: 600, height: 907 };
 export const clone = (value) => JSON.parse(JSON.stringify(value));
 
 const refused = new Set();
+const mounted = new Set();
+
+afterEach(() => {
+  mounted.forEach((harness) => harness.close());
+});
 
 function ignoreRefusedRejections() {
   process.removeAllListeners("unhandledRejection");
@@ -34,6 +43,7 @@ function ignoreRefusedRejections() {
 }
 
 export const baseState = () => clone(FIXTURE);
+export const baseStudent = () => clone(STUDENT_FIXTURE);
 
 export const toMin = (hhmm) => {
   const [h, m] = hhmm.split(":").map(Number);
@@ -94,6 +104,14 @@ function defineElements(window) {
   }
 
   class TextInput extends HTMLElement {
+    get control() {
+      if (!this._control) {
+        this._control = this.ownerDocument.createElement("input");
+        this._control.defaultValue = this.value;
+      }
+      return this._control;
+    }
+
     get value() {
       return this._value ?? this.getAttribute("value") ?? "";
     }
@@ -278,6 +296,192 @@ function createAdmin(options) {
   return admin;
 }
 
+const STUDENT = "/editor/api/student";
+
+function createStudent(options) {
+  const calls = [];
+  const replies = new Map();
+  const original = clone(options.student || STUDENT_FIXTURE);
+  let current = clone(original);
+
+  const set = (key, value) => {
+    const row = current.student.find((candidate) => candidate.key === key);
+    const base = original.student.find((candidate) => candidate.key === key).value;
+    row.value = value === null || value === "" ? base : value;
+    row.modified = row.value !== base;
+    current.canUndo = true;
+    current.canRedo = false;
+    current.canReset = current.student.some((candidate) => candidate.modified);
+  };
+
+  const student = {
+    calls,
+    get state() {
+      return current;
+    },
+    reply(path, payload) {
+      replies.set(path, { status: 200, payload });
+    },
+    fail(path, message, status = 400) {
+      replies.set(path, { status, payload: { error: message } });
+      refused.add(message);
+      refused.add("Error");
+    },
+    called(path) {
+      return calls.filter((call) => call.path === path);
+    },
+    lastCall(path) {
+      const matching = student.called(path);
+      return matching.length ? matching[matching.length - 1] : null;
+    },
+    handle(href, request) {
+      const path = href.slice(STUDENT.length);
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, method: request.method || "GET", body });
+
+      const canned = replies.get(path);
+      if (canned) {
+        if (canned.status === 200) current = clone(canned.payload);
+        return {
+          ok: canned.status === 200,
+          status: canned.status,
+          statusText: "Error",
+          json: async () => clone(canned.payload),
+        };
+      }
+
+      if (path === "/set") set(body.field, body.value);
+      else if (path === "/reset") current = { ...clone(original), canUndo: true };
+      return { ok: true, status: 200, json: async () => clone(current) };
+    },
+  };
+  return student;
+}
+
+const CALLS = "/admin/calls";
+
+const CALL_ENTRY = {
+  id: 1,
+  kind: "call",
+  time: "",
+  endpoint: "listeCours",
+  path: "/api/Etudiant/listeCours",
+  params: {},
+  status: 200,
+  durationMs: 4.2,
+  bytes: 1834,
+  failures: [],
+};
+
+const MARKER_ENTRY = {
+  id: 1,
+  kind: "marker",
+  time: "",
+  label: "Marqueur 1",
+};
+
+export const at = (hours, minutes, seconds, ms = 0) =>
+  new Date(2026, 8, 25, hours, minutes, seconds, ms).toISOString();
+
+export const callEntry = (fields = {}) => ({
+  ...clone(CALL_ENTRY),
+  time: at(14, 3, 12, 345),
+  path: `/api/Etudiant/${fields.endpoint || CALL_ENTRY.endpoint}`,
+  ...fields,
+});
+
+export const markerEntry = (fields = {}) => ({
+  ...clone(MARKER_ENTRY),
+  time: at(14, 3, 0),
+  ...fields,
+});
+
+function createCallLog(options) {
+  const calls = [];
+  const replies = new Map();
+  let entries = clone(options.calls || []);
+  let nextId = 1;
+  const bump = () => {
+    nextId = Math.max(nextId, ...entries.map((entry) => entry.id + 1));
+  };
+  bump();
+
+  const reply = (payload, status = 200) => ({
+    ok: status === 200,
+    status,
+    statusText: "Error",
+    json: async () => clone(payload),
+  });
+
+  const log = {
+    calls,
+    get entries() {
+      return entries;
+    },
+    set entries(next) {
+      entries = clone(next);
+      bump();
+    },
+    add(...added) {
+      entries.push(...clone(added));
+      bump();
+    },
+    update(id, fields) {
+      Object.assign(
+        entries.find((entry) => entry.id === id),
+        clone(fields),
+      );
+    },
+    fail(method, path, payload, status = 500) {
+      replies.set(`${method} ${path}`, { payload, status });
+    },
+    heal(method, path) {
+      replies.delete(`${method} ${path}`);
+    },
+    called(path, method) {
+      return calls.filter(
+        (call) => call.path === path && (!method || call.method === method),
+      );
+    },
+    handle(href, request) {
+      const [path, query = ""] = href.slice(CALLS.length).split("?");
+      const method = request.method || "GET";
+      const body = request.body ? JSON.parse(request.body) : null;
+      calls.push({ path, query, method, body });
+
+      const canned = replies.get(`${method} ${path}`);
+      if (canned) return reply(canned.payload, canned.status);
+
+      if (path === "/marker") {
+        const marker = {
+          id: nextId,
+          kind: "marker",
+          time: new Date().toISOString(),
+          label: body.label,
+        };
+        nextId += 1;
+        entries.push(marker);
+        return reply(marker);
+      }
+      const removing = path.match(/^\/marker\/(\d+)$/);
+      if (removing) {
+        const id = Number(removing[1]);
+        const marker = entries.find((entry) => entry.id === id && entry.kind === "marker");
+        if (!marker) return reply({ error: "Marqueur introuvable" }, 404);
+        entries = entries.filter((entry) => entry !== marker);
+        return reply(marker);
+      }
+      if (method === "DELETE") entries = [];
+      const after = Number(new URLSearchParams(query).get("after") || 0);
+      return reply({
+        entries: entries.filter((entry) => entry.id > after),
+        firstId: entries.length ? entries[0].id : nextId,
+      });
+    },
+  };
+  return log;
+}
+
 function createServer(initial, options) {
   const calls = [];
   const replies = new Map();
@@ -286,6 +490,8 @@ function createServer(initial, options) {
   const server = {
     calls,
     admin: createAdmin(options),
+    student: createStudent(options),
+    callLog: createCallLog(options),
     get state() {
       return current;
     },
@@ -310,6 +516,8 @@ function createServer(initial, options) {
     fetch: async (url, request = {}) => {
       const href = String(url);
       if (href.startsWith(ADMIN)) return server.admin.handle(href, request);
+      if (href.startsWith(STUDENT)) return server.student.handle(href, request);
+      if (href.startsWith(CALLS)) return server.callLog.handle(href, request);
       const [rawPath, query] = href.replace("/editor/api", "").split("?");
       const call = {
         path: rawPath,
@@ -370,6 +578,20 @@ export async function mount(options = {}) {
   window.Element.prototype.releasePointerCapture = function () {};
   window.PointerEvent = window.MouseEvent;
   window.fetch = server.fetch;
+
+  const downloads = [];
+  const objectUrls = new Map();
+  window.URL.createObjectURL = (blob) => {
+    const url = `blob:http://localhost:8080/${objectUrls.size + downloads.length + 1}`;
+    objectUrls.set(url, blob);
+    return url;
+  };
+  window.URL.revokeObjectURL = (url) => objectUrls.delete(url);
+  window.HTMLAnchorElement.prototype.click = function () {
+    if (this.download) {
+      downloads.push({ name: this.download, blob: objectUrls.get(this.href) });
+    }
+  };
   window.icon = (name, size = 20) =>
     `<svg class="icon" data-name="${name}" width="${size}" height="${size}"></svg>`;
 
@@ -385,6 +607,8 @@ export async function mount(options = {}) {
     window,
     document: window.document,
     server,
+    downloads,
+    liveObjectUrls: () => [...objectUrls.keys()],
     byId: (id) => window.document.getElementById(id),
     query: (selector) => window.document.querySelector(selector),
     queryAll: (selector) => [...window.document.querySelectorAll(selector)],
@@ -473,9 +697,11 @@ export async function mount(options = {}) {
       await flush();
     },
     close() {
+      mounted.delete(harness);
       window.close();
     },
   };
 
+  mounted.add(harness);
   return harness;
 }

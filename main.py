@@ -6,19 +6,24 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
-from lib import failures
+from lib import call_log, failures
 from lib._paths import ROOT
 from lib.data_store import (
     ACTIVE_SESSION,
+    BETWEEN_SESSIONS,
     DEFAULT_SCENARIO,
     GENERATION_CONFIG,
+    NEXT_SESSION,
+    NO_NEXT_SESSION,
     PROFILE_NAME,
     SCENARIO_NAME,
+    SEMESTER_GAP,
     reload as reload_data,
 )
 from lib.editor_routes import EditorAssets, router as editor_router
 from lib.routes import router
 from lib.schedule_editor import clear_cache as clear_editor_cache
+from lib.student_editor import clear_history as clear_student_history
 
 failures.load_from_env()
 
@@ -30,6 +35,12 @@ async def lifespan(_app: FastAPI):
     logger.info("Active profile: %s", PROFILE_NAME)
     if SCENARIO_NAME != DEFAULT_SCENARIO:
         logger.info("Active scenario: %s", SCENARIO_NAME)
+    if BETWEEN_SESSIONS:
+        logger.info("Between sessions: %s ended yesterday", ACTIVE_SESSION)
+    if NO_NEXT_SESSION:
+        logger.info("No session after %s", ACTIVE_SESSION)
+    elif SEMESTER_GAP is not None:
+        logger.info("Semester gap: %d days off before %s", SEMESTER_GAP, NEXT_SESSION)
     if GENERATION_CONFIG:
         days = GENERATION_CONFIG.get("allowedDays", "all")
         logger.info(
@@ -58,9 +69,11 @@ async def http_exception_handler(_request: Request, exc: HTTPException):
 
 
 app.middleware("http")(failures.failure_middleware)
+app.add_middleware(call_log.CallLogMiddleware)
 
 app.include_router(router)
 app.include_router(failures.router)
+app.include_router(call_log.router)
 app.include_router(editor_router)
 app.mount(
     "/editor/assets",
@@ -78,4 +91,5 @@ async def root_redirect():
 async def reload_seed_data():
     reload_data()
     clear_editor_cache()
+    clear_student_history()
     return {"status": "ok"}
