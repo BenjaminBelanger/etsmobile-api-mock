@@ -597,7 +597,7 @@ def test_the_current_state_is_captured():
     "day, env, position",
     [
         ("2026-09-25", {}, WEEK_4),
-        ("2026-12-22", {}, {"betweenSessions": True, "gap": 16}),
+        ("2026-12-22", {}, {"betweenSessions": True, "gap": 13}),
         ("2026-09-25", {"BETWEEN_SESSIONS": "true", "SEMESTER_GAP": "10"}, BETWEEN),
         ("2026-09-25", {"SEMESTER_WEEK": "14", "SEMESTER_GAP": "60"}, LONG_BREAK),
         ("2026-10-09", {"NO_NEXT_SESSION": "true"}, NO_NEXT),
@@ -611,6 +611,25 @@ def test_the_calendar_position_is_captured(today, reconfigure, day, env, positio
 
     assert captured["anchor"] == {"session": "A2026", "date": day, **position}
     assert not set(captured["setup"]) & set(snapshots.CALENDAR_SETUP)
+
+
+def days_until_next_session(now):
+    start = data_store.get_base_session(data_store.NEXT_SESSION)["dateDebut"]
+    return (date.fromisoformat(start) - now).days
+
+
+def test_a_break_saved_partway_through_comes_back_with_the_same_countdown(client, today):
+    saved_on = today("2026-12-22")
+    data_store.reload()
+    countdown = days_until_next_session(saved_on)
+    snapshots.write("personal", snapshot_editor.capture("Congé"))
+
+    loaded_on = today("2027-02-10")
+    api(client, "/load", scope="personal", id="conge")
+
+    assert countdown == 13
+    assert days_until_next_session(loaded_on) == countdown
+    assert data_store.BETWEEN_SESSIONS is True
 
 
 def test_the_current_calendar_is_listed_with_the_snapshots(client, today, reconfigure):

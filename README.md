@@ -92,13 +92,13 @@ applies it to the running server; a dev-mode code reload falls back to the
 startup settings but keeps the loaded edits.
 
 The calendar position is the week of the active session, or between sessions
-once it has ended, plus the days off before the next session, or no next
-session. **Recaler sur aujourd'hui** sets the matching
-[session calendar](#session-calendar) options so the same situation shows up
-relative to today, and moves schedule edits by whole weeks: "exam tomorrow"
-only comes back on the weekday it was saved on. **Garder les dates
-enregistrées** moves nothing, for use with the phone clock set to the save
-date. Replaced days from `lireJoursRemplaces` never move.
+once it has ended, plus the days off before the next session (between
+sessions, the days left until it starts), or no next session. **Recaler sur
+aujourd'hui** sets the matching [session calendar](#session-calendar) options
+so the same situation shows up relative to today, and moves schedule edits by
+whole weeks: "exam tomorrow" only comes back on the weekday it was saved on.
+**Garder les dates enregistrées** moves nothing, for use with the phone clock
+set to the save date. Replaced days from `lireJoursRemplaces` never move.
 
 ```bash
 python start.py --snapshot "examen final"

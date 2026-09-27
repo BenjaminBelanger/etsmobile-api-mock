@@ -205,6 +205,18 @@ describe("the snapshots tab", () => {
     app.close();
   });
 
+  test("counts down to the next session during a break", async () => {
+    const current = {
+      ...clone(CURRENT_SETUP),
+      position: { betweenSessions: true, gap: 13 },
+      setup: { profile: "normal", scenario: "none", betweenSessions: true, semesterGap: 13 },
+    };
+    const app = await onSnapshots({ current });
+
+    assert.deepEqual(setupRows(app)[1], ["Suivante", "H2027 · dans 13 jours"]);
+    app.close();
+  });
+
   test("shows a session that has not started yet", async () => {
     const current = { ...clone(CURRENT_SETUP), position: { week: 0, gap: 16 } };
     const app = await onSnapshots({ current });
@@ -346,17 +358,19 @@ describe("loading a snapshot", () => {
     app.close();
   });
 
-  test("explains how a snapshot saved between sessions comes back", async () => {
+  test("counts down to the next session of a snapshot saved between sessions", async () => {
     const app = await onSnapshots({
       snapshots: [
         savedOn({ session: "A2026", date: "2020-12-22", betweenSessions: true, gap: 10 }),
       ],
     });
+    const tags = [...rowFor(app, "demo").querySelectorAll(".tag")].map((t) => t.textContent);
     await openLoad(app);
 
+    assert.deepEqual(tags.slice(0, 2), ["entre deux sessions", "rentrée dans 10 jours"]);
     assert.match(
       firstHint(app),
-      /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence après 10 jours de congé\. .*enregistré un mardi,/,
+      /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence dans 10 jours\. .*enregistré un mardi,/,
     );
     app.close();
   });
@@ -447,6 +461,23 @@ describe("loading a snapshot", () => {
       row.textContent.replace(/\s+/g, " ").trim(),
     );
     assert.deepEqual(items, ["Latence 100-800 ms", "Erreurs aléatoires 30 % d'erreurs"]);
+    app.close();
+  });
+
+  test("warns that exact dates without the schedule use the real calendar", async () => {
+    const app = await onSnapshots();
+    await openLoad(app);
+    const scheduleHint = () => partHints(app)[0];
+
+    pick(app, "snapshotDates", "exact");
+    assert.equal(
+      scheduleHint(),
+      "Modifications de A2026. Décoché: les modifications actuelles sont effacées et " +
+        "l’horaire est régénéré sur le calendrier réel.",
+    );
+
+    pick(app, "snapshotDates", "week");
+    assert.doesNotMatch(scheduleHint(), /calendrier réel/);
     app.close();
   });
 

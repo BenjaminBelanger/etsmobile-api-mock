@@ -2689,8 +2689,11 @@ function positionText(position) {
   return position.week < 1 ? "avant le début de la session" : `semaine ${position.week}`;
 }
 
-const nextText = (position) =>
-  position.noNextSession ? "aucune session suivante" : `congé de ${plural(position.gap, "jour")}`;
+function nextText(position) {
+  if (position.noNextSession) return "aucune session suivante";
+  const days = plural(position.gap, "jour");
+  return position.betweenSessions ? `rentrée dans ${days}` : `congé de ${days}`;
+}
 
 const unchangedToday = (anchor, current) =>
   anchor.session === current?.session &&
@@ -2707,9 +2710,12 @@ function realignHint(item, current) {
   const where = anchor.betweenSessions
     ? "la session active s’est terminée hier"
     : `aujourd’hui tombe à la semaine ${anchor.week} de la session`;
+  const days = plural(anchor.gap, "jour");
   const next = anchor.noNextSession
     ? "aucune session suivante n’est publiée"
-    : `la suivante commence après ${plural(anchor.gap, "jour")} de congé`;
+    : anchor.betweenSessions
+      ? `la suivante commence dans ${days}`
+      : `la suivante commence après ${days} de congé`;
   const weekday = weekdayOf(anchor.date);
   const moved =
     current?.session && current.session !== anchor.session
@@ -2868,10 +2874,13 @@ function sessionText({ session, weeks, position }) {
   return position.week >= 1 && weeks ? `${session} · ${where} sur ${weeks}` : `${session} · ${where}`;
 }
 
-const nextSessionText = ({ nextSession, position }) =>
-  position.noNextSession
-    ? "aucune (non publiée)"
-    : `${nextSession} · après ${plural(position.gap, "jour")} de congé`;
+function nextSessionText({ nextSession, position }) {
+  if (position.noNextSession) return "aucune (non publiée)";
+  const days = plural(position.gap, "jour");
+  return position.betweenSessions
+    ? `${nextSession} · dans ${days}`
+    : `${nextSession} · après ${days} de congé`;
+}
 
 const shiftedCalendar = (setup) =>
   setup.semesterWeek != null || setup.betweenSessions || setup.semesterGap != null;
@@ -2997,18 +3006,27 @@ function failureListHtml(failures) {
     .join("")}</span>`;
 }
 
+function scheduleHint(item, dates) {
+  if (!item.sessions.length) return "Aucune modification enregistrée: l’horaire est régénéré.";
+  const calendar = dates === "exact" ? " sur le calendrier réel" : "";
+  return (
+    `Modifications de ${item.sessions.join(", ")}. Décoché: les modifications actuelles ` +
+    `sont effacées et l’horaire est régénéré${calendar}.`
+  );
+}
+
+function refreshScheduleHint() {
+  const item = state.snapshotTarget;
+  const hint = el.fSnapshotParts.querySelector('[data-hint-for="fSnapshotSchedule"]');
+  if (!item || !hint) return;
+  hint.textContent = scheduleHint(item, checkedValue(el.snapshotLoadForm, "snapshotDates"));
+}
+
 function snapshotParts(item) {
   const failures = includedFailures(item.failures);
   const fields = item.student.length;
   return [
-    {
-      id: "fSnapshotSchedule",
-      title: "Horaire",
-      hint: item.sessions.length
-        ? `Modifications de ${item.sessions.join(", ")}. Décoché: les modifications ` +
-          "actuelles sont effacées et l’horaire est régénéré."
-        : "Aucune modification enregistrée: l’horaire est régénéré.",
-    },
+    { id: "fSnapshotSchedule", title: "Horaire", hint: scheduleHint(item, DATE_MODES[0].id) },
     {
       id: "fSnapshotStudent",
       title: "Profil étudiant",
@@ -3033,7 +3051,7 @@ function partHtml({ id, title, list = "", hint }) {
       <span class="choice__text">
         <span class="choice__title">${title}</span>
         ${list}
-        <span class="choice__hint">${escapeHtml(hint)}</span>
+        <span class="choice__hint" data-hint-for="${id}">${escapeHtml(hint)}</span>
       </span>
     </label>`;
 }
@@ -3298,6 +3316,7 @@ el.snapshotSaveDialog
   .querySelectorAll("[data-close-snapshot-save]")
   .forEach((n) => n.addEventListener("click", () => el.snapshotSaveDialog.hide()));
 el.snapshotLoadSubmit.addEventListener("click", submitSnapshotLoad);
+el.fSnapshotDates.addEventListener("change", refreshScheduleHint);
 el.snapshotLoadForm.addEventListener("submit", (e) => {
   e.preventDefault();
   submitSnapshotLoad();

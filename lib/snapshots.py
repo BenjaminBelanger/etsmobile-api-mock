@@ -212,13 +212,15 @@ def find(reference: str) -> list[tuple[str, str]]:
 
 def position(active: dict, upcoming: dict | None, today: date) -> dict:
     end = date.fromisoformat(active["dateFin"])
-    if today > end:
+    between = today > end
+    if between:
         where = {"betweenSessions": True}
     else:
         where = {"week": sessions.week_index(date.fromisoformat(active["dateDebut"]), today)}
     if upcoming is None:
         return {**where, "noNextSession": True}
-    gap = (date.fromisoformat(upcoming["dateDebut"]) - end).days - 1
+    loaded_end = today - timedelta(days=1) if between else end
+    gap = (date.fromisoformat(upcoming["dateDebut"]) - loaded_end).days - 1
     return {**where, "gap": max(gap, 0)}
 
 

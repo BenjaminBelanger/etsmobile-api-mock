@@ -225,16 +225,12 @@ def _app_host(raw: str) -> str:
 
 
 def _position_label(anchor: dict) -> str:
-    where = (
-        "entre deux sessions"
-        if anchor.get("betweenSessions")
-        else f"semaine {anchor['week']}"
-    )
-    after = (
-        "aucune session suivante"
-        if anchor.get("noNextSession")
-        else f"congé de {anchor['gap']} jours"
-    )
+    if anchor.get("betweenSessions"):
+        where, after = "entre deux sessions", f"rentrée dans {anchor.get('gap')} jours"
+    else:
+        where, after = f"semaine {anchor['week']}", f"congé de {anchor.get('gap')} jours"
+    if anchor.get("noNextSession"):
+        after = "aucune session suivante"
     return f"{where}, {after}"
 
 
@@ -1018,9 +1014,10 @@ def _config_from_snapshot_menu() -> (
         print("Annulé.")
         return None
     mode = _prompt_snapshot_dates(item)
+    regenerated = "régénéré sur le calendrier réel" if mode == "exact" else "régénéré"
     schedule = bool(item["sessions"]) and _prompt_apply(
         f"Horaire enregistré: {', '.join(item['sessions'])}",
-        "Appliquer l'horaire? Sinon, il est régénéré.",
+        f"Appliquer l'horaire? Sinon, il est {regenerated}.",
     )
     student = bool(item["student"]) and _prompt_apply(
         f"Profil étudiant enregistré: {', '.join(item['student'])}",

@@ -848,12 +848,21 @@ def test_the_help_lists_the_saved_snapshots_with_their_position(saved_snapshot, 
     ) in printed
 
 
-def test_a_snapshot_saved_between_sessions_is_labelled_so():
-    item = {"name": "Congé", "scope": "personal", "anchor": BETWEEN_NO_NEXT}
+@pytest.mark.parametrize(
+    "anchor, position",
+    [
+        (BETWEEN_NO_NEXT, "entre deux sessions, aucune session suivante"),
+        (
+            {"session": "A2026", "date": "2026-12-22", "betweenSessions": True, "gap": 13},
+            "entre deux sessions, rentrée dans 13 jours",
+        ),
+    ],
+)
+def test_a_snapshot_saved_between_sessions_is_labelled_so(anchor, position):
+    item = {"name": "Congé", "scope": "personal", "anchor": anchor}
 
     assert start._snapshot_label(item) == (
-        "Congé (personnel, A2026 entre deux sessions, aucune session suivante, "
-        "enregistré le mardi 2026-12-22)"
+        f"Congé (personnel, A2026 {position}, enregistré le mardi 2026-12-22)"
     )
 
 
@@ -887,11 +896,16 @@ def test_the_menu_applies_everything_by_default(saved_snapshot, monkeypatch, cap
 
 
 def test_the_menu_asks_the_same_things_as_the_flags(saved_snapshot, monkeypatch):
-    left = answer(monkeypatch, "i", "1", "2", "n", "n", "n")
+    left = ["i", "1", "2", "n", "n", "n"]
+    prompts = []
+    monkeypatch.setattr(
+        "builtins.input", lambda prompt="": prompts.append(prompt) or left.pop(0)
+    )
 
     overrides, _, _, calendar, plan = start._config_from_menu()
 
     assert left == []
+    assert "  Appliquer l'horaire? Sinon, il est régénéré sur le calendrier réel. (O/n): " in prompts
     assert calendar == "dates du 2026-09-25 (semaine 4, congé de 16 jours)"
     assert plan.schedule == {}
     assert plan.student is None
