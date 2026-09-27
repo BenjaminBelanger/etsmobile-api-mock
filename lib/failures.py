@@ -144,7 +144,10 @@ def load_from_env() -> FailureConfig:
     cfg.timeout_endpoints = parse_endpoint_set(os.environ.get("TIMEOUT_ENDPOINTS", ""))
 
     cfg.timeout_duration_s = env_number(
-        "TIMEOUT_DURATION_S", float, lambda d: d >= 0.0, cfg.timeout_duration_s
+        "TIMEOUT_DURATION_S",
+        float,
+        lambda d: math.isfinite(d) and d >= 0.0,
+        cfg.timeout_duration_s,
     )
 
     cfg.malformed = env_bool("MALFORMED")
@@ -194,10 +197,10 @@ def api_endpoint_names(app) -> list[str]:
 
 class FailureConfigUpdate(BaseModel):
     latencyMs: int | str | None = None
-    errorRate: float | None = Field(default=None, ge=0.0, le=1.0)
+    errorRate: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
     failEndpoints: list[str] | None = None
     timeoutEndpoints: list[str] | None = None
-    timeoutDurationS: float | None = Field(default=None, ge=0.0)
+    timeoutDurationS: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     malformed: bool | None = None
     authRequired: bool | None = None
     tokenExpiredCalls: int | None = Field(default=None, ge=0)

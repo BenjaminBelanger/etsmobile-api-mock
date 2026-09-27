@@ -1,9 +1,12 @@
 """FastAPI app entrypoint."""
 
 import logging
+import math
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, RedirectResponse
 
 from lib import call_log, failures
@@ -66,6 +69,25 @@ app = FastAPI(
 @app.exception_handler(HTTPException)
 async def http_exception_handler(_request: Request, exc: HTTPException):
     return JSONResponse({"error": exc.detail}, status_code=exc.status_code)
+
+
+def _json_safe(value):
+    if isinstance(value, float) and not math.isfinite(value):
+        return str(value)
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    _request: Request, exc: RequestValidationError
+):
+    return JSONResponse(
+        {"detail": _json_safe(jsonable_encoder(exc.errors()))}, status_code=422
+    )
 
 
 app.middleware("http")(failures.failure_middleware)

@@ -182,6 +182,7 @@ def test_an_empty_environment_boots_the_default_config(monkeypatch):
         ("ERROR_RATE", "-0.5"),
         ("TIMEOUT_DURATION_S", "abc"),
         ("TIMEOUT_DURATION_S", "-1"),
+        ("TIMEOUT_DURATION_S", "inf"),
         ("TOKEN_EXPIRED_CALLS", "abc"),
         ("TOKEN_EXPIRED_CALLS", "1.5"),
         ("TOKEN_EXPIRED_CALLS", "-1"),
@@ -231,6 +232,7 @@ def test_a_broken_latency_patch_is_rejected():
         {"errorRate": 1.5},
         {"errorRate": -0.1},
         {"timeoutDurationS": -1},
+        {"timeoutDurationS": float("inf")},
         {"tokenExpiredCalls": -1},
         {"tokenExpiredCalls": 1.5},
         {"tokenLifetimeS": -1},
@@ -270,6 +272,27 @@ def test_the_admin_endpoint_rejects_a_broken_latency(client):
 
 def test_the_admin_endpoint_rejects_unknown_fields(client):
     assert client.patch("/admin/failures", json={"inconnu": 1}).status_code == 422
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"errorRate": Infinity}',
+        '{"errorRate": NaN}',
+        '{"timeoutDurationS": 1e400}',
+        '{"tokenLifetimeS": -Infinity}',
+        '{"latencyMs": Infinity}',
+    ],
+)
+def test_the_admin_endpoint_rejects_a_non_finite_number(client, body):
+    response = client.patch(
+        "/admin/failures",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]
+    assert failures.get_config().is_default()
 
 
 def test_a_required_header_turns_api_calls_into_401s(client):

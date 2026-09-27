@@ -145,13 +145,20 @@ def test_a_custom_config_resets_before_patching(http):
 @pytest.mark.parametrize(
     "argv",
     [
+        ["--latency", "abc"],
+        ["--latency", "800-100"],
+        ["--error-rate", "5"],
+        ["--error-rate", "nan"],
+        ["--timeout-duration", "-1"],
+        ["--timeout-duration", "inf"],
         ["--token-expired", "-3"],
         ["--token-expired", "1.5"],
         ["--token-lifetime", "-1"],
         ["--token-lifetime", "inf"],
+        ["--latency", "200", "--error-rate", "5"],
     ],
 )
-def test_a_broken_token_flag_is_refused_before_the_config_is_reset(http, argv):
+def test_a_broken_flag_is_refused_before_the_config_is_reset(http, argv):
     with pytest.raises(SystemExit) as exc:
         manage_failures.cmd_custom(argv)
     assert exc.value.code == 2

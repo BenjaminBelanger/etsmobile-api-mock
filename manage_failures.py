@@ -8,7 +8,7 @@ import urllib.error
 import urllib.request
 
 from lib._paths import SEED
-from start import _bounded_int, _seconds
+from start import _bounded_int, _latency, _rate, _seconds
 
 DEFAULT_URL = "http://localhost:8080"
 PRESETS_FILE = SEED / "failure_presets.json"
@@ -107,9 +107,11 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         description="Apply a custom failure config (resets first).",
     )
     parser.add_argument(
-        "--latency", help="Latency in ms, fixed or range (e.g., '500' or '100-500')"
+        "--latency",
+        type=_latency,
+        help="Latency in ms, fixed or range (e.g., '500' or '100-500')",
     )
-    parser.add_argument("--error-rate", type=float, help="Error rate, 0.0-1.0")
+    parser.add_argument("--error-rate", type=_rate, help="Error rate, 0.0-1.0")
     parser.add_argument(
         "--fail",
         action="append",
@@ -121,7 +123,7 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         help="Endpoint name to hang (repeatable, or '*' for all)",
     )
     parser.add_argument(
-        "--timeout-duration", type=float, help="How long timeout endpoints sleep (s)"
+        "--timeout-duration", type=_seconds, help="How long timeout endpoints sleep (s)"
     )
     parser.add_argument(
         "--malformed",
