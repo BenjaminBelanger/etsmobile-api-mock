@@ -56,8 +56,8 @@ The page has four tabs:
 
 - **Horaire**: the schedule editor described below. Its **Dates de la session**
   panel edits the session dates served by `listeSessions`.
-- **Pannes**: the [failure injection](#failure-injection) panel.
 - **Étudiant**: edits the student profile served by `infoEtudiant`.
+- **Pannes**: the [failure injection](#failure-injection) panel.
 - **Logs**: the [call log](#call-log).
 
 `python start.py` clears every editor change at each launch.
