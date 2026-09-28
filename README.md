@@ -45,7 +45,7 @@ point the Flutter app at the mock while it runs, see
 
 ## Schedule Editor UI
 
-<img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/2da27859-d13a-4df2-87f5-cb596055f1f6" />
+<img width="2557" height="1237" alt="Screenshot 2026-09-28 141407" src="https://github.com/user-attachments/assets/d85eeea4-0cd3-4966-aaa8-670280655a7c" />
 
 A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 (the root `/` redirects there). It shows the active session's courses in a week
@@ -259,7 +259,7 @@ them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
 CLI, so both describe the same config. The [call log](#call-log) shows which
 calls each injection hit.
 
-<img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
+<img width="2556" height="1236" alt="Screenshot 2026-09-28 141447" src="https://github.com/user-attachments/assets/8ee77a84-8086-4340-82c7-adf1b4ad7a06" />
 
 ### Startup flags
 
@@ -351,7 +351,7 @@ failure. Use it to see when and how often the app calls the API:
 - Add a marker just before an action in the app to group the calls it triggers.
 - Download the log as JSON, or clear it.
 
-<img width="2556" height="1237" alt="Screenshot 2026-09-26 163013" src="https://github.com/user-attachments/assets/1535a18b-acfa-4144-8044-c738316bffd9" />
+<img width="2556" height="1240" alt="Screenshot 2026-09-28 141556" src="https://github.com/user-attachments/assets/6beb5c47-bf1a-4669-8f14-c160660539f0" />
 
 The log is kept in memory (the last 100,000 entries) and resets when the server
 restarts.
