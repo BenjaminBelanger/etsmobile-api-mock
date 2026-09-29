@@ -262,7 +262,7 @@ python start.py --between-sessions --no-next-session       # break, next session
 
 ## Scenarios
 
-A scenario is a named situation of the active session that follows today's date: days off, replaced days, where today falls in the session. Select a scenario from the `start.py` menu, or name it directly:
+A scenario is a named situation of the active session that follows today's date: days off, replaced days, where today falls in the session, exam dates. Select a scenario from the `start.py` menu, or name it directly:
 
 ```bash
 python start.py --scenario semaine-relache
@@ -277,6 +277,8 @@ python start.py --scenario semaine-relache
 | `long-weekend` | Next Friday + Monday off |
 | `fin-de-session` | Week 14, 60 days off before the next session |
 | `rentree-proche` | Between sessions, the next one starts in 10 days |
+| `intra-demain` | Week 7, the first course's midterm is tomorrow and not graded yet |
+| `examen-final-demain` | Week 15, the first course's final exam is tomorrow |
 
 Scenarios are defined declaratively in `seed/scenarios.json`. A scenario's
 `calendar` takes the [session calendar](#session-calendar) options
@@ -285,6 +287,17 @@ calendar flag given with `--scenario` replaces that part of it:
 
 ```bash
 python start.py --scenario fin-de-session --semester-gap 10
+```
+
+`finalExams` and `evaluations` date the exams of the active session's courses,
+by position (`"course": 1` is the first). An evaluation is picked by name, and
+`"published": false` hides its grade:
+
+```json
+"finalExams": [{ "course": 1, "date": { "rule": "relative_days", "days": 1 } }],
+"evaluations": [
+  { "course": 2, "evaluation": "TP1", "date": { "rule": "next_weekday", "weekday": 5 } }
+]
 ```
 
 ## Failure Injection

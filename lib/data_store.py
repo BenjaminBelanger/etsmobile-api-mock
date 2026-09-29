@@ -236,6 +236,9 @@ def _initialize():
         _seed_courses = scenarios.seed_occurrence_overrides(
             SCENARIO_NAME, ACTIVE_SESSION, _seed_courses
         )
+        _seed_courses = scenarios.seed_evaluation_dates(
+            SCENARIO_NAME, ACTIVE_SESSION, _seed_courses
+        )
     _base_courses = copy.deepcopy(_seed_courses)
     _seed_courses = _apply_overrides(_seed_courses)
     _generated = build_all_course_data(

@@ -39,5 +39,24 @@
   "rentree-proche": {
     "description": "Entre deux sessions, rentrée dans 10 jours",
     "calendar": { "betweenSessions": true, "semesterGap": 10 }
+  },
+  "intra-demain": {
+    "description": "Semaine 7, examen intra du premier cours demain (pas encore corrigé)",
+    "calendar": { "semesterWeek": 7 },
+    "evaluations": [
+      {
+        "course": 1,
+        "evaluation": "Examen intra",
+        "date": { "rule": "relative_days", "days": 1 },
+        "published": false
+      }
+    ]
+  },
+  "examen-final-demain": {
+    "description": "Semaine 15, examen final du premier cours demain",
+    "calendar": { "semesterWeek": 15 },
+    "finalExams": [
+      { "course": 1, "date": { "rule": "relative_days", "days": 1 } }
+    ]
   }
 }

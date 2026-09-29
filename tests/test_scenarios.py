@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -60,6 +60,8 @@ def test_the_seed_scenarios_are_all_valid():
         "long-weekend",
         "fin-de-session",
         "rentree-proche",
+        "intra-demain",
+        "examen-final-demain",
     }
 
 
@@ -371,3 +373,184 @@ def test_the_cache_is_dropped_when_scenarios_reload(today):
     scenarios._resolve_and_cache("friday-off")
     scenarios.reload_scenarios()
     assert scenarios._scenario_cache == {}
+
+
+TOMORROW = {"rule": "relative_days", "days": 1}
+
+
+def evaluations():
+    return [
+        {"nom": "TP1", "ponderation": 20, "corrigeSur": 20, "isTeam": True},
+        {"nom": "Examen intra", "ponderation": 30, "corrigeSur": 50, "isTeam": False},
+    ]
+
+
+def with_scenario(**body):
+    scenarios._SCENARIOS["test"] = body
+    return "test"
+
+
+def test_a_final_exam_rule_moves_the_exam_of_the_nth_course(today):
+    today("2026-02-02")
+    courses = [course(sigle="LOG100"), course(sigle="LOG200")]
+
+    scenarios.seed_evaluation_dates(
+        with_scenario(finalExams=[{"course": 2, "date": TOMORROW}]), SESSION, courses
+    )
+
+    assert "finalExam" not in courses[0]
+    assert courses[1]["finalExam"] == {"dateExamen": "2026-02-03"}
+
+
+def test_a_final_exam_rule_keeps_the_other_exam_fields(today):
+    today("2026-02-02")
+    courses = [course(finalExam={"dateExamen": "2026-04-20", "local": "B-1234"})]
+
+    scenarios.seed_evaluation_dates(
+        with_scenario(finalExams=[{"course": 1, "date": TOMORROW}]), SESSION, courses
+    )
+
+    assert courses[0]["finalExam"] == {"dateExamen": "2026-02-03", "local": "B-1234"}
+
+
+def test_courses_are_counted_in_the_active_session_only(today):
+    today("2026-02-02")
+    courses = [course(session="A2025"), course(sigle="LOG200")]
+
+    scenarios.seed_evaluation_dates(
+        with_scenario(finalExams=[{"course": 1, "date": TOMORROW}]), SESSION, courses
+    )
+
+    assert "finalExam" not in courses[0]
+    assert courses[1]["finalExam"]["dateExamen"] == "2026-02-03"
+
+
+@pytest.mark.parametrize("position", [0, 2])
+def test_a_rule_for_a_missing_course_is_ignored(today, position):
+    today("2026-02-02")
+    courses = [course(evaluations=evaluations())]
+    name = with_scenario(
+        finalExams=[{"course": position, "date": TOMORROW}],
+        evaluations=[{"course": position, "evaluation": "TP1", "date": TOMORROW}],
+    )
+
+    scenarios.seed_evaluation_dates(name, SESSION, courses)
+
+    assert courses == [course(evaluations=evaluations())]
+
+
+def test_a_course_without_a_schedule_gets_no_final_exam(today):
+    today("2026-02-02")
+    courses = [course(schedule=None)]
+
+    scenarios.seed_evaluation_dates(
+        with_scenario(finalExams=[{"course": 1, "date": TOMORROW}]), SESSION, courses
+    )
+
+    assert "finalExam" not in courses[0]
+
+
+def test_an_evaluation_rule_dates_the_named_evaluation(today):
+    today("2026-02-02")
+    courses = [course(evaluations=evaluations())]
+    name = with_scenario(
+        evaluations=[
+            {
+                "course": 1,
+                "evaluation": "Examen intra",
+                "date": TOMORROW,
+                "published": False,
+            }
+        ]
+    )
+
+    scenarios.seed_evaluation_dates(name, SESSION, courses)
+
+    tp1, intra = courses[0]["evaluations"]
+    assert tp1 == evaluations()[0]
+    assert intra == {**evaluations()[1], "dateCible": "2026-02-03", "publie": False}
+
+
+def test_an_evaluation_rule_leaves_publication_alone_unless_asked(today):
+    today("2026-02-02")
+    courses = [course(evaluations=evaluations())]
+    name = with_scenario(
+        evaluations=[{"course": 1, "evaluation": "TP1", "date": TOMORROW}]
+    )
+
+    scenarios.seed_evaluation_dates(name, SESSION, courses)
+
+    assert "publie" not in courses[0]["evaluations"][0]
+
+
+def test_an_evaluation_rule_does_not_touch_a_shared_template(today):
+    today("2026-02-02")
+    template = evaluations()
+    courses = [
+        course(sigle="LOG100", evaluations=template),
+        course(sigle="LOG200", evaluations=template),
+    ]
+    name = with_scenario(
+        evaluations=[{"course": 1, "evaluation": "TP1", "date": TOMORROW}]
+    )
+
+    scenarios.seed_evaluation_dates(name, SESSION, courses)
+
+    assert template == evaluations()
+    assert courses[1]["evaluations"] is template
+    assert courses[0]["evaluations"][0]["dateCible"] == "2026-02-03"
+
+
+def test_an_unknown_evaluation_name_changes_nothing(today):
+    today("2026-02-02")
+    courses = [course(evaluations=evaluations())]
+    name = with_scenario(
+        evaluations=[{"course": 1, "evaluation": "Quiz", "date": TOMORROW}]
+    )
+
+    scenarios.seed_evaluation_dates(name, SESSION, courses)
+
+    assert courses[0]["evaluations"] == evaluations()
+
+
+def served_first_course(reconfigure, scenario):
+    from lib import data_store
+    from lib.resource_specs import COURSE_ACTIVITIES, EVALUATIONS, FINAL_EXAMS
+
+    reconfigure(SCENARIO=scenario)
+    session = data_store.ACTIVE_SESSION
+    first = data_store.get_session_courses(session)[0]
+    key = f"{first['sigle']}-{first['groupe']}"
+    exam = next(
+        e
+        for e in data_store.load_session(FINAL_EXAMS.filename, session)
+        if e["sigle"] == first["sigle"]
+    )
+    finals = [
+        a
+        for a in data_store.load_session(COURSE_ACTIVITIES.filename, session)
+        if a["coursGroupe"] == key and a["nomActivite"] == "Final"
+    ]
+    sheet = data_store.load_session(EVALUATIONS.filename, session, {})[key]["liste"]
+    return exam, finals, sheet
+
+
+def test_the_final_exam_scenario_serves_an_exam_tomorrow(reconfigure):
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    exam, finals, sheet = served_first_course(reconfigure, "examen-final-demain")
+
+    assert exam["dateExamen"] == tomorrow
+    assert [a["dateDebut"][:10] for a in finals] == [tomorrow]
+    assert sheet[-1]["dateCible"] == tomorrow
+
+
+def test_the_midterm_scenario_serves_an_ungraded_midterm_tomorrow(reconfigure):
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+
+    _, _, sheet = served_first_course(reconfigure, "intra-demain")
+
+    intra = next(item for item in sheet if item["nom"] == "Examen intra")
+    assert intra["dateCible"] == tomorrow
+    assert intra["publie"] == "Non"
+    assert intra["note"] == ""

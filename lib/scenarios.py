@@ -211,6 +211,41 @@ def seed_occurrence_overrides(
     return courses
 
 
+def _nth(items: list[dict], position: int) -> dict | None:
+    return items[position - 1] if 1 <= position <= len(items) else None
+
+
+def seed_evaluation_dates(
+    scenario_name: str, active_session: str, courses: list[dict]
+) -> list[dict]:
+    scenario = _SCENARIOS.get(scenario_name, {})
+    active = [c for c in courses if c.get("session") == active_session]
+
+    for rule in scenario.get("finalExams", []):
+        course = _nth(active, rule["course"])
+        if course is None or course.get("schedule") is None:
+            continue
+        course["finalExam"] = {
+            **(course.get("finalExam") or {}),
+            "dateExamen": _resolve_date(rule["date"]).isoformat(),
+        }
+
+    for rule in scenario.get("evaluations", []):
+        course = _nth(active, rule["course"])
+        if course is None:
+            continue
+        evaluations = [dict(ev) for ev in course.get("evaluations", [])]
+        for evaluation in evaluations:
+            if evaluation.get("nom") != rule["evaluation"]:
+                continue
+            evaluation["dateCible"] = _resolve_date(rule["date"]).isoformat()
+            if "published" in rule:
+                evaluation["publie"] = bool(rule["published"])
+        course["evaluations"] = evaluations
+
+    return courses
+
+
 def apply_scenario(scenario_name: str, active_session: str, filename: str, data):
     _, replaced_days = _resolve_and_cache(scenario_name)
 
