@@ -2911,14 +2911,14 @@ function scenarioHtml(item) {
   const active = item.name === activeScenario();
   const title = none ? "Aucun scénario" : item.description;
   const meta = none ? item.description : item.name;
-  return `<li class="snapshot" data-scenario="${escapeHtml(item.name)}">
+  return `<li class="snapshot snapshot--compact" data-scenario="${escapeHtml(item.name)}">
       <div class="snapshot__main">
         <span class="snapshot__name">${escapeHtml(title)}</span>
         <span class="snapshot__meta">${escapeHtml(meta)}</span>
       </div>
       ${active ? '<span class="snapshot__badge">Actif</span>' : ""}
       <div class="snapshot__actions">
-        <fluent-button appearance="primary" size="small" data-act="apply">Appliquer</fluent-button>
+        <fluent-button appearance="secondary" size="small" data-act="apply">Appliquer</fluent-button>
       </div>
     </li>`;
 }

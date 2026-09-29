@@ -969,6 +969,14 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .snapshot__actions { display: flex; align-items: center; gap: 2px; flex: none; }
 .snapshot__actions [data-act="load"] { margin-right: 6px; }
 
+.snapshot--compact { padding: 6px 4px; }
+.snapshot--compact .snapshot__main {
+  flex-direction: row; flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+}
+.snapshot--compact .snapshot__name { font-size: var(--fontSizeBase300); }
+
 .setup {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
