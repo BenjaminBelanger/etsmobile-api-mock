@@ -1,4 +1,7 @@
+import base64
 import json
+import re
+import zlib
 from datetime import date, timedelta
 
 import pytest
@@ -635,6 +638,7 @@ def test_saving_over_an_existing_name_asks_first(client):
     response = client.post("/editor/api/snapshots/save", json={"name": "Démo"})
 
     assert response.status_code == 409
+    assert response.json()["name"] == "Démo"
     assert api(client, "/save", name="Démo", overwrite=True)["saved"] == "demo"
 
 
@@ -787,6 +791,87 @@ def test_importing_something_else_than_a_snapshot_is_refused(client):
     response = client.post("/editor/api/snapshots/import", json={"snapshot": {"hello": 1}})
 
     assert response.status_code == 400
+
+
+def test_importing_needs_a_snapshot_or_a_code(client):
+    response = client.post("/editor/api/snapshots/import", json={})
+
+    assert response.status_code == 400
+
+
+def test_a_code_decodes_to_the_same_snapshot():
+    body = snapshots.validate(snapshot())
+
+    assert snapshots.decode(snapshots.encode(body)) == body
+
+
+def test_a_code_is_plain_url_safe_text():
+    code = snapshots.encode(snapshot(name="Élève à l'examen"))
+
+    assert re.fullmatch(r"[A-Za-z0-9_-]+", code)
+
+
+def test_a_code_wrapped_on_several_lines_still_decodes():
+    code = snapshots.encode(snapshot())
+    wrapped = "  " + "\n".join(code[i : i + 40] for i in range(0, len(code), 40)) + "\r\n"
+
+    assert snapshots.decode(wrapped)["name"] == "Mi-session"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "",
+        "pas un code!",
+        base64.urlsafe_b64encode(b"not compressed").decode(),
+        base64.urlsafe_b64encode(zlib.compress(b"not json")).decode(),
+        base64.urlsafe_b64encode(zlib.compress(b'{"hello": 1}')).decode(),
+    ],
+)
+def test_anything_else_than_a_code_is_refused(code):
+    with pytest.raises(SnapshotError):
+        snapshots.decode(code)
+
+
+def test_a_snapshot_can_be_shared_as_a_code(client):
+    api(client, "/save", name="Démo")
+    saved = snapshots.read("demo")
+
+    response = client.get("/editor/api/snapshots/code", params={"id": "demo"})
+    assert response.status_code == 200
+    code = response.json()["code"]
+    api(client, "/delete", id="demo")
+    state = api(client, "/import", code=code)
+
+    assert state["saved"] == "demo"
+    assert snapshots.read("demo") == saved
+
+
+def test_a_missing_snapshot_has_no_code(client):
+    response = client.get("/editor/api/snapshots/code", params={"id": "absent"})
+
+    assert response.status_code == 400
+
+
+def test_importing_a_code_over_an_existing_name_asks_first(client):
+    api(client, "/save", name="Démo")
+    code = client.get("/editor/api/snapshots/code", params={"id": "demo"}).json()["code"]
+
+    response = client.post("/editor/api/snapshots/import", json={"code": code})
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "error": "A snapshot named 'Démo' already exists",
+        "name": "Démo",
+    }
+    assert api(client, "/import", code=code, overwrite=True)["saved"] == "demo"
+
+
+def test_importing_a_broken_code_is_refused(client):
+    response = client.post("/editor/api/snapshots/import", json={"code": "abc"})
+
+    assert response.status_code == 400
+    assert response.json()["error"] == "This is not a snapshot code"
 
 
 def test_exact_dates_bring_back_an_edited_session_date(client):

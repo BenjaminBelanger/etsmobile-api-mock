@@ -1017,6 +1017,29 @@ fluent-dialog::part(dialog) { max-width: 536px; }
 .form fluent-dropdown,
 .form fluent-text-input { width: 100%; max-width: none; }
 
+.code-input {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: var(--fontSizeBase200);
+  line-height: var(--lineHeightBase200);
+  color: var(--colorNeutralForeground1);
+  background: var(--colorNeutralBackground3);
+  border: var(--strokeWidthThin) solid var(--colorTransparentStroke);
+  border-radius: var(--borderRadiusMedium);
+  box-shadow: var(--shadow2);
+  padding: var(--spacingVerticalS) var(--spacingHorizontalMNudge);
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  word-break: break-all;
+  color-scheme: dark;
+}
+.code-input:hover { border-color: var(--colorTransparentStrokeInteractive); }
+.code-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--colorCompoundBrandStroke);
+  box-shadow: var(--shadow2), inset 0 -2px 0 -1px var(--colorCompoundBrandStroke);
+}
+
 .time-input {
   font-family: var(--font-ui);
   font-size: var(--fontSizeBase300);

@@ -109,6 +109,14 @@ def import_snapshot(raw, overwrite: bool = False) -> dict:
     return {**get_state(), "saved": snapshot_id}
 
 
+def import_code(code: str, overwrite: bool = False) -> dict:
+    return import_snapshot(snapshots.decode(code), overwrite)
+
+
+def share_code(snapshot_id: str) -> dict:
+    return {"code": snapshots.encode(snapshots.read(snapshot_id))}
+
+
 def delete(snapshot_id: str) -> dict:
     snapshots.delete(snapshot_id)
     return get_state()

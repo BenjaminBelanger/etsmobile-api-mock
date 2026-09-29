@@ -1,7 +1,10 @@
+import base64
+import binascii
 import copy
 import json
 import re
 import unicodedata
+import zlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -28,7 +31,9 @@ class SnapshotError(ValueError):
 
 
 class SnapshotConflict(SnapshotError):
-    pass
+    def __init__(self, name: str):
+        super().__init__(f"A snapshot named '{name}' already exists")
+        self.name = name
 
 
 @dataclass
@@ -163,13 +168,28 @@ def write(snapshot: dict, *, overwrite: bool = False) -> str:
     snapshot_id = slugify(snapshot["name"])
     path = _path(snapshot_id)
     if path.exists() and not overwrite:
-        existing = read(snapshot_id)["name"]
-        raise SnapshotConflict(f"A snapshot named '{existing}' already exists")
+        raise SnapshotConflict(read(snapshot_id)["name"])
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(snapshot, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
     return snapshot_id
+
+
+def encode(snapshot: dict) -> str:
+    compact = json.dumps(validate(snapshot), ensure_ascii=False, separators=(",", ":"))
+    packed = zlib.compress(compact.encode("utf-8"), 9)
+    return base64.urlsafe_b64encode(packed).decode("ascii").rstrip("=")
+
+
+def decode(code: str) -> dict:
+    text = "".join(str(code or "").split())
+    try:
+        packed = base64.urlsafe_b64decode(text + "=" * (-len(text) % 4))
+        raw = json.loads(zlib.decompress(packed).decode("utf-8"))
+    except (binascii.Error, zlib.error, ValueError) as exc:
+        raise SnapshotError("This is not a snapshot code") from exc
+    return validate(raw)
 
 
 def delete(snapshot_id: str) -> None:

@@ -579,14 +579,21 @@ function createSnapshots(options) {
         };
       }
 
+      if (path.startsWith("/code?")) {
+        const id = new URLSearchParams(path.slice("/code?".length)).get("id");
+        const item = items.find((i) => i.id === id);
+        return { ok: true, status: 200, json: async () => ({ code: `CODE-${item.name}` }) };
+      }
+
       let extra = {};
       if (path === "/save") {
         const id = slug(body.name);
         add({ ...clone(SNAPSHOT_ITEMS[0]), id, name: body.name });
         extra = { saved: id };
       } else if (path === "/import") {
-        const id = slug(body.snapshot.name);
-        add({ ...clone(SNAPSHOT_ITEMS[0]), id, name: body.snapshot.name });
+        const name = body.snapshot ? body.snapshot.name : body.code.replace(/^CODE-/, "");
+        const id = slug(name);
+        add({ ...clone(SNAPSHOT_ITEMS[0]), id, name });
         extra = { saved: id };
       } else if (path === "/delete") {
         items = items.filter((i) => i.id !== body.id);

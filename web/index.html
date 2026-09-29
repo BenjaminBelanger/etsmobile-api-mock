@@ -239,7 +239,7 @@
         <section class="board board--list" id="snapshotsBoard">
           <ul class="snapshots" id="snapshotList"></ul>
           <div class="board__empty" id="snapshotEmpty" hidden>
-            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver après un redémarrage, ou exportez-le pour qu’un coéquipier reproduise un bug.</p>
+            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver après un redémarrage, ou copiez son code pour qu’un coéquipier reproduise un bug.</p>
           </div>
         </section>
 
@@ -357,11 +357,30 @@
           </fluent-field>
         </form>
         <p class="dialog__hint">Comprend le profil, le scénario, la semaine, les options de génération, l’horaire modifié, le profil étudiant et les pannes actives.</p>
-        <p class="dialog__hint">Enregistrée dans snapshots/, ignorée par git. Exportez-la pour la partager.</p>
+        <p class="dialog__hint">Enregistrée dans snapshots/, ignorée par git. Copiez son code pour la partager.</p>
         <p class="dialog__hint dialog__hint--warn" id="snapshotSaveConflict" hidden></p>
 
         <fluent-button slot="action" appearance="secondary" data-close-snapshot-save>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="snapshotSaveSubmit">Enregistrer</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="snapshotImportDialog" type="modal" aria-label="Importer une sauvegarde">
+      <fluent-dialog-body>
+        <span slot="title">Importer une sauvegarde</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-import></fluent-button>
+
+        <form id="snapshotImportForm" class="form" novalidate>
+          <textarea id="fSnapshotCode" class="code-input" rows="6" spellcheck="false" autocomplete="off" placeholder="Collez le code d’une sauvegarde" aria-label="Code de la sauvegarde"></textarea>
+        </form>
+        <p class="dialog__hint">Le bouton Copier le code d’une sauvegarde le met dans le presse-papiers. Un fichier exporté s’importe aussi.</p>
+
+        <fluent-button slot="action" appearance="secondary" id="snapshotImportFileBtn">
+          <span slot="start" data-icon="upload" data-icon-size="16"></span>
+          Choisir un fichier
+        </fluent-button>
+        <fluent-button slot="action" appearance="secondary" data-close-snapshot-import>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="snapshotImportSubmit">Importer</fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 

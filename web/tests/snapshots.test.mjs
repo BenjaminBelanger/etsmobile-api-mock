@@ -580,6 +580,186 @@ describe("managing snapshots", () => {
     app.close();
   });
 
+  function clipboard(app, writeText) {
+    Object.defineProperty(app.window.navigator, "clipboard", {
+      configurable: true,
+      value: writeText ? { writeText } : undefined,
+    });
+  }
+
+  test("copying puts the snapshot code on the clipboard", async () => {
+    const app = await onSnapshots();
+    const copied = [];
+    clipboard(app, async (text) => copied.push(text));
+    await app.click(action(app, "demo", "copy"));
+    await flush();
+
+    assert.equal(app.server.snapshots.called("/code?id=demo").length, 1);
+    assert.deepEqual(copied, ["CODE-Démo"]);
+    assert.equal(app.toast().text, "Code de « Démo » copié");
+    app.close();
+  });
+
+  test("copying falls back on a selection when the clipboard API is missing", async () => {
+    const app = await onSnapshots();
+    const copied = [];
+    clipboard(app, null);
+    app.document.execCommand = (command) => {
+      copied.push([command, app.document.querySelector("body > textarea").value]);
+      return true;
+    };
+    await app.click(action(app, "demo", "copy"));
+    await flush();
+
+    assert.deepEqual(copied, [["copy", "CODE-Démo"]]);
+    assert.equal(app.document.querySelector("body > textarea"), null);
+    assert.equal(app.toast().text, "Code de « Démo » copié");
+    app.close();
+  });
+
+  test("copying points to the export when nothing can copy", async () => {
+    const app = await onSnapshots();
+    clipboard(app, async () => {
+      throw new Error("denied");
+    });
+    app.document.execCommand = () => false;
+    await app.click(action(app, "demo", "copy"));
+    await flush();
+
+    assert.equal(app.toast().intent, "error");
+    assert.match(app.toast().text, /exportez le fichier/);
+    app.close();
+  });
+
+  test("copying reports a snapshot the server cannot find", async () => {
+    const app = await onSnapshots();
+    clipboard(app, async () => assert.fail("nothing to copy"));
+    app.server.snapshots.once("/code?id=demo", { error: "Snapshot 'demo' not found" }, 400);
+    await app.click(action(app, "demo", "copy"));
+    await flush();
+
+    assert.equal(app.toast().text, "Snapshot 'demo' not found");
+    app.close();
+  });
+
+  async function openImport(app) {
+    await app.click(app.byId("snapshotImportBtn"));
+  }
+
+  async function paste(app, text) {
+    await openImport(app);
+    app.byId("fSnapshotCode").value = text;
+    await app.click(app.byId("snapshotImportSubmit"));
+    await flush();
+  }
+
+  test("importing opens an empty paste box", async () => {
+    const app = await onSnapshots();
+    await openImport(app);
+    app.byId("fSnapshotCode").value = "ancien";
+    app.byId("snapshotImportDialog").hide();
+    await openImport(app);
+
+    assert.equal(app.byId("snapshotImportDialog").open, true);
+    assert.equal(app.byId("fSnapshotCode").value, "");
+    assert.equal(app.server.snapshots.called("/import").length, 0);
+    app.close();
+  });
+
+  test("importing sends a pasted code", async () => {
+    const app = await onSnapshots();
+    await paste(app, "  CODE-Reçue\n");
+
+    assert.deepEqual(posted(app, "/import"), { code: "CODE-Reçue", overwrite: false });
+    assert.equal(app.byId("snapshotImportDialog").open, false);
+    assert.equal(app.toast().text, "Sauvegarde « Reçue » importée");
+    assert.ok(rowFor(app, "recue"));
+    app.close();
+  });
+
+  test("Enter in the paste box imports", async () => {
+    const app = await onSnapshots();
+    await openImport(app);
+    const box = app.byId("fSnapshotCode");
+    box.value = "CODE-Reçue";
+    box.dispatchEvent(new app.window.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await flush();
+
+    assert.deepEqual(posted(app, "/import"), { code: "CODE-Reçue", overwrite: false });
+    app.close();
+  });
+
+  test("a pasted export file is imported as a snapshot", async () => {
+    const app = await onSnapshots();
+    await paste(app, JSON.stringify({ format: 2, name: "Collée" }, null, 2));
+
+    assert.deepEqual(posted(app, "/import"), {
+      snapshot: { format: 2, name: "Collée" },
+      overwrite: false,
+    });
+    app.close();
+  });
+
+  test("broken pasted JSON is refused before reaching the server", async () => {
+    const app = await onSnapshots();
+    await paste(app, '{"format": 2,');
+
+    assert.equal(app.server.snapshots.called("/import").length, 0);
+    assert.equal(app.toast().intent, "error");
+    assert.equal(app.byId("snapshotImportDialog").open, true);
+    app.close();
+  });
+
+  test("an empty paste box asks for a code", async () => {
+    const app = await onSnapshots();
+    await paste(app, "   ");
+
+    assert.equal(app.server.snapshots.called("/import").length, 0);
+    assert.equal(app.toast().text, "Collez le code d’une sauvegarde");
+    assert.equal(app.byId("snapshotImportDialog").open, true);
+    app.close();
+  });
+
+  test("a code the server refuses keeps the paste box open", async () => {
+    const app = await onSnapshots();
+    app.server.snapshots.once("/import", { error: "This is not a snapshot code" }, 400);
+    await paste(app, "abc");
+
+    assert.equal(app.byId("snapshotImportDialog").open, true);
+    assert.equal(app.toast().text, "This is not a snapshot code");
+    app.close();
+  });
+
+  test("a code for an existing name asks before replacing it", async () => {
+    const app = await onSnapshots();
+    app.server.snapshots.once(
+      "/import",
+      { error: "A snapshot named 'Démo' already exists", name: "Démo" },
+      409,
+    );
+    await paste(app, "CODE-Démo");
+
+    assert.equal(app.byId("snapshotImportDialog").open, false);
+    assert.equal(app.byId("snapshotConfirmDialog").open, true);
+    assert.equal(app.byId("snapshotConfirmTitle").textContent, "Remplacer « Démo » ?");
+
+    await app.click(app.byId("snapshotConfirmSubmit"));
+
+    assert.deepEqual(posted(app, "/import"), { code: "CODE-Démo", overwrite: true });
+    app.close();
+  });
+
+  test("the paste box can still pick a file", async () => {
+    const app = await onSnapshots();
+    let picked = 0;
+    app.byId("snapshotFile").click = () => picked++;
+    await openImport(app);
+    await app.click(app.byId("snapshotImportFileBtn"));
+
+    assert.equal(picked, 1);
+    app.close();
+  });
+
   test("undo shortcuts do nothing on this tab", async () => {
     const app = await onSnapshots();
     const posts = app.server.calls.length;

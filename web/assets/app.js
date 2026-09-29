@@ -136,6 +136,11 @@ const el = {
   snapshotEmpty: document.getElementById("snapshotEmpty"),
   currentSetup: document.getElementById("currentSetup"),
   snapshotFile: document.getElementById("snapshotFile"),
+  snapshotImportDialog: document.getElementById("snapshotImportDialog"),
+  snapshotImportForm: document.getElementById("snapshotImportForm"),
+  snapshotImportFileBtn: document.getElementById("snapshotImportFileBtn"),
+  snapshotImportSubmit: document.getElementById("snapshotImportSubmit"),
+  fSnapshotCode: document.getElementById("fSnapshotCode"),
   snapshotImportBtn: document.getElementById("snapshotImportBtn"),
   snapshotSaveBtn: document.getElementById("snapshotSaveBtn"),
   snapshotSaveDialog: document.getElementById("snapshotSaveDialog"),
@@ -2837,6 +2842,8 @@ function snapshotHtml(item) {
       </div>
       <div class="snapshot__actions">
         <fluent-button appearance="primary" size="small" data-act="load">Charger</fluent-button>
+        <fluent-button appearance="subtle" size="small" icon-only data-act="copy"
+          title="Copier le code" aria-label="Copier le code : ${name}">${icon("copy", 16)}</fluent-button>
         <fluent-button appearance="subtle" size="small" icon-only data-act="export"
           title="Exporter" aria-label="Exporter : ${name}">${icon("download", 16)}</fluent-button>
         <fluent-button appearance="subtle" size="small" icon-only data-act="delete"
@@ -2911,7 +2918,7 @@ async function snapshotRequest(path, body, { quiet409 = false } = {}) {
     const data = await res.json();
     if (res.status === 409 && quiet409) {
       setStatus("Prêt.", false);
-      return { conflict: true };
+      return { conflict: true, name: data.name };
     }
     if (!res.ok) throw new Error(failureError(data, res));
     applySnapshots(data);
@@ -3031,9 +3038,54 @@ function downloadSnapshot(item) {
   link.remove();
 }
 
+function copyWithSelection(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.position = "fixed";
+  area.style.opacity = "0";
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand("copy");
+  } catch {
+    return false;
+  } finally {
+    area.remove();
+  }
+}
+
+async function writeClipboard(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    return copyWithSelection(text);
+  }
+}
+
+async function copySnapshotCode(item) {
+  let code;
+  try {
+    const res = await fetch(`${SNAPSHOT_API}/code?id=${encodeURIComponent(item.id)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(failureError(data, res));
+    code = data.code;
+  } catch (err) {
+    toast(err.message || "Serveur injoignable", true);
+    return;
+  }
+  if (await writeClipboard(code)) {
+    toast(`Code de « ${item.name} » copié`);
+  } else {
+    toast("Impossible de copier le code: exportez le fichier à la place", true);
+  }
+}
+
 function runSnapshotAction(item, action) {
   if (!item) return;
   if (action === "load") openSnapshotLoad(item);
+  else if (action === "copy") copySnapshotCode(item);
   else if (action === "export") downloadSnapshot(item);
   else if (action === "delete") {
     askSnapshot({
@@ -3048,21 +3100,25 @@ function runSnapshotAction(item, action) {
   }
 }
 
-async function importSnapshot(snapshot, overwrite = false) {
+const importedName = (data) => data.snapshots.find((item) => item.id === data.saved)?.name;
+
+async function importSnapshot(source, overwrite = false) {
   const result = await snapshotRequest(
     "/import",
-    { snapshot, overwrite },
+    { ...source, overwrite },
     { quiet409: true }
   );
+  if (result.error) return;
+  el.snapshotImportDialog.hide();
   if (result.conflict) {
     askSnapshot({
-      title: `Remplacer « ${snapshot.name} » ?`,
-      text: "Une sauvegarde porte déjà ce nom. Elle sera remplacée par le fichier importé.",
+      title: `Remplacer « ${result.name ?? source.snapshot?.name} » ?`,
+      text: "Une sauvegarde porte déjà ce nom. Elle sera remplacée par celle importée.",
       action: "Remplacer",
-      run: () => importSnapshot(snapshot, true),
+      run: () => importSnapshot(source, true),
     });
-  } else if (result.data) {
-    toast(`Sauvegarde « ${snapshot.name} » importée`);
+  } else {
+    toast(`Sauvegarde « ${importedName(result.data)} » importée`);
   }
 }
 
@@ -3077,7 +3133,32 @@ async function readSnapshotFile() {
     toast("Ce fichier n'est pas une sauvegarde JSON valide", true);
     return;
   }
-  importSnapshot(snapshot);
+  importSnapshot({ snapshot });
+}
+
+function openSnapshotImport() {
+  el.fSnapshotCode.value = "";
+  el.snapshotImportDialog.show();
+  setTimeout(() => el.fSnapshotCode.focus(), 40);
+}
+
+function submitSnapshotImport() {
+  const text = String(el.fSnapshotCode.value || "").trim();
+  if (!text) {
+    toast("Collez le code d’une sauvegarde", true);
+    el.fSnapshotCode.focus();
+    return;
+  }
+  let source = { code: text };
+  if (text.startsWith("{")) {
+    try {
+      source = { snapshot: JSON.parse(text) };
+    } catch {
+      toast("Ce texte n'est pas une sauvegarde JSON valide", true);
+      return;
+    }
+  }
+  importSnapshot(source);
 }
 
 const VIEWS = {
@@ -3231,7 +3312,21 @@ el.snapshotConfirmSubmit.addEventListener("click", () => {
   el.snapshotConfirmDialog.hide();
   if (run) run();
 });
-el.snapshotImportBtn.addEventListener("click", () => el.snapshotFile.click());
+el.snapshotImportBtn.addEventListener("click", openSnapshotImport);
+el.snapshotImportFileBtn.addEventListener("click", () => el.snapshotFile.click());
+el.snapshotImportSubmit.addEventListener("click", submitSnapshotImport);
+el.snapshotImportForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitSnapshotImport();
+});
+el.fSnapshotCode.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey) return;
+  e.preventDefault();
+  submitSnapshotImport();
+});
+el.snapshotImportDialog
+  .querySelectorAll("[data-close-snapshot-import]")
+  .forEach((n) => n.addEventListener("click", () => el.snapshotImportDialog.hide()));
 el.snapshotFile.addEventListener("change", readSnapshotFile);
 el.sessionDatesReset.addEventListener("click", () =>
   apiPost("/session/dates/reset", { session: state.session }).then(() =>

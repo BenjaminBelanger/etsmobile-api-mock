@@ -1,7 +1,7 @@
 import json
 
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -130,7 +130,8 @@ class SnapshotLoadBody(SnapshotRef):
 
 
 class SnapshotImportBody(BaseModel):
-    snapshot: dict
+    snapshot: dict | None = None
+    code: str | None = None
     overwrite: bool = False
 
 
@@ -138,7 +139,7 @@ def _guard(func, *args, **kwargs):
     try:
         return func(*args, **kwargs)
     except snapshots.SnapshotConflict as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse({"error": str(exc), "name": exc.name}, status_code=409)
     except (schedule_editor.EditorError, snapshots.SnapshotError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -363,7 +364,14 @@ def snapshot_delete(body: SnapshotRef):
 
 @router.post("/api/snapshots/import")
 def snapshot_import(body: SnapshotImportBody):
+    if body.code is not None:
+        return _guard(snapshot_editor.import_code, body.code, body.overwrite)
     return _guard(snapshot_editor.import_snapshot, body.snapshot, body.overwrite)
+
+
+@router.get("/api/snapshots/code")
+def snapshot_code(id: str = Query(...)):
+    return _guard(snapshot_editor.share_code, id)
 
 
 @router.get("/api/snapshots/export")

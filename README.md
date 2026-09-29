@@ -89,7 +89,9 @@ editor changes at launch: profile, scenario, generation options, calendar
 position, schedule edits, student profile edits and Pannes. For a situation
 everyone should be able to start from, write a [scenario](#scenarios) instead.
 Snapshots are saved in `snapshots/`, which git ignores: to hand one to a
-teammate, export it and import the file on the other machine. Loading one
+teammate, copy its code (about 2,000 characters, fits in a chat message) or
+export its file, and paste or pick it in **Importer** on the other machine.
+Loading one
 replaces all of it on the running server; a dev-mode code reload falls back to
 the startup settings but keeps the loaded edits.
 
