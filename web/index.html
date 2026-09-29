@@ -239,7 +239,7 @@
         <section class="board board--list" id="snapshotsBoard">
           <ul class="snapshots" id="snapshotList"></ul>
           <div class="board__empty" id="snapshotEmpty" hidden>
-            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver plus tard ou le partager.</p>
+            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver après un redémarrage, ou exportez-le pour qu’un coéquipier reproduise un bug.</p>
           </div>
         </section>
 
@@ -353,7 +353,7 @@
         <form id="snapshotSaveForm" class="form" novalidate>
           <fluent-field label-position="above">
             <fluent-label slot="label" required>Nom</fluent-label>
-            <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Examen final demain" aria-label="Nom de la sauvegarde"></fluent-text-input>
+            <fluent-text-input slot="input" id="fSnapshotName" appearance="filled-darker" placeholder="Bug du cours déplacé" aria-label="Nom de la sauvegarde"></fluent-text-input>
           </fluent-field>
         </form>
         <p class="dialog__hint">Comprend le profil, le scénario, la semaine, les options de génération, l’horaire modifié, le profil étudiant et les pannes actives.</p>
@@ -370,16 +370,17 @@
         <span slot="title" id="snapshotLoadTitle">Charger la sauvegarde</span>
         <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-snapshot-load></fluent-button>
 
+        <p class="dialog__text">Remplace l’horaire, le profil étudiant, les pannes et les réglages (profil, scénario, calendrier). Leur historique d’annulation est vidé.</p>
+        <p class="dialog__hint" id="snapshotRealign"></p>
         <form id="snapshotLoadForm" class="form" novalidate>
-          <fieldset class="choices" id="fSnapshotDates">
-            <legend class="choices__legend">Dates</legend>
-          </fieldset>
-
-          <fieldset class="choices" id="fSnapshotParts">
-            <legend class="choices__legend">Appliquer</legend>
-          </fieldset>
+          <label class="choice" id="snapshotExactChoice">
+            <input type="checkbox" id="fSnapshotExact" />
+            <span class="choice__text">
+              <span class="choice__title">Garder les dates enregistrées</span>
+              <span class="choice__hint" id="snapshotExactHint"></span>
+            </span>
+          </label>
         </form>
-        <p class="dialog__hint">Remplace les réglages (profil, scénario, calendrier) et ce qui est coché. L’historique d’annulation de ce qui est remplacé est vidé.</p>
 
         <fluent-button slot="action" appearance="secondary" data-close-snapshot-load>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="snapshotLoadSubmit">Charger</fluent-button>

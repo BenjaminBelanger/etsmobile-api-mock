@@ -107,18 +107,6 @@ SCENARIO_DESCRIPTIONS = {
     "none": "Aucune modification au calendrier",
 }
 
-DATE_MODE_LABELS = {
-    "week": "Recaler sur aujourd'hui",
-    "exact": "Garder les dates enregistrées",
-}
-
-SNAPSHOT_OPTIONS = (
-    "snapshot_dates",
-    "snapshot_schedule",
-    "snapshot_student",
-    "snapshot_failures",
-)
-
 WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
@@ -482,8 +470,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     snapshot.add_argument(
         "--snapshot",
-        "--preset",
-        dest="snapshot",
         metavar="NOM",
         help="Nom de la sauvegarde à charger.",
         default=None,
@@ -493,27 +479,6 @@ def _build_parser() -> argparse.ArgumentParser:
         choices=snapshots.DATE_MODES,
         help="week: recaler sur aujourd'hui (défaut); exact: garder les dates "
         "enregistrées.",
-        default=None,
-    )
-    snapshot.add_argument(
-        "--no-snapshot-schedule",
-        dest="snapshot_schedule",
-        action="store_false",
-        help="N'applique pas l'horaire enregistré: l'horaire est régénéré.",
-        default=None,
-    )
-    snapshot.add_argument(
-        "--no-snapshot-student",
-        dest="snapshot_student",
-        action="store_false",
-        help="N'applique pas le profil étudiant enregistré.",
-        default=None,
-    )
-    snapshot.add_argument(
-        "--no-snapshot-failures",
-        dest="snapshot_failures",
-        action="store_false",
-        help="N'applique pas les pannes enregistrées dans la sauvegarde.",
         default=None,
     )
 
@@ -667,44 +632,13 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, str]:
     )
 
 
-def _failure_summary(config: dict) -> str:
-    parts = []
-    if config.get("latencyMs"):
-        parts.append(f"latence {config['latencyMs']} ms")
-    if config.get("errorRate"):
-        parts.append(f"erreurs aléatoires {round(config['errorRate'] * 100)} %")
-    if config.get("failEndpoints"):
-        parts.append(f"en panne: {', '.join(config['failEndpoints'])}")
-    if config.get("timeoutEndpoints"):
-        parts.append(f"figés: {', '.join(config['timeoutEndpoints'])}")
-    if "timeoutDurationS" in config:
-        parts.append(f"délai de {config['timeoutDurationS']} s")
-    if config.get("malformed"):
-        parts.append("réponses tronquées")
-    if config.get("authRequired"):
-        parts.append("authentification requise")
-    if config.get("tokenExpiredCalls"):
-        parts.append(f"jeton expiré pour {config['tokenExpiredCalls']} appel(s)")
-    if config.get("tokensRejected"):
-        parts.append("jetons refusés")
-    return ", ".join(parts)
-
-
 def _snapshot_config(
-    snapshot_id: str,
-    mode: str,
-    *,
-    schedule: bool = True,
-    student: bool = True,
-    failures: bool = True,
+    snapshot_id: str, mode: str = snapshots.DEFAULT_DATE_MODE
 ) -> tuple[dict, str, str, str, snapshots.Plan]:
     snapshot = snapshots.read(snapshot_id)
-    plan = snapshots.plan(
-        snapshot, mode, schedule=schedule, student=student, failures=failures
-    )
+    plan = snapshots.plan(snapshot, mode)
     overrides = snapshots.setup_to_env(plan.setup)
-    if plan.failures:
-        overrides.update(_failure_env(plan.failures))
+    overrides.update(_failure_env(plan.failures))
     display = f"{plan.setup['profile']} + sauvegarde « {snapshot['name']} »"
     scenario = plan.setup.get("scenario") or "none"
     anchor = snapshot["anchor"]
@@ -735,11 +669,7 @@ def _config_from_snapshot(
         )
     try:
         return _snapshot_config(
-            snapshot_id,
-            args.snapshot_dates or snapshots.DEFAULT_DATE_MODE,
-            schedule=args.snapshot_schedule is not False,
-            student=args.snapshot_student is not False,
-            failures=args.snapshot_failures is not False,
+            snapshot_id, args.snapshot_dates or snapshots.DEFAULT_DATE_MODE
         )
     except snapshots.SnapshotError as exc:
         parser.error(f"sauvegarde illisible: {exc}")
@@ -999,42 +929,6 @@ def _select_snapshot() -> dict | None:
         return items[idx - 1]
 
 
-def _prompt_snapshot_dates(item: dict) -> str:
-    anchor = item["anchor"]
-    weekday = _saved_weekday(anchor)
-    details = {
-        "week": f"retrouve la même situation aujourd'hui ({_position_label(anchor)}); "
-        "les dates avancent par semaines entières, donc enregistrée un "
-        f"{weekday}, un « examen demain » ne revient qu'un {weekday}",
-        "exact": f"rien n'est décalé, l'horaire garde les dates du {anchor['date']} "
-        "(réglez l'horloge du téléphone)",
-    }
-    print("\n=== Dates de la sauvegarde ===\n")
-    for i, mode in enumerate(snapshots.DATE_MODES, 1):
-        print(f"  {i}) {DATE_MODE_LABELS[mode]}: {details[mode]}")
-    while True:
-        try:
-            raw = input("\nChoix [1]: ").strip()
-        except EOFError:
-            return snapshots.DEFAULT_DATE_MODE
-        if not raw:
-            return snapshots.DEFAULT_DATE_MODE
-        idx = _validate_menu_choice(raw, len(snapshots.DATE_MODES))
-        if idx is None:
-            print("  Choix invalide, réessayez.")
-            continue
-        return snapshots.DATE_MODES[idx - 1]
-
-
-def _prompt_apply(saved: str, question: str) -> bool:
-    print(f"\n  {saved}")
-    try:
-        confirm = input(f"  {question} (O/n): ").strip().lower()
-    except EOFError:
-        confirm = "o"
-    return confirm != "n"
-
-
 def _config_from_snapshot_menu() -> (
     tuple[dict, str, str, str, snapshots.Plan] | None
 ):
@@ -1042,27 +936,7 @@ def _config_from_snapshot_menu() -> (
     if item is None:
         print("Annulé.")
         return None
-    mode = _prompt_snapshot_dates(item)
-    regenerated = "régénéré sur le calendrier réel" if mode == "exact" else "régénéré"
-    schedule = bool(item["sessions"]) and _prompt_apply(
-        f"Horaire enregistré: {', '.join(item['sessions'])}",
-        f"Appliquer l'horaire? Sinon, il est {regenerated}.",
-    )
-    student = bool(item["student"]) and _prompt_apply(
-        f"Profil étudiant enregistré: {', '.join(item['student'])}",
-        "Appliquer le profil étudiant?",
-    )
-    failures = bool(item["failures"]) and _prompt_apply(
-        f"Pannes enregistrées: {_failure_summary(item['failures'])}",
-        "Appliquer les pannes?",
-    )
-    return _snapshot_config(
-        item["id"],
-        mode,
-        schedule=schedule,
-        student=student,
-        failures=failures,
-    )
+    return _snapshot_config(item["id"])
 
 
 def _clear_overrides() -> None:
@@ -1439,8 +1313,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     if args.snapshot is not None:
         config = _config_from_snapshot(parser, args)
-    elif any(getattr(args, name) is not None for name in SNAPSHOT_OPTIONS):
-        parser.error("--snapshot-dates et --no-snapshot-* exigent --snapshot")
+    elif args.snapshot_dates is not None:
+        parser.error("--snapshot-dates exige --snapshot")
     elif interactive:
         config = _config_from_menu()
     else:

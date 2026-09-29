@@ -489,16 +489,16 @@ def test_exact_dates_pin_a_calendar_that_was_shifted_when_saved(today):
     }
 
 
-def test_a_plan_without_the_schedule_keeps_the_calendar_but_no_edit(today):
+def test_a_plan_carries_every_part_of_the_snapshot(today):
     today("2027-02-10")
     body = snapshot(
         anchor=anchor(BETWEEN),
         setup={"profile": "generated-busy", "scenario": "friday-off"},
     )
 
-    plan = snapshots.plan(body, "week", schedule=False)
+    plan = snapshots.plan(body, "week")
 
-    assert plan.schedule == {}
+    assert plan.schedule
     assert plan.setup == {
         "profile": "generated-busy",
         "scenario": "friday-off",
@@ -507,14 +507,6 @@ def test_a_plan_without_the_schedule_keeps_the_calendar_but_no_edit(today):
     }
     assert plan.student == {"prenom": "Marie"}
     assert plan.failures == {"latencyMs": "100-800", "errorRate": 0.3}
-
-
-def test_the_student_profile_and_the_pannes_can_be_left_out_of_a_plan():
-    plan = snapshots.plan(snapshot(), student=False, failures=False)
-
-    assert plan.student is None
-    assert plan.failures is None
-    assert plan.schedule
 
 
 def test_calendar_options_left_in_a_saved_setup_are_ignored(today):
@@ -531,15 +523,16 @@ def test_an_unknown_date_mode_is_refused():
         snapshots.plan(snapshot(), "setup")
 
 
-def test_writing_leaves_the_student_profile_alone_when_it_is_not_loaded(tmp_path):
+def test_writing_empty_parts_removes_the_old_overrides(tmp_path):
     schedule_path = tmp_path / "schedule.json"
     student_path = tmp_path / "student.json"
-    student_path.write_text('{"nom": "Kept"}', encoding="utf-8")
+    schedule_path.write_text('{"A2026": {}}', encoding="utf-8")
+    student_path.write_text('{"nom": "Ancien"}', encoding="utf-8")
 
-    snapshots.write_overrides({}, None, schedule_path, student_path)
+    snapshots.write_overrides({}, {}, schedule_path, student_path)
 
-    assert json.loads(student_path.read_text("utf-8")) == {"nom": "Kept"}
     assert not schedule_path.exists()
+    assert not student_path.exists()
 
 
 def api(client, path, **body):
@@ -713,10 +706,10 @@ def test_exact_dates_only_keep_the_hidden_next_session(client, reconfigure):
 
 
 def test_loading_changes_the_setup_without_a_restart(client):
-    body = snapshot(setup={"profile": "semester-off", "scenario": "friday-off"})
+    body = snapshot(setup={"profile": "semester-off", "scenario": "friday-off"}, sessions={})
     snapshots.write(body)
 
-    result = api(client, "/load", id="mi-session", schedule=False)
+    result = api(client, "/load", id="mi-session")
 
     assert data_store.PROFILE_NAME == "semester-off"
     assert data_store.SCENARIO_NAME == "friday-off"
@@ -725,45 +718,33 @@ def test_loading_changes_the_setup_without_a_restart(client):
 
 
 def test_the_loaded_setup_survives_a_data_reload(client):
-    snapshots.write(snapshot(setup={"profile": "semester-off"}))
-    api(client, "/load", id="mi-session", schedule=False)
+    snapshots.write(snapshot(setup={"profile": "semester-off"}, sessions={}))
+    api(client, "/load", id="mi-session")
 
     assert client.post("/reload").status_code == 200
 
     assert data_store.PROFILE_NAME == "semester-off"
 
 
-def test_without_the_schedule_the_current_edits_are_cleared(client):
+def test_a_snapshot_without_schedule_edits_clears_the_current_ones(client):
     move_block()
-    snapshots.write(snapshot())
+    snapshots.write(snapshot(sessions={}))
 
-    api(client, "/load", id="mi-session", schedule=False)
+    api(client, "/load", id="mi-session")
 
     assert data_store._load_overrides() == {}
     assert data_store.load_student_overrides() == {"prenom": "Marie"}
     assert failures.get_config().error_rate == 0.3
 
 
-def test_without_the_student_profile_the_current_one_is_kept(client):
+def test_loading_replaces_the_student_profile_and_its_undo_history(client):
     student_editor.set_field("prenom", "Luc")
     snapshots.write(snapshot())
 
-    api(client, "/load", id="mi-session", student=False)
+    api(client, "/load", id="mi-session")
 
-    assert data_store.load_student_overrides() == {"prenom": "Luc"}
-    assert student_editor.get_state()["canUndo"] is True
-    assert failures.get_config().error_rate == 0.3
-
-
-def test_without_the_pannes_the_current_ones_are_kept(client):
-    failures.update_config(failures.FailureConfigUpdate(errorRate=0.5))
-    api(client, "/save", name="Démo")
-    failures.update_config(failures.FailureConfigUpdate(errorRate=0.1, malformed=True))
-
-    api(client, "/load", id="demo", failures=False)
-
-    assert failures.get_config().error_rate == 0.1
-    assert failures.get_config().malformed is True
+    assert data_store.load_student_overrides() == {"prenom": "Marie"}
+    assert student_editor.get_state()["canUndo"] is False
 
 
 def test_loading_replaces_the_pannes_set_after_the_save(client):

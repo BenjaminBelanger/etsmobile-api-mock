@@ -130,20 +130,12 @@ def _apply(setup_env, schedule, student, failure_config) -> None:
         data_store.overrides_path(),
         data_store.student_overrides_path(),
     )
-    if failure_config is not None:
-        failures.reset_config()
-        failures.update_config(failures.FailureConfigUpdate(**failure_config))
+    failures.reset_config()
+    failures.update_config(failures.FailureConfigUpdate(**failure_config))
     data_store.reload()
 
 
-def load(
-    snapshot_id: str,
-    mode: str = snapshots.DEFAULT_DATE_MODE,
-    *,
-    schedule: bool = True,
-    student: bool = True,
-    include_failures: bool = True,
-) -> dict:
+def load(snapshot_id: str, mode: str = snapshots.DEFAULT_DATE_MODE) -> dict:
     snapshot = snapshots.read(snapshot_id)
     with schedule_editor._lock, student_editor._lock:
         previous = (
@@ -153,13 +145,7 @@ def load(
             failures.get_config().to_dict(),
         )
         try:
-            plan = snapshots.plan(
-                snapshot,
-                mode,
-                schedule=schedule,
-                student=student,
-                failures=include_failures,
-            )
+            plan = snapshots.plan(snapshot, mode)
             _check_setup(plan.setup)
             _apply(
                 snapshots.setup_to_env(plan.setup),
@@ -172,6 +158,5 @@ def load(
             raise EditorError(f"Could not load '{snapshot['name']}': {exc}") from exc
         finally:
             schedule_editor.clear_cache()
-            if student:
-                student_editor.clear_history()
+            student_editor.clear_history()
     return {**get_state(), "notices": plan.notices}

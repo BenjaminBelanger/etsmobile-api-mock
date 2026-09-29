@@ -147,8 +147,10 @@ const el = {
   snapshotLoadTitle: document.getElementById("snapshotLoadTitle"),
   snapshotLoadForm: document.getElementById("snapshotLoadForm"),
   snapshotLoadSubmit: document.getElementById("snapshotLoadSubmit"),
-  fSnapshotDates: document.getElementById("fSnapshotDates"),
-  fSnapshotParts: document.getElementById("fSnapshotParts"),
+  snapshotRealign: document.getElementById("snapshotRealign"),
+  snapshotExactChoice: document.getElementById("snapshotExactChoice"),
+  snapshotExactHint: document.getElementById("snapshotExactHint"),
+  fSnapshotExact: document.getElementById("fSnapshotExact"),
   snapshotConfirmDialog: document.getElementById("snapshotConfirmDialog"),
   snapshotConfirmTitle: document.getElementById("snapshotConfirmTitle"),
   snapshotConfirmText: document.getElementById("snapshotConfirmText"),
@@ -2731,11 +2733,6 @@ function exactHint(item) {
   );
 }
 
-const DATE_MODES = [
-  { id: "week", title: "Recaler sur aujourd’hui", hint: realignHint },
-  { id: "exact", title: "Garder les dates enregistrées", hint: exactHint },
-];
-
 function clampHint(anchor, current) {
   if (anchor.betweenSessions) return "";
   if (anchor.week < 1) return " La semaine 1 sera utilisée.";
@@ -2939,8 +2936,6 @@ async function loadSnapshots() {
   }
 }
 
-const checkedValue = (root, name) => root.querySelector(`input[name="${name}"]:checked`)?.value;
-
 function setSaveConflict(message) {
   state.snapshotOverwrite = !!message;
   el.snapshotSaveConflict.hidden = !message;
@@ -2977,95 +2972,25 @@ async function submitSnapshotSave() {
   }
 }
 
-function choiceHtml(name, value, title, hint, checked) {
-  return `<label class="choice">
-      <input type="radio" name="${name}" value="${value}"${checked ? " checked" : ""} />
-      <span class="choice__text">
-        <span class="choice__title">${title}</span>
-        <span class="choice__hint">${escapeHtml(hint)}</span>
-      </span>
-    </label>`;
-}
-
-function failureListHtml(failures) {
-  return `<span class="choice__list">${failures
-    .map(
-      ({ kind, summary }) => `<span>${icon(kind.icon, 16)}${kind.label}
-        <span class="choice__value">${escapeHtml(summary)}</span></span>`
-    )
-    .join("")}</span>`;
-}
-
-function scheduleHint(item, dates) {
-  if (!item.sessions.length) return "Aucune modification enregistrée: l’horaire est régénéré.";
-  const calendar = dates === "exact" ? " sur le calendrier réel" : "";
-  return (
-    `Modifications de ${item.sessions.join(", ")}. Décoché: les modifications actuelles ` +
-    `sont effacées et l’horaire est régénéré${calendar}.`
-  );
-}
-
-function refreshScheduleHint() {
-  const item = state.snapshotTarget;
-  const hint = el.fSnapshotParts.querySelector('[data-hint-for="fSnapshotSchedule"]');
-  if (!item || !hint) return;
-  hint.textContent = scheduleHint(item, checkedValue(el.snapshotLoadForm, "snapshotDates"));
-}
-
-function snapshotParts(item) {
-  const failures = includedFailures(item.failures);
-  const fields = item.student.length;
-  return [
-    { id: "fSnapshotSchedule", title: "Horaire", hint: scheduleHint(item, DATE_MODES[0].id) },
-    {
-      id: "fSnapshotStudent",
-      title: "Profil étudiant",
-      hint: fields
-        ? `${plural(fields, "champ")} modifié${fields > 1 ? "s" : ""}. Décoché: le profil actuel est gardé.`
-        : "Aucune modification: le profil par défaut est remis. Décoché: le profil actuel est gardé.",
-    },
-    {
-      id: "fSnapshotFailures",
-      title: "Pannes",
-      list: failures.length ? failureListHtml(failures) : "",
-      hint: failures.length
-        ? "Décoché: les pannes actuelles sont gardées."
-        : "Aucune panne: les pannes actives seront retirées. Décoché: elles sont gardées.",
-    },
-  ];
-}
-
-function partHtml({ id, title, list = "", hint }) {
-  return `<label class="choice">
-      <input type="checkbox" id="${id}" checked />
-      <span class="choice__text">
-        <span class="choice__title">${title}</span>
-        ${list}
-        <span class="choice__hint" data-hint-for="${id}">${escapeHtml(hint)}</span>
-      </span>
-    </label>`;
+function showDates() {
+  el.snapshotRealign.hidden = el.fSnapshotExact.checked;
 }
 
 function openSnapshotLoad(item) {
+  const current = state.snapshots?.current;
   state.snapshotTarget = item;
   el.snapshotLoadTitle.textContent = `Charger « ${item.name} »`;
-  const current = state.snapshots?.current;
-  el.fSnapshotDates.innerHTML =
-    `<legend class="choices__legend">Dates</legend>` +
-    DATE_MODES.map((mode, i) =>
-      choiceHtml("snapshotDates", mode.id, mode.title, mode.hint(item, current), i === 0)
-    ).join("");
-  el.fSnapshotParts.innerHTML =
-    `<legend class="choices__legend">Appliquer</legend>` +
-    snapshotParts(item).map(partHtml).join("");
+  el.snapshotRealign.textContent = realignHint(item, current);
+  el.snapshotExactHint.textContent = exactHint(item);
+  el.snapshotExactChoice.hidden = unchangedToday(item.anchor, current);
+  el.fSnapshotExact.checked = false;
+  showDates();
   el.snapshotLoadDialog.show();
 }
 
-async function refreshAfterSnapshot(failuresReplaced) {
-  if (failuresReplaced) {
-    state.failuresPast = [];
-    state.failuresFuture = [];
-  }
+async function refreshAfterSnapshot() {
+  state.failuresPast = [];
+  state.failuresFuture = [];
   state.student = null;
   const [schedule] = await Promise.all([apiGet(""), loadFailures()]);
   state.session = null;
@@ -3075,19 +3000,12 @@ async function refreshAfterSnapshot(failuresReplaced) {
 async function submitSnapshotLoad() {
   const item = state.snapshotTarget;
   if (!item) return;
-  const applied = (id) => !!el.fSnapshotParts.querySelector(`#${id}`)?.checked;
-  const body = {
-    id: item.id,
-    dates: checkedValue(el.snapshotLoadForm, "snapshotDates") || "week",
-    schedule: applied("fSnapshotSchedule"),
-    student: applied("fSnapshotStudent"),
-    failures: applied("fSnapshotFailures"),
-  };
+  const body = { id: item.id, dates: el.fSnapshotExact.checked ? "exact" : "week" };
   const result = await snapshotRequest("/load", body);
   if (!result.data) return;
   el.snapshotLoadDialog.hide();
   try {
-    await refreshAfterSnapshot(body.failures);
+    await refreshAfterSnapshot();
   } catch (err) {
     toast(err.message || "Serveur injoignable", true);
   }
@@ -3296,7 +3214,7 @@ el.snapshotSaveDialog
   .querySelectorAll("[data-close-snapshot-save]")
   .forEach((n) => n.addEventListener("click", () => el.snapshotSaveDialog.hide()));
 el.snapshotLoadSubmit.addEventListener("click", submitSnapshotLoad);
-el.fSnapshotDates.addEventListener("change", refreshScheduleHint);
+el.fSnapshotExact.addEventListener("change", showDates);
 el.snapshotLoadForm.addEventListener("submit", (e) => {
   e.preventDefault();
   submitSnapshotLoad();

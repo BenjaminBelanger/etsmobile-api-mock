@@ -34,9 +34,9 @@ class SnapshotConflict(SnapshotError):
 @dataclass
 class Plan:
     setup: dict
-    failures: dict | None
+    failures: dict
     schedule: dict
-    student: dict | None
+    student: dict
     notices: list[str] = field(default_factory=list)
 
 
@@ -399,14 +399,7 @@ def _exact_schedule(snapshot: dict) -> dict:
     return schedule
 
 
-def plan(
-    snapshot: dict,
-    mode: str = DEFAULT_DATE_MODE,
-    *,
-    schedule: bool = True,
-    student: bool = True,
-    failures: bool = True,
-) -> Plan:
+def plan(snapshot: dict, mode: str = DEFAULT_DATE_MODE) -> Plan:
     if mode not in DATE_MODES:
         raise SnapshotError(f"Unknown date mode '{mode}'")
     snapshot = validate(snapshot)
@@ -425,18 +418,16 @@ def plan(
         semester_gap=calendar.get("semesterGap"),
     )
 
-    if not schedule:
-        edits = {}
-    elif mode == "week":
+    if mode == "week":
         edits = _shifted_schedule(snapshot, active, notices)
     else:
         edits = _exact_schedule(snapshot)
 
     return Plan(
         setup={**without_calendar(snapshot["setup"]), **calendar},
-        failures=copy.deepcopy(snapshot["failures"]) if failures else None,
+        failures=copy.deepcopy(snapshot["failures"]),
         schedule=edits,
-        student=copy.deepcopy(snapshot["student"]) if student else None,
+        student=copy.deepcopy(snapshot["student"]),
         notices=notices,
     )
 
@@ -451,8 +442,7 @@ def _write_json(path: Path, payload: dict) -> None:
 
 
 def write_overrides(
-    schedule: dict, student: dict | None, schedule_path: Path, student_path: Path
+    schedule: dict, student: dict, schedule_path: Path, student_path: Path
 ) -> None:
     _write_json(schedule_path, schedule)
-    if student is not None:
-        _write_json(student_path, student)
+    _write_json(student_path, student)

@@ -84,28 +84,29 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 ### Snapshots tab
 
-The **Sauvegardes** tab saves the mock state under a name: profile, scenario,
-generation options, calendar position, schedule edits, student profile edits
-and Pannes. Snapshots are saved in `snapshots/`, which git ignores: to share
-one, export it and import the file on the other machine. Loading one applies
-it to the running server; a dev-mode code reload falls back to the startup
-settings but keeps the loaded edits.
+The **Sauvegardes** tab keeps what you set up by hand, since `start.py` clears
+editor changes at launch: profile, scenario, generation options, calendar
+position, schedule edits, student profile edits and Pannes. For a situation
+everyone should be able to start from, write a [scenario](#scenarios) instead.
+Snapshots are saved in `snapshots/`, which git ignores: to hand one to a
+teammate, export it and import the file on the other machine. Loading one
+replaces all of it on the running server; a dev-mode code reload falls back to
+the startup settings but keeps the loaded edits.
 
-The calendar position is the week of the active session, or between sessions
-once it has ended, plus the days off before the next session (between
-sessions, the days left until it starts), or no next session. **Recaler sur
-aujourd'hui** sets the matching [session calendar](#session-calendar) options
-so the same situation shows up relative to today, and moves schedule edits by
-whole weeks: "exam tomorrow" only comes back on the weekday it was saved on.
-**Garder les dates enregistrées** moves nothing, for use with the phone clock
-set to the save date. Replaced days from `lireJoursRemplaces` never move.
+Loading brings back the same calendar position relative to today (the week of
+the active session or between sessions, and the days before the next one) by
+setting the matching [session calendar](#session-calendar) options. Schedule
+edits move by whole weeks, so "exam tomorrow" only comes back on the weekday it
+was saved on. **Garder les dates enregistrées** moves nothing, for use with the
+phone clock set to the save date. Replaced days from `lireJoursRemplaces` never
+move.
 
 ```bash
 python start.py --snapshot "examen final"
-python start.py --snapshot demo --snapshot-dates exact --no-snapshot-failures
+python start.py --snapshot demo --snapshot-dates exact
 ```
 
-`--snapshot` (alias `--preset`) can't be combined with the other setup flags.
+`--snapshot` can't be combined with the other setup flags.
 
 ### Front-end build
 

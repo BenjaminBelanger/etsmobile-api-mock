@@ -19,12 +19,6 @@ const rowFor = (app, id) => app.query(`#snapshotList .snapshot[data-id="${id}"]`
 const action = (app, id, act) => rowFor(app, id).querySelector(`[data-act="${act}"]`);
 const posted = (app, path) => app.server.snapshots.lastCall(path)?.body;
 
-function pick(app, name, value) {
-  const radio = app.query(`input[name="${name}"][value="${value}"]`);
-  radio.checked = true;
-  app.fire(radio, "change");
-}
-
 async function saveAs(app, name) {
   await app.click(app.byId("snapshotSaveBtn"));
   app.byId("fSnapshotName").value = name;
@@ -284,7 +278,7 @@ describe("loading a snapshot", () => {
   }
 
   const savedOn = (anchor) => ({ ...clone(SNAPSHOT_ITEMS[0]), anchor });
-  const firstHint = (app) => app.query("#fSnapshotDates .choice__hint").textContent;
+  const realign = (app) => app.byId("snapshotRealign").textContent;
   const today = () => {
     const now = new Date();
     const pad = (n) => String(n).padStart(2, "0");
@@ -300,31 +294,59 @@ describe("loading a snapshot", () => {
     day.setDate(day.getDate() + (day.getDay() === 1 ? 1 : -1));
     return isoDay(day);
   };
-  const partHints = (app) =>
-    app.queryAll("#fSnapshotParts .choice__hint").map((h) => h.textContent);
 
-  function uncheck(app, id) {
-    const box = app.byId(id);
-    box.checked = false;
+  function keepDates(app, keep = true) {
+    const box = app.byId("fSnapshotExact");
+    box.checked = keep;
     app.fire(box, "change");
   }
 
-  test("offers two date choices, realigning on today first", async () => {
+  test("realigns on today unless the saved dates are kept", async () => {
     const app = await onSnapshots();
     await openLoad(app);
 
-    const modes = app.queryAll('input[name="snapshotDates"]');
-    assert.deepEqual(modes.map((m) => m.value), ["week", "exact"]);
-    assert.equal(modes[0].checked, true);
     assert.equal(app.byId("snapshotLoadTitle").textContent, "Charger « Démo »");
-    const titles = app.queryAll("#fSnapshotDates .choice__title").map((t) => t.textContent);
-    assert.deepEqual(titles, ["Recaler sur aujourd’hui", "Garder les dates enregistrées"]);
-    const hints = app.queryAll("#fSnapshotDates .choice__hint").map((h) => h.textContent);
+    assert.equal(app.byId("fSnapshotExact").checked, false);
+    assert.equal(app.byId("snapshotExactChoice").hidden, false);
+    assert.equal(app.byId("snapshotRealign").hidden, false);
     assert.equal(
-      hints[1],
+      app.byId("snapshotExactHint").textContent,
       "Rien n’est décalé: l’horaire garde les dates du 25 sept. 2026. " +
         "Pour reproduire un bug, réglez l’horloge du téléphone à cette date.",
     );
+    app.close();
+  });
+
+  test("has nothing else to choose", async () => {
+    const app = await onSnapshots();
+    await openLoad(app);
+
+    const inputs = app.queryAll("#snapshotLoadDialog input");
+    assert.deepEqual(inputs.map((input) => input.id), ["fSnapshotExact"]);
+    app.close();
+  });
+
+  test("drops the realign explanation while the saved dates are kept", async () => {
+    const app = await onSnapshots();
+    await openLoad(app);
+
+    keepDates(app);
+    assert.equal(app.byId("snapshotRealign").hidden, true);
+
+    keepDates(app, false);
+    assert.equal(app.byId("snapshotRealign").hidden, false);
+    app.close();
+  });
+
+  test("forgets the kept dates when it opens again", async () => {
+    const app = await onSnapshots();
+    await openLoad(app);
+    keepDates(app);
+    await app.click(app.query("[data-close-snapshot-load]"));
+    await openLoad(app, "examen-final");
+
+    assert.equal(app.byId("fSnapshotExact").checked, false);
+    assert.equal(app.byId("snapshotRealign").hidden, false);
     app.close();
   });
 
@@ -335,7 +357,7 @@ describe("loading a snapshot", () => {
     await openLoad(app);
 
     assert.equal(
-      firstHint(app),
+      realign(app),
       "Retrouve la même situation: aujourd’hui tombe à la semaine 4 de la session et la " +
         "suivante commence après 16 jours de congé. Les cours gardent leur jour de " +
         "semaine: enregistrée un vendredi, un « examen demain » ne revient qu’un vendredi.",
@@ -354,7 +376,7 @@ describe("loading a snapshot", () => {
 
     assert.deepEqual(details.slice(0, 2), ["entre deux sessions", "rentrée dans 10 jours"]);
     assert.match(
-      firstHint(app),
+      realign(app),
       /^Retrouve la même situation: la session active s’est terminée hier et la suivante commence dans 10 jours\. .*enregistrée un mardi,/,
     );
     app.close();
@@ -366,9 +388,8 @@ describe("loading a snapshot", () => {
     });
     await openLoad(app);
 
-    const hints = app.queryAll("#fSnapshotDates .choice__hint").map((h) => h.textContent);
-    assert.match(hints[0], /semaine 6 de la session et aucune session suivante n’est publiée\./);
-    assert.match(hints[1], /La session suivante reste masquée\.$/);
+    assert.match(realign(app), /semaine 6 de la session et aucune session suivante n’est publiée\./);
+    assert.match(app.byId("snapshotExactHint").textContent, /La session suivante reste masquée\.$/);
     app.close();
   });
 
@@ -378,17 +399,18 @@ describe("loading a snapshot", () => {
     });
     await openLoad(app);
 
-    assert.match(firstHint(app), /L’horaire de H2026 est repris dans A2026\.$/);
+    assert.match(realign(app), /L’horaire de H2026 est repris dans A2026\.$/);
     app.close();
   });
 
-  test("says there is nothing to shift for a snapshot saved this week", async () => {
+  test("has no dates to choose for a snapshot saved this week", async () => {
     const app = await onSnapshots({
       snapshots: [savedOn({ session: "A2026", date: today(), week: 4, gap: 16 })],
     });
     await openLoad(app);
 
-    assert.equal(firstHint(app), "Enregistrée cette semaine: rien à décaler, tout est chargé tel quel.");
+    assert.equal(realign(app), "Enregistrée cette semaine: rien à décaler, tout est chargé tel quel.");
+    assert.equal(app.byId("snapshotExactChoice").hidden, true);
     app.close();
   });
 
@@ -401,8 +423,10 @@ describe("loading a snapshot", () => {
     });
     await openLoad(sameWeek);
 
-    assert.equal(firstHint(sameDay), "Enregistrée aujourd’hui: rien à décaler, tout est chargé tel quel.");
-    assert.match(firstHint(sameWeek), /^Retrouve la même situation/);
+    assert.equal(realign(sameDay), "Enregistrée aujourd’hui: rien à décaler, tout est chargé tel quel.");
+    assert.equal(sameDay.byId("snapshotExactChoice").hidden, true);
+    assert.match(realign(sameWeek), /^Retrouve la même situation/);
+    assert.equal(sameWeek.byId("snapshotExactChoice").hidden, false);
     sameDay.close();
     sameWeek.close();
   });
@@ -413,122 +437,27 @@ describe("loading a snapshot", () => {
     });
     await openLoad(app);
 
-    assert.match(
-      firstHint(app),
-      /A2026\. A2026 n’a que 16 semaines: la semaine 16 sera utilisée\.$/,
-    );
+    assert.match(realign(app), /A2026\. A2026 n’a que 16 semaines: la semaine 16 sera utilisée\.$/);
     app.close();
   });
 
-  test("applies the schedule, the student profile and the pannes by default", async () => {
-    const app = await onSnapshots();
-    await openLoad(app);
-
-    const titles = app.queryAll("#fSnapshotParts .choice__title").map((t) => t.textContent);
-    assert.deepEqual(titles, ["Horaire", "Profil étudiant", "Pannes"]);
-    for (const id of ["fSnapshotSchedule", "fSnapshotStudent", "fSnapshotFailures"]) {
-      assert.equal(app.byId(id).checked, true, id);
-    }
-    assert.deepEqual(partHints(app), [
-      "Modifications de A2026. Décoché: les modifications actuelles sont effacées et " +
-        "l’horaire est régénéré.",
-      "1 champ modifié. Décoché: le profil actuel est gardé.",
-      "Décoché: les pannes actuelles sont gardées.",
-    ]);
-    app.close();
-  });
-
-  test("lists the pannes that will be applied", async () => {
-    const app = await onSnapshots();
-    await openLoad(app);
-
-    const items = app.queryAll("#fSnapshotParts .choice__list > span").map((row) =>
-      row.textContent.replace(/\s+/g, " ").trim(),
-    );
-    assert.deepEqual(items, ["Latence 100-800 ms", "Erreurs aléatoires 30 % d'erreurs"]);
-    app.close();
-  });
-
-  test("warns that exact dates without the schedule use the real calendar", async () => {
-    const app = await onSnapshots();
-    await openLoad(app);
-    const scheduleHint = () => partHints(app)[0];
-
-    pick(app, "snapshotDates", "exact");
-    assert.equal(
-      scheduleHint(),
-      "Modifications de A2026. Décoché: les modifications actuelles sont effacées et " +
-        "l’horaire est régénéré sur le calendrier réel.",
-    );
-
-    pick(app, "snapshotDates", "week");
-    assert.doesNotMatch(scheduleHint(), /calendrier réel/);
-    app.close();
-  });
-
-  test("says what loading a snapshot with nothing saved does", async () => {
-    const app = await onSnapshots();
-    await openLoad(app, "examen-final");
-
-    assert.deepEqual(partHints(app), [
-      "Aucune modification enregistrée: l’horaire est régénéré.",
-      "Aucune modification: le profil par défaut est remis. Décoché: le profil actuel est gardé.",
-      "Aucune panne: les pannes actives seront retirées. Décoché: elles sont gardées.",
-    ]);
-    app.close();
-  });
-
-  test("sends the default choices", async () => {
+  test("sends the realigned dates by default", async () => {
     const app = await onSnapshots();
     await openLoad(app);
     await app.click(app.byId("snapshotLoadSubmit"));
 
-    assert.deepEqual(posted(app, "/load"), {
-      id: "demo",
-      dates: "week",
-      schedule: true,
-      student: true,
-      failures: true,
-    });
+    assert.deepEqual(posted(app, "/load"), { id: "demo", dates: "week" });
     assert.equal(app.byId("snapshotLoadDialog").open, false);
     app.close();
   });
 
-  for (const [id, part] of [
-    ["fSnapshotSchedule", "schedule"],
-    ["fSnapshotStudent", "student"],
-    ["fSnapshotFailures", "failures"],
-  ]) {
-    test(`can leave out the ${part} alone`, async () => {
-      const app = await onSnapshots();
-      await openLoad(app);
-      uncheck(app, id);
-      await app.click(app.byId("snapshotLoadSubmit"));
-
-      const sent = posted(app, "/load");
-      assert.equal(sent[part], false);
-      const others = ["schedule", "student", "failures"].filter((name) => name !== part);
-      assert.deepEqual(others.map((name) => sent[name]), [true, true]);
-      app.close();
-    });
-  }
-
-  test("can keep exact dates and leave everything else out", async () => {
+  test("sends the saved dates when they are kept", async () => {
     const app = await onSnapshots();
     await openLoad(app, "examen-final");
-    pick(app, "snapshotDates", "exact");
-    for (const id of ["fSnapshotSchedule", "fSnapshotStudent", "fSnapshotFailures"]) {
-      uncheck(app, id);
-    }
+    keepDates(app);
     await app.click(app.byId("snapshotLoadSubmit"));
 
-    assert.deepEqual(posted(app, "/load"), {
-      id: "examen-final",
-      dates: "exact",
-      schedule: false,
-      student: false,
-      failures: false,
-    });
+    assert.deepEqual(posted(app, "/load"), { id: "examen-final", dates: "exact" });
     app.close();
   });
 
@@ -547,23 +476,20 @@ describe("loading a snapshot", () => {
     app.close();
   });
 
-  for (const [applied, disabled] of [[true, true], [false, false]]) {
-    test(`${applied ? "forgets" : "keeps"} the pannes undo history when they are ${applied ? "" : "not "}loaded`, async () => {
-      const app = await mount({ failures: { latencyMs: 500 } });
-      await openTab(app, "viewFailures");
-      app.select(app.query('.injection[data-kind="latency"] [data-field="latencyMs"]'), "200-900");
-      await flush();
-      await openTab(app, "viewSnapshots");
-      await openLoad(app);
-      if (!applied) uncheck(app, "fSnapshotFailures");
-      await app.click(app.byId("snapshotLoadSubmit"));
-      await flush();
-      await openTab(app, "viewFailures");
+  test("forgets the pannes undo history", async () => {
+    const app = await mount({ failures: { latencyMs: 500 } });
+    await openTab(app, "viewFailures");
+    app.select(app.query('.injection[data-kind="latency"] [data-field="latencyMs"]'), "200-900");
+    await flush();
+    await openTab(app, "viewSnapshots");
+    await openLoad(app);
+    await app.click(app.byId("snapshotLoadSubmit"));
+    await flush();
+    await openTab(app, "viewFailures");
 
-      assert.equal(app.byId("failuresUndoBtn").disabled, disabled);
-      app.close();
-    });
-  }
+    assert.equal(app.byId("failuresUndoBtn").disabled, true);
+    app.close();
+  });
 
   test("tells what had to be adjusted", async () => {
     const notice = "A2026 n'a que 16 semaines: la semaine 16 est utilisée au lieu de la semaine 17.";

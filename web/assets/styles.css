@@ -956,13 +956,6 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .setup dt { color: var(--colorNeutralForeground3); }
 .setup dd { margin: 0; overflow-wrap: anywhere; }
 
-.choices { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; border: none; min-width: 0; }
-.choices__legend {
-  padding: 0 0 4px;
-  font-size: var(--fontSizeBase300);
-  font-weight: var(--fontWeightSemibold);
-  color: var(--colorNeutralForeground1);
-}
 .choice {
   display: flex; align-items: flex-start; gap: 10px;
   padding: 9px 12px;
@@ -972,6 +965,7 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   cursor: pointer;
   transition: border-color var(--durationFaster) var(--curveEasyEase);
 }
+.choice[hidden] { display: none; }
 .choice:hover { border-color: var(--line-strong); }
 .choice:has(input:checked) { border-color: var(--colorCompoundBrandStroke); }
 .choice input {
@@ -982,16 +976,6 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .choice__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .choice__title { font-size: var(--fontSizeBase300); font-weight: var(--fontWeightSemibold); }
 .choice__hint { font-size: var(--fontSizeBase200); color: var(--colorNeutralForeground3); }
-
-.choice__list {
-  display: flex; flex-direction: column; gap: 4px;
-  padding: 2px 0;
-  font-size: var(--fontSizeBase200);
-  color: var(--colorNeutralForeground2);
-}
-.choice__list > span { display: flex; align-items: center; gap: 6px; }
-.choice__list .icon { color: var(--colorNeutralForeground3); }
-.choice__value { color: var(--colorNeutralForeground3); }
 
 .dialog__hint--warn { color: var(--colorPaletteMarigoldForeground2); }
 .dialog__hint[hidden] { display: none; }
