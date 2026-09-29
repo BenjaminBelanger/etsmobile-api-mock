@@ -58,6 +58,8 @@ def test_the_seed_scenarios_are_all_valid():
         "semaine-relache",
         "monday-holiday",
         "long-weekend",
+        "fin-de-session",
+        "rentree-proche",
     }
 
 

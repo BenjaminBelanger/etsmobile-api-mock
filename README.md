@@ -262,7 +262,7 @@ python start.py --between-sessions --no-next-session       # break, next session
 
 ## Scenarios
 
-Scenarios apply calendar modifications to the active session (skipped days, replaced days). Select a scenario from the `start.py` menu, or name it directly:
+A scenario is a named situation of the active session that follows today's date: days off, replaced days, where today falls in the session. Select a scenario from the `start.py` menu, or name it directly:
 
 ```bash
 python start.py --scenario semaine-relache
@@ -275,8 +275,17 @@ python start.py --scenario semaine-relache
 | `semaine-relache` | Next full week off |
 | `monday-holiday` | Next Monday is a holiday (replaced by Tuesday) |
 | `long-weekend` | Next Friday + Monday off |
+| `fin-de-session` | Week 14, 60 days off before the next session |
+| `rentree-proche` | Between sessions, the next one starts in 10 days |
 
-Scenarios are defined declaratively in `seed/scenarios.json`.
+Scenarios are defined declaratively in `seed/scenarios.json`. A scenario's
+`calendar` takes the [session calendar](#session-calendar) options
+(`semesterWeek` or `betweenSessions`, `semesterGap` or `noNextSession`). A
+calendar flag given with `--scenario` replaces that part of it:
+
+```bash
+python start.py --scenario fin-de-session --semester-gap 10
+```
 
 ## Failure Injection
 

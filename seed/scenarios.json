@@ -31,5 +31,13 @@
       { "rule": "next_weekday", "weekday": 5 },
       { "rule": "next_weekday", "weekday": 1 }
     ]
+  },
+  "fin-de-session": {
+    "description": "Semaine 14, 60 jours de congé avant la session suivante",
+    "calendar": { "semesterWeek": 14, "semesterGap": 60 }
+  },
+  "rentree-proche": {
+    "description": "Entre deux sessions, rentrée dans 10 jours",
+    "calendar": { "betweenSessions": true, "semesterGap": 10 }
   }
 }

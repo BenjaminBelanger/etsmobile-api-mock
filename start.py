@@ -33,6 +33,9 @@ TIME_CHOICES = ("morning", "afternoon", "evening")
 MAX_SEMESTER_WEEK = 15
 MAX_SEMESTER_GAP = 180
 
+POSITION_ENV = ("SEMESTER_WEEK", "BETWEEN_SESSIONS")
+NEXT_SESSION_ENV = ("SEMESTER_GAP", "NO_NEXT_SESSION")
+
 FAILURE_ENV = {
     "latencyMs": "LATENCY_MS",
     "errorRate": "ERROR_RATE",
@@ -129,6 +132,24 @@ def _load_scenarios() -> dict:
 
 def _load_failure_presets() -> dict:
     return json.loads((SEED / "failure_presets.json").read_text(encoding="utf-8"))
+
+
+def _scenario_calendar(scenario: str) -> dict[str, str]:
+    calendar = _load_scenarios().get(scenario, {}).get("calendar", {})
+    env = {}
+    if "semesterWeek" in calendar:
+        env["SEMESTER_WEEK"] = str(calendar["semesterWeek"])
+    if calendar.get("betweenSessions"):
+        env["BETWEEN_SESSIONS"] = "true"
+    if "semesterGap" in calendar:
+        env["SEMESTER_GAP"] = str(calendar["semesterGap"])
+    if calendar.get("noNextSession"):
+        env["NO_NEXT_SESSION"] = "true"
+    return env
+
+
+def _only(env: dict[str, str], names: tuple[str, ...]) -> dict[str, str]:
+    return {name: value for name, value in env.items() if name in names}
 
 
 def _day_list(raw: str) -> list[str]:
@@ -312,7 +333,11 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--scenario",
         choices=list(scenarios),
-        help="Modification du calendrier de la session active.",
+        help=(
+            "Situation de la session active: congés, position dans la session, "
+            "dates d'examens. Les options du calendrier ont priorité sur la "
+            "sienne."
+        ),
         default=None,
     )
     parser.add_argument(
@@ -612,6 +637,10 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, str]:
         overrides["SEMESTER_GAP"] = str(args.semester_gap)
     if args.no_next_session:
         overrides["NO_NEXT_SESSION"] = "true"
+    scenario_calendar = _scenario_calendar(args.scenario or "none")
+    for group in (POSITION_ENV, NEXT_SESSION_ENV):
+        if not _only(overrides, group):
+            overrides.update(_only(scenario_calendar, group))
     if args.courses is not None:
         overrides["COURSE_COUNT"] = str(args.courses)
     if args.days is not None:
@@ -767,7 +796,7 @@ def _select_scenario() -> str:
     if not names:
         return "none"
 
-    print("\n=== Scénario calendrier (optionnel) ===\n")
+    print("\n=== Scénario (optionnel) ===\n")
     for i, name in enumerate(names, 1):
         desc = SCENARIO_DESCRIPTIONS.get(name) or scenarios[name].get("description", "")
         label = f"{name}: {desc}" if desc else name
@@ -831,21 +860,29 @@ def _prompt_days() -> list[str] | None:
         print("  Entrée invalide, utilisez les codes 1-6 séparés par des virgules.")
 
 
-def _prompt_calendar_position() -> dict[str, str]:
+def _blank_choice(default: dict[str, str], real: str, short: str) -> tuple[str, str]:
+    if not default:
+        return f"utiliser {real}", short
+    return f"{_calendar_label(default)}, comme le scénario", "scénario"
+
+
+def _prompt_calendar_position(default: dict[str, str] | None = None) -> dict[str, str]:
+    default = default or {}
+    blank, short = _blank_choice(default, "les dates réelles", "réelle")
     print("\n=== Position dans la session (optionnel) ===\n")
     print("  À quel moment de la session active voulez-vous être?")
     print("  Utile si la session réelle est presque terminée.")
     print(f"    1-{MAX_SEMESTER_WEEK}  Semaine de la session")
     print("    E     Entre deux sessions (la session active s'est terminée hier)")
-    print("  (Vide = utiliser les dates réelles)")
+    print(f"  (Vide = {blank})")
     while True:
         try:
-            raw = input(f"\n  Semaine (1-{MAX_SEMESTER_WEEK}, E, vide = réelle): ")
+            raw = input(f"\n  Semaine (1-{MAX_SEMESTER_WEEK}, E, vide = {short}): ")
         except EOFError:
-            return {}
+            return default
         raw = raw.strip()
         if not raw:
-            return {}
+            return default
         if raw.lower() == "e":
             return {"BETWEEN_SESSIONS": "true"}
         week = _validate_menu_choice(raw, MAX_SEMESTER_WEEK)
@@ -858,21 +895,23 @@ def _prompt_calendar_position() -> dict[str, str]:
         return {"SEMESTER_WEEK": str(week)}
 
 
-def _prompt_next_session() -> dict[str, str]:
+def _prompt_next_session(default: dict[str, str] | None = None) -> dict[str, str]:
+    default = default or {}
+    blank, short = _blank_choice(default, "le calendrier réel", "réel")
     print("\n=== Session suivante (optionnel) ===\n")
     print("  Combien de jours de congé avant la session suivante?")
     print("  Entre deux sessions, c'est le nombre de jours avant la rentrée.")
     print(f"    0-{MAX_SEMESTER_GAP}  Jours de congé après la session active")
     print("    A      Aucune session suivante")
-    print("  (Vide = utiliser le calendrier réel)")
+    print(f"  (Vide = {blank})")
     while True:
         try:
-            raw = input(f"\n  Congé (0-{MAX_SEMESTER_GAP}, A, vide = réel): ")
+            raw = input(f"\n  Congé (0-{MAX_SEMESTER_GAP}, A, vide = {short}): ")
         except EOFError:
-            return {}
+            return default
         raw = raw.strip()
         if not raw:
-            return {}
+            return default
         if raw.lower() == "a":
             return {"NO_NEXT_SESSION": "true"}
         if raw.isdecimal() and int(raw) <= MAX_SEMESTER_GAP:
@@ -1118,8 +1157,9 @@ def _config_from_menu() -> (
     overrides: dict[str, str] = {}
     if scenario != "none":
         overrides["SCENARIO"] = scenario
-    overrides.update(_prompt_calendar_position())
-    overrides.update(_prompt_next_session())
+    scenario_calendar = _scenario_calendar(scenario)
+    overrides.update(_prompt_calendar_position(_only(scenario_calendar, POSITION_ENV)))
+    overrides.update(_prompt_next_session(_only(scenario_calendar, NEXT_SESSION_ENV)))
 
     if profile == "__custom__":
         config = _configure_custom()

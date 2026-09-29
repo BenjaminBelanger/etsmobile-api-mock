@@ -78,6 +78,56 @@ def test_a_position_and_a_next_session_combine():
     assert calendar == "entre deux sessions + congé de 0 jours"
 
 
+def test_a_scenario_brings_its_calendar():
+    overrides, _, scenario, calendar = config("--scenario", "fin-de-session")
+    assert overrides == {
+        "SCENARIO": "fin-de-session",
+        "SEMESTER_WEEK": "14",
+        "SEMESTER_GAP": "60",
+    }
+    assert scenario == "fin-de-session"
+    assert calendar == "semaine 14 + congé de 60 jours"
+
+
+def test_a_scenario_can_place_today_between_sessions():
+    overrides, _, _, _ = config("--scenario", "rentree-proche")
+    assert overrides["BETWEEN_SESSIONS"] == "true"
+    assert overrides["SEMESTER_GAP"] == "10"
+
+
+@pytest.mark.parametrize(
+    "flags,expected",
+    [
+        (("--semester-week", "3"), {"SEMESTER_WEEK": "3", "SEMESTER_GAP": "60"}),
+        (("--between-sessions",), {"BETWEEN_SESSIONS": "true", "SEMESTER_GAP": "60"}),
+        (("--semester-gap", "5"), {"SEMESTER_WEEK": "14", "SEMESTER_GAP": "5"}),
+        (("--no-next-session",), {"SEMESTER_WEEK": "14", "NO_NEXT_SESSION": "true"}),
+    ],
+)
+def test_calendar_flags_replace_that_part_of_the_scenario_calendar(flags, expected):
+    overrides, _, _, _ = config("--scenario", "fin-de-session", *flags)
+    calendar = {k: v for k, v in overrides.items() if k != "SCENARIO"}
+    assert calendar == expected
+
+
+def test_a_scenario_without_a_calendar_keeps_the_real_dates():
+    overrides, _, _, calendar = config("--scenario", "friday-off")
+    assert overrides == {"SCENARIO": "friday-off"}
+    assert calendar == ""
+
+
+@pytest.mark.parametrize("name", list(start._load_scenarios()))
+def test_every_seed_scenario_starts_a_server(name, reconfigure):
+    from lib import data_store
+
+    overrides, _, _, _ = config("--scenario", name)
+    reconfigure(**{n: overrides.get(n) for n in start.MANAGED_ENV})
+    assert data_store.SCENARIO_NAME == name
+    assert data_store.SEMESTER_WEEK == (
+        int(overrides["SEMESTER_WEEK"]) if "SEMESTER_WEEK" in overrides else None
+    )
+
+
 @pytest.mark.parametrize(
     "argv",
     [
@@ -524,6 +574,50 @@ def test_the_menu_builds_the_same_calendar_as_the_flags(monkeypatch):
 
     assert menu_overrides == flag_overrides
     assert menu_calendar == flag_calendar
+
+
+def scenario_choice(name):
+    names = [n for n in start._load_scenarios() if n != "none"]
+    return str(names.index(name) + 1)
+
+
+def test_blank_calendar_answers_keep_the_scenario_calendar(monkeypatch, capsys):
+    left = answer(monkeypatch, "1", scenario_choice("fin-de-session"), "", "")
+
+    menu_overrides, _, _, menu_calendar = start._config_from_menu()
+    flag_overrides, _, _, flag_calendar = config(
+        "--profile", list(start._load_profiles())[0], "--scenario", "fin-de-session"
+    )
+
+    printed = capsys.readouterr().out
+    assert left == []
+    assert menu_overrides == flag_overrides
+    assert menu_calendar == flag_calendar == "semaine 14 + congé de 60 jours"
+    assert "(Vide = semaine 14, comme le scénario)" in printed
+    assert "(Vide = congé de 60 jours, comme le scénario)" in printed
+
+
+def test_a_calendar_answer_replaces_that_part_of_the_scenario_calendar(monkeypatch):
+    answer(monkeypatch, "1", scenario_choice("fin-de-session"), "e", "")
+
+    overrides, _, _, calendar = start._config_from_menu()
+
+    assert "SEMESTER_WEEK" not in overrides
+    assert overrides["BETWEEN_SESSIONS"] == "true"
+    assert overrides["SEMESTER_GAP"] == "60"
+    assert calendar == "entre deux sessions + congé de 60 jours"
+
+
+def test_the_scenario_calendar_is_kept_at_end_of_input(monkeypatch):
+    def closed(*_):
+        raise EOFError
+
+    monkeypatch.setattr("builtins.input", closed)
+    default = {"SEMESTER_WEEK": "14"}
+    assert start._prompt_calendar_position(default) == default
+    assert start._prompt_next_session({"NO_NEXT_SESSION": "true"}) == {
+        "NO_NEXT_SESSION": "true"
+    }
 
 
 def test_an_invalid_profile_choice_is_asked_again(monkeypatch):
