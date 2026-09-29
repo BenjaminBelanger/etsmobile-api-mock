@@ -12,6 +12,7 @@ import uuid
 from datetime import date
 
 from lib import flutter_app, snapshots
+from lib.scenarios import calendar_env
 from lib._api import SERVER_HOST, SERVER_PORT
 from lib._paths import SEED
 
@@ -103,10 +104,6 @@ PROFILE_DESCRIPTIONS = {
     "new-student": "Nouvel étudiant (aucune session)",
 }
 
-SCENARIO_DESCRIPTIONS = {
-    "none": "Aucune modification au calendrier",
-}
-
 WEEKDAYS = ("lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche")
 
 
@@ -120,20 +117,6 @@ def _load_scenarios() -> dict:
 
 def _load_failure_presets() -> dict:
     return json.loads((SEED / "failure_presets.json").read_text(encoding="utf-8"))
-
-
-def _scenario_calendar(scenario: str) -> dict[str, str]:
-    calendar = _load_scenarios().get(scenario, {}).get("calendar", {})
-    env = {}
-    if "semesterWeek" in calendar:
-        env["SEMESTER_WEEK"] = str(calendar["semesterWeek"])
-    if calendar.get("betweenSessions"):
-        env["BETWEEN_SESSIONS"] = "true"
-    if "semesterGap" in calendar:
-        env["SEMESTER_GAP"] = str(calendar["semesterGap"])
-    if calendar.get("noNextSession"):
-        env["NO_NEXT_SESSION"] = "true"
-    return env
 
 
 def _only(env: dict[str, str], names: tuple[str, ...]) -> dict[str, str]:
@@ -261,7 +244,7 @@ def _epilog(profiles: dict, scenarios: dict, presets: dict) -> str:
     lines.append("")
     lines.append("scénarios:")
     for name, body in scenarios.items():
-        desc = SCENARIO_DESCRIPTIONS.get(name) or body.get("description", "")
+        desc = body.get("description", "")
         lines.append(f"  {name:<20}{desc}")
     lines.append("")
     lines.append("pannes:")
@@ -602,7 +585,7 @@ def _config_from_args(args: argparse.Namespace) -> tuple[dict, str, str, str]:
         overrides["SEMESTER_GAP"] = str(args.semester_gap)
     if args.no_next_session:
         overrides["NO_NEXT_SESSION"] = "true"
-    scenario_calendar = _scenario_calendar(args.scenario or "none")
+    scenario_calendar = calendar_env(args.scenario or "none")
     for group in (POSITION_ENV, NEXT_SESSION_ENV):
         if not _only(overrides, group):
             overrides.update(_only(scenario_calendar, group))
@@ -728,7 +711,7 @@ def _select_scenario() -> str:
 
     print("\n=== Scénario (optionnel) ===\n")
     for i, name in enumerate(names, 1):
-        desc = SCENARIO_DESCRIPTIONS.get(name) or scenarios[name].get("description", "")
+        desc = scenarios[name].get("description", "")
         label = f"{name}: {desc}" if desc else name
         print(f"  {i}) {label}")
     print("\n  0) Aucun (par défaut)")
@@ -1031,7 +1014,7 @@ def _config_from_menu() -> (
     overrides: dict[str, str] = {}
     if scenario != "none":
         overrides["SCENARIO"] = scenario
-    scenario_calendar = _scenario_calendar(scenario)
+    scenario_calendar = calendar_env(scenario)
     overrides.update(_prompt_calendar_position(_only(scenario_calendar, POSITION_ENV)))
     overrides.update(_prompt_next_session(_only(scenario_calendar, NEXT_SESSION_ENV)))
 

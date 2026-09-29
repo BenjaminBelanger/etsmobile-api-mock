@@ -9,12 +9,14 @@ import pytest
 from lib import (
     data_store,
     failures,
+    scenarios,
     schedule_editor,
     sessions,
     snapshot_editor,
     snapshots,
     student_editor,
 )
+from lib.resource_specs import FINAL_EXAMS
 from lib.snapshots import SnapshotConflict, SnapshotError
 
 COURSE = "LOG430-02"
@@ -883,3 +885,100 @@ def test_exact_dates_bring_back_an_edited_session_date(client):
 
     assert data_store._load_overrides()[PAST]["dates"] == {"dateFin": "2026-05-01"}
     assert sessions.session_metadata(PAST)["dateFin"] == "2026-05-01"
+
+
+def tab_state(client):
+    response = client.get("/editor/api/snapshots")
+    assert response.status_code == 200
+    return response.json()
+
+
+def test_the_tab_lists_the_scenarios_starting_with_none(client):
+    listed = tab_state(client)["scenarios"]
+
+    assert listed[0] == {"name": "none", "description": "Aucune modification, dates réelles"}
+    assert [item["name"] for item in listed] == list(scenarios._SCENARIOS)
+    assert all(item["description"] for item in listed)
+
+
+def test_applying_a_scenario_brings_its_calendar(client, reconfigure):
+    reconfigure(PROFILE="generated-busy", COURSE_COUNT="2")
+
+    result = api(client, "/scenario", name="fin-de-session")
+
+    assert data_store.SCENARIO_NAME == "fin-de-session"
+    assert (data_store.SEMESTER_WEEK, data_store.SEMESTER_GAP) == (14, 60)
+    assert data_store.PROFILE_NAME == "generated-busy"
+    assert result["current"]["setup"]["courses"] == 2
+    assert result["current"]["position"] == {"week": 14, "gap": 60}
+
+
+def test_applying_a_scenario_drops_the_calendar_it_does_not_set(client, reconfigure):
+    reconfigure(SEMESTER_WEEK="3", NO_NEXT_SESSION="true")
+
+    api(client, "/scenario", name="friday-off")
+
+    assert data_store.SCENARIO_NAME == "friday-off"
+    assert data_store.SEMESTER_WEEK is None
+    assert data_store.NO_NEXT_SESSION is False
+
+
+def test_applying_none_goes_back_to_the_real_dates(client):
+    api(client, "/scenario", name="rentree-proche")
+
+    result = api(client, "/scenario", name="none")
+
+    assert data_store.SCENARIO_NAME == "none"
+    assert data_store.BETWEEN_SESSIONS is False
+    assert data_store.SEMESTER_GAP is None
+    assert result["current"]["setup"]["scenario"] == "none"
+
+
+def test_applying_a_scenario_clears_only_the_schedule_edits(client):
+    move_block()
+    student_editor.set_field("prenom", "Marie")
+    failures.update_config(failures.FailureConfigUpdate(errorRate=0.5))
+    assert tab_state(client)["current"]["scheduleEdited"] is True
+
+    result = api(client, "/scenario", name="friday-off")
+
+    assert data_store._load_overrides() == {}
+    assert result["current"]["scheduleEdited"] is False
+    assert schedule_editor.get_state(PAST)["canUndo"] is False
+    assert data_store.load_student_overrides() == {"prenom": "Marie"}
+    assert student_editor.get_state()["canUndo"] is True
+    assert failures.get_config().error_rate == 0.5
+
+
+def test_an_applied_scenario_shapes_what_the_api_serves(client):
+    api(client, "/scenario", name="examen-final-demain")
+
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    exams = data_store.load_session(FINAL_EXAMS.filename, data_store.ACTIVE_SESSION)
+    assert exams[0]["dateExamen"] == tomorrow
+
+
+def test_an_unknown_scenario_changes_nothing(client):
+    move_block()
+    before = data_store._load_overrides()
+
+    response = client.post("/editor/api/snapshots/scenario", json={"name": "gone"})
+
+    assert response.status_code == 400
+    assert data_store._load_overrides() == before
+    assert data_store.SCENARIO_NAME == "none"
+
+
+def test_a_scenario_that_cannot_apply_leaves_everything_as_it_was(client, monkeypatch):
+    move_block()
+    before = data_store._load_overrides()
+    monkeypatch.setitem(scenarios._SCENARIOS, "broken", {"calendar": {"semesterWeek": 0}})
+    monkeypatch.setattr(scenarios, "VALID_SCENARIOS", scenarios.VALID_SCENARIOS | {"broken"})
+
+    response = client.post("/editor/api/snapshots/scenario", json={"name": "broken"})
+
+    assert response.status_code == 400
+    assert data_store._load_overrides() == before
+    assert data_store.SCENARIO_NAME == "none"
+    assert data_store.SEMESTER_WEEK is None
+

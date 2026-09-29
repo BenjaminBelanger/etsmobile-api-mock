@@ -129,6 +129,10 @@ class SnapshotLoadBody(SnapshotRef):
     dates: str = snapshots.DEFAULT_DATE_MODE
 
 
+class ScenarioBody(BaseModel):
+    name: str
+
+
 class SnapshotImportBody(BaseModel):
     snapshot: dict | None = None
     code: str | None = None
@@ -355,6 +359,11 @@ def snapshot_save(body: SnapshotSaveBody):
 @router.post("/api/snapshots/load")
 def snapshot_load(body: SnapshotLoadBody):
     return _guard(snapshot_editor.load, body.id, body.dates)
+
+
+@router.post("/api/snapshots/scenario")
+def snapshot_scenario(body: ScenarioBody):
+    return _guard(snapshot_editor.apply_scenario, body.name)
 
 
 @router.post("/api/snapshots/delete")

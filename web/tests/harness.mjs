@@ -519,7 +519,14 @@ export const CURRENT_SETUP = {
   position: { week: 4, gap: 16 },
   setup: { profile: "normal", scenario: "none" },
   failures: {},
+  scheduleEdited: false,
 };
+
+export const SCENARIO_ITEMS = [
+  { name: "none", description: "Aucune modification, dates réelles" },
+  { name: "friday-off", description: "Prochain vendredi sans cours" },
+  { name: "examen-final-demain", description: "Semaine 15, examen final du premier cours demain" },
+];
 
 const slug = (name) =>
   name
@@ -535,7 +542,13 @@ function createSnapshots(options) {
   let items = clone(options.snapshots || SNAPSHOT_ITEMS);
   let current = clone(options.current || CURRENT_SETUP);
 
-  const payload = (extra = {}) => ({ snapshots: clone(items), current: clone(current), ...extra });
+  const scenarios = clone(options.scenarios || SCENARIO_ITEMS);
+  const payload = (extra = {}) => ({
+    snapshots: clone(items),
+    scenarios: clone(scenarios),
+    current: clone(current),
+    ...extra,
+  });
   const add = (item) => {
     items = [...items.filter((i) => i.id !== item.id), item];
   };
@@ -599,6 +612,12 @@ function createSnapshots(options) {
         items = items.filter((i) => i.id !== body.id);
       } else if (path === "/load") {
         extra = { notices: clone(options.notices || []) };
+      } else if (path === "/scenario") {
+        current = {
+          ...current,
+          setup: { ...current.setup, scenario: body.name },
+          scheduleEdited: false,
+        };
       }
       return { ok: true, status: 200, json: async () => payload(extra) };
     },

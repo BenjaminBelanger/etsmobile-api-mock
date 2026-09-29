@@ -9,6 +9,13 @@ _SCENARIOS: dict = {}
 
 VALID_SCENARIOS: set[str] = set()
 
+CALENDAR_ENV = {
+    "semesterWeek": "SEMESTER_WEEK",
+    "betweenSessions": "BETWEEN_SESSIONS",
+    "semesterGap": "SEMESTER_GAP",
+    "noNextSession": "NO_NEXT_SESSION",
+}
+
 
 def reload_scenarios() -> dict:
     scenarios = json.loads((SEED / "scenarios.json").read_text(encoding="utf-8"))
@@ -22,6 +29,22 @@ def reload_scenarios() -> dict:
 
 def get_valid_scenarios() -> set[str]:
     return VALID_SCENARIOS
+
+
+def listing() -> list[dict]:
+    return [
+        {"name": name, "description": body.get("description", "")}
+        for name, body in _SCENARIOS.items()
+    ]
+
+
+def calendar_env(scenario_name: str) -> dict[str, str]:
+    calendar = _SCENARIOS.get(scenario_name, {}).get("calendar", {})
+    return {
+        CALENDAR_ENV[key]: "true" if value is True else str(value)
+        for key, value in calendar.items()
+        if key in CALENDAR_ENV and value is not False
+    }
 
 
 def _next_weekday_from(start: date, target_isoweekday: int) -> date:

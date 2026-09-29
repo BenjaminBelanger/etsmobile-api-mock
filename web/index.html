@@ -237,10 +237,11 @@
 
       <main class="layout" id="snapshotsView" hidden>
         <section class="board board--list" id="snapshotsBoard">
+          <h2 class="snapshots__heading">Scénarios</h2>
+          <ul class="snapshots" id="scenarioList"></ul>
+          <h2 class="snapshots__heading">Mes sauvegardes</h2>
           <ul class="snapshots" id="snapshotList"></ul>
-          <div class="board__empty" id="snapshotEmpty" hidden>
-            <p>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver après un redémarrage, ou copiez son code pour qu’un coéquipier reproduise un bug.</p>
-          </div>
+          <p class="snapshots__empty" id="snapshotEmpty" hidden>Aucune sauvegarde. Enregistrez l’état actuel pour le retrouver après un redémarrage, ou copiez son code pour qu’un coéquipier reproduise un bug.</p>
         </section>
 
         <aside class="sidebar">

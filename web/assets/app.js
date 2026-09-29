@@ -133,6 +133,7 @@ const el = {
   snapshotsView: document.getElementById("snapshotsView"),
   snapshotsToolbar: document.getElementById("snapshotsToolbar"),
   snapshotList: document.getElementById("snapshotList"),
+  scenarioList: document.getElementById("scenarioList"),
   snapshotEmpty: document.getElementById("snapshotEmpty"),
   currentSetup: document.getElementById("currentSetup"),
   snapshotFile: document.getElementById("snapshotFile"),
@@ -2901,8 +2902,45 @@ function renderCurrentSetup() {
     .join("");
 }
 
+const NO_SCENARIO = "none";
+
+const activeScenario = () => state.snapshots?.current?.setup?.scenario || NO_SCENARIO;
+
+function scenarioHtml(item) {
+  const none = item.name === NO_SCENARIO;
+  const active = item.name === activeScenario();
+  const title = none ? "Aucun scénario" : item.description;
+  const meta = none ? item.description : item.name;
+  return `<li class="snapshot" data-scenario="${escapeHtml(item.name)}">
+      <div class="snapshot__main">
+        <span class="snapshot__name">${escapeHtml(title)}</span>
+        <span class="snapshot__meta">${escapeHtml(meta)}</span>
+      </div>
+      ${active ? '<span class="snapshot__badge">Actif</span>' : ""}
+      <div class="snapshot__actions">
+        <fluent-button appearance="primary" size="small" data-act="apply">Appliquer</fluent-button>
+      </div>
+    </li>`;
+}
+
+function renderScenarioList() {
+  const items = state.snapshots?.scenarios || [];
+  el.scenarioList.innerHTML = items.map(scenarioHtml).join("");
+  el.scenarioList.querySelectorAll(".snapshot").forEach((row) => {
+    const item = items.find((i) => i.name === row.dataset.scenario);
+    row
+      .querySelector('[data-act="apply"]')
+      .addEventListener("click", () => runScenarioAction(item));
+  });
+}
+
 function applySnapshots(data) {
-  state.snapshots = { snapshots: data.snapshots || [], current: data.current || null };
+  state.snapshots = {
+    snapshots: data.snapshots || [],
+    scenarios: data.scenarios || [],
+    current: data.current || null,
+  };
+  renderScenarioList();
   renderSnapshotList();
   renderCurrentSetup();
 }
@@ -2993,6 +3031,44 @@ function openSnapshotLoad(item) {
   el.fSnapshotExact.checked = false;
   showDates();
   el.snapshotLoadDialog.show();
+}
+
+async function reloadSchedule() {
+  const schedule = await apiGet("");
+  state.session = null;
+  applyState(schedule);
+}
+
+async function applyScenario(item) {
+  const result = await snapshotRequest("/scenario", { name: item.name });
+  if (!result.data) return;
+  try {
+    await reloadSchedule();
+  } catch (err) {
+    toast(err.message || "Serveur injoignable", true);
+  }
+  const message =
+    item.name === NO_SCENARIO
+      ? "Scénario retiré: dates réelles"
+      : `Scénario « ${item.name} » appliqué`;
+  setStatus(`${message}.`, false);
+  toast(message);
+}
+
+function runScenarioAction(item) {
+  if (!item) return;
+  if (!state.snapshots?.current?.scheduleEdited) {
+    applyScenario(item);
+    return;
+  }
+  askSnapshot({
+    title: `Appliquer « ${item.name === NO_SCENARIO ? "Aucun scénario" : item.name} » ?`,
+    text:
+      "Les modifications de l’horaire et des dates de session seront effacées. " +
+      "Le profil, le profil étudiant et les pannes sont gardés.",
+    action: "Appliquer",
+    run: () => applyScenario(item),
+  });
 }
 
 async function refreshAfterSnapshot() {

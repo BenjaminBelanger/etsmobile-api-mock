@@ -61,7 +61,8 @@ The page has five tabs:
 - **Pannes**: the [failure injection](#failure-injection) panel.
 - **Étudiant**: edits the student profile served by `infoEtudiant`.
 - **Logs**: the [call log](#call-log).
-- **Sauvegardes**: [snapshots](#snapshots-tab) of the whole mock state.
+- **Sauvegardes**: the built-in [scenarios](#scenarios) and your
+  [snapshots](#snapshots-tab) of the whole mock state.
 
 `python start.py` clears every editor change at each launch.
 
@@ -84,16 +85,22 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 ### Snapshots tab
 
-The **Sauvegardes** tab keeps what you set up by hand, since `start.py` clears
-editor changes at launch: profile, scenario, generation options, calendar
-position, schedule edits, student profile edits and Pannes. For a situation
-everyone should be able to start from, write a [scenario](#scenarios) instead.
+The **Sauvegardes** tab lists the [scenarios](#scenarios) first. **Appliquer**
+switches the running server to one and its calendar, keeping the profile,
+student profile and Pannes. It clears schedule edits, which hold the previous
+scenario's days off and exam dates.
+
+Below them, your snapshots keep what you set up by hand, since `start.py`
+clears editor changes at launch: profile, scenario, generation options,
+calendar position, schedule edits, student profile edits and Pannes. For a
+situation everyone should be able to start from, write a scenario instead.
 Snapshots are saved in `snapshots/`, which git ignores: to hand one to a
 teammate, copy its code (about 2,000 characters, fits in a chat message) or
 export its file, and paste or pick it in **Importer** on the other machine.
-Loading one
-replaces all of it on the running server; a dev-mode code reload falls back to
-the startup settings but keeps the loaded edits.
+Loading one replaces all of it on the running server.
+
+A dev-mode code reload falls back to the startup settings but keeps the
+editor's edits.
 
 Loading brings back the same calendar position relative to today (the week of
 the active session or between sessions, and the days before the next one) by
@@ -265,7 +272,7 @@ python start.py --between-sessions --no-next-session       # break, next session
 
 ## Scenarios
 
-A scenario is a named situation of the active session that follows today's date: days off, replaced days, where today falls in the session, exam dates. Select a scenario from the `start.py` menu, or name it directly:
+A scenario is a named situation of the active session that follows today's date: days off, replaced days, where today falls in the session, exam dates. Select a scenario from the `start.py` menu, name it directly, or apply it on a running server from the editor's [Sauvegardes](#snapshots-tab) tab:
 
 ```bash
 python start.py --scenario semaine-relache

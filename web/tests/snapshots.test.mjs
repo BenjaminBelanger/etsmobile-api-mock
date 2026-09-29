@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
-import { CURRENT_SETUP, SNAPSHOT_ITEMS, clone, flush, mount } from "./harness.mjs";
+import { CURRENT_SETUP, SCENARIO_ITEMS, SNAPSHOT_ITEMS, clone, flush, mount } from "./harness.mjs";
 
 async function openTab(app, id) {
   app.fire(app.byId("viewToggle"), "change", { detail: app.byId(id) });
@@ -215,6 +215,130 @@ describe("the snapshots tab", () => {
     const app = await onSnapshots({ current });
 
     assert.deepEqual(setupRows(app)[0], ["Session", "A2026 · avant le début de la session"]);
+    app.close();
+  });
+});
+
+describe("the built-in scenarios", () => {
+  const scenarioRows = (app) => app.queryAll("#scenarioList .snapshot");
+  const scenarioRow = (app, name) => app.query(`#scenarioList .snapshot[data-scenario="${name}"]`);
+  const apply = (app, name) => app.click(scenarioRow(app, name).querySelector('[data-act="apply"]'));
+  const badges = (app) =>
+    scenarioRows(app)
+      .filter((row) => row.querySelector(".snapshot__badge"))
+      .map((row) => row.dataset.scenario);
+
+  test("come before the saves, described in plain words", async () => {
+    const app = await onSnapshots();
+
+    const shown = scenarioRows(app).map((row) => [
+      row.querySelector(".snapshot__name").textContent,
+      row.querySelector(".snapshot__meta").textContent,
+    ]);
+    assert.deepEqual(shown, [
+      ["Aucun scénario", "Aucune modification, dates réelles"],
+      ["Prochain vendredi sans cours", "friday-off"],
+      ["Semaine 15, examen final du premier cours demain", "examen-final-demain"],
+    ]);
+    const headings = app.queryAll("#snapshotsBoard .snapshots__heading").map((h) => h.textContent);
+    assert.deepEqual(headings, ["Scénarios", "Mes sauvegardes"]);
+    app.close();
+  });
+
+  test("can only be applied, not copied, exported or deleted", async () => {
+    const app = await onSnapshots();
+
+    for (const row of scenarioRows(app)) {
+      const actions = [...row.querySelectorAll("[data-act]")].map((b) => b.dataset.act);
+      assert.deepEqual(actions, ["apply"], row.dataset.scenario);
+    }
+    app.close();
+  });
+
+  test("mark the one the mock runs with", async () => {
+    const plain = await onSnapshots();
+    const shifted = await onSnapshots({
+      current: { ...clone(CURRENT_SETUP), setup: { profile: "normal", scenario: "friday-off" } },
+    });
+
+    assert.deepEqual(badges(plain), ["none"]);
+    assert.deepEqual(badges(shifted), ["friday-off"]);
+    assert.equal(scenarioRow(shifted, "friday-off").querySelector(".snapshot__badge").textContent, "Actif");
+    plain.close();
+    shifted.close();
+  });
+
+  test("apply at once when the schedule has no edits", async () => {
+    const app = await onSnapshots();
+    const before = app.server.called("/state").length;
+    await apply(app, "examen-final-demain");
+    await flush();
+
+    assert.deepEqual(posted(app, "/scenario"), { name: "examen-final-demain" });
+    assert.equal(app.byId("snapshotConfirmDialog").open, false);
+    assert.equal(app.server.called("/state").length, before + 1);
+    assert.deepEqual(badges(app), ["examen-final-demain"]);
+    assert.equal(app.toast().text, "Scénario « examen-final-demain » appliqué");
+    app.close();
+  });
+
+  test("ask before clearing schedule edits", async () => {
+    const app = await onSnapshots({ current: { ...clone(CURRENT_SETUP), scheduleEdited: true } });
+    await apply(app, "friday-off");
+
+    assert.equal(app.server.snapshots.called("/scenario").length, 0);
+    assert.equal(app.byId("snapshotConfirmDialog").open, true);
+    assert.equal(app.byId("snapshotConfirmTitle").textContent, "Appliquer « friday-off » ?");
+    assert.match(app.byId("snapshotConfirmText").textContent, /horaire .* effacées\. Le profil, le profil étudiant et les pannes sont gardés\./);
+
+    await app.click(app.byId("snapshotConfirmSubmit"));
+    await flush();
+
+    assert.deepEqual(posted(app, "/scenario"), { name: "friday-off" });
+    app.close();
+  });
+
+  test("going back to no scenario says the real dates are back", async () => {
+    const app = await onSnapshots({
+      current: { ...clone(CURRENT_SETUP), setup: { profile: "normal", scenario: "friday-off" } },
+    });
+    await apply(app, "none");
+    await flush();
+
+    assert.deepEqual(posted(app, "/scenario"), { name: "none" });
+    assert.equal(app.toast().text, "Scénario retiré: dates réelles");
+    app.close();
+  });
+
+  test("keep the pannes undo history", async () => {
+    const app = await mount({ failures: { latencyMs: 500 } });
+    await openTab(app, "viewFailures");
+    app.select(app.query('.injection[data-kind="latency"] [data-field="latencyMs"]'), "200-900");
+    await flush();
+    await openTab(app, "viewSnapshots");
+    await apply(app, "friday-off");
+    await flush();
+    await openTab(app, "viewFailures");
+
+    assert.equal(app.byId("failuresUndoBtn").disabled, false);
+    app.close();
+  });
+
+  test("report a scenario the server refuses", async () => {
+    const app = await onSnapshots();
+    app.server.snapshots.once("/scenario", { error: "Unknown scenario 'gone'" }, 400);
+    await apply(app, "friday-off");
+    await flush();
+
+    assert.equal(app.toast().text, "Unknown scenario 'gone'");
+    assert.deepEqual(badges(app), ["none"]);
+    app.close();
+  });
+
+  test("come from the server list", async () => {
+    const app = await onSnapshots({ scenarios: SCENARIO_ITEMS.slice(0, 1) });
+
+    assert.equal(scenarioRows(app).length, 1);
     app.close();
   });
 });

@@ -1,5 +1,7 @@
 {
-  "none": {},
+  "none": {
+    "description": "Aucune modification, dates réelles"
+  },
   "friday-off": {
     "description": "Prochain vendredi sans cours",
     "skipDates": [

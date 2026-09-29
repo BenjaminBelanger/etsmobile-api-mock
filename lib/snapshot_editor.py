@@ -91,11 +91,16 @@ def current() -> dict:
         "position": _position(),
         "setup": snapshots.setup_from_env(data_store.setup_env()),
         "failures": _active_failures(),
+        "scheduleEdited": bool(data_store._load_overrides()),
     }
 
 
 def get_state() -> dict:
-    return {"snapshots": snapshots.list_all(), "current": current()}
+    return {
+        "snapshots": snapshots.list_all(),
+        "scenarios": scenarios.listing(),
+        "current": current(),
+    }
 
 
 def save(name: str, overwrite: bool = False) -> dict:
@@ -168,3 +173,37 @@ def load(snapshot_id: str, mode: str = snapshots.DEFAULT_DATE_MODE) -> dict:
             schedule_editor.clear_cache()
             student_editor.clear_history()
     return {**get_state(), "notices": plan.notices}
+
+
+def _restore(setup_env, schedule) -> None:
+    data_store.set_setup(setup_env)
+    snapshots.write_overrides(
+        schedule,
+        data_store.load_student_overrides(),
+        data_store.overrides_path(),
+        data_store.student_overrides_path(),
+    )
+    data_store.reload()
+
+
+def apply_scenario(name: str) -> dict:
+    if name not in scenarios.get_valid_scenarios():
+        raise EditorError(f"Unknown scenario '{name}'")
+    setup = {
+        **snapshots.without_calendar(snapshots.setup_from_env(data_store.setup_env())),
+        "scenario": name,
+    }
+    with schedule_editor._lock:
+        previous = (data_store.runtime_setup(), data_store._load_overrides())
+        try:
+            data_store.set_setup(
+                {**snapshots.setup_to_env(setup), **scenarios.calendar_env(name)}
+            )
+            data_store.overrides_path().unlink(missing_ok=True)
+            data_store.reload()
+        except ValueError as exc:
+            _restore(*previous)
+            raise EditorError(f"Could not apply '{name}': {exc}") from exc
+        finally:
+            schedule_editor.clear_cache()
+    return get_state()
