@@ -24,8 +24,8 @@ def get_valid_scenarios() -> set[str]:
     return VALID_SCENARIOS
 
 
-def _next_weekday_from(start: date, target_isoweekday: int) -> date:
-    current = start
+def _next_weekday_after(start: date, target_isoweekday: int) -> date:
+    current = start + timedelta(days=1)
     while current.isoweekday() != target_isoweekday:
         current += timedelta(days=1)
     return current
@@ -44,13 +44,13 @@ def _resolve_date(rule: dict) -> date:
     if rule_type == "next_weekday":
         weekday = rule["weekday"]
         offset = rule.get("offset", 0)
-        anchor = _next_weekday_from(today, weekday)
-        return anchor + timedelta(weeks=offset)
+        anchor = _next_weekday_after(today, weekday)
+        return anchor + timedelta(weeks=offset, days=rule.get("days", 0))
 
     if rule_type == "week_of":
         weekday = rule["weekday"]
         offset = rule.get("offset", 0)
-        anchor = _next_weekday_from(today, weekday) + timedelta(weeks=offset)
+        anchor = _next_weekday_after(today, weekday) + timedelta(weeks=offset)
         monday = anchor - timedelta(days=anchor.isoweekday() - 1)
         return monday
 
@@ -62,7 +62,7 @@ def _resolve_skip_dates(scenario: dict) -> set[date]:
     for rule in scenario.get("skipDates", []):
         if rule["rule"] == "week_of":
             monday = _resolve_date(rule)
-            skip.update(monday + timedelta(days=i) for i in range(5))
+            skip.update(monday + timedelta(days=i) for i in range(7))
         else:
             skip.add(_resolve_date(rule))
     return skip
