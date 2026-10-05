@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 
@@ -81,10 +81,10 @@ def test_a_relative_rule_counts_from_today(today):
     )
 
 
-def test_the_next_weekday_rule_can_land_on_today(today):
+def test_the_next_weekday_rule_never_lands_on_today(today):
     today("2026-02-02")
     assert scenarios._resolve_date({"rule": "next_weekday", "weekday": 1}) == date(
-        2026, 2, 2
+        2026, 2, 9
     )
 
 
@@ -101,6 +101,19 @@ def test_the_next_weekday_rule_takes_a_week_offset(today):
     assert scenarios._resolve_date(rule) == date(2026, 2, 13)
 
 
+def test_the_next_weekday_rule_takes_a_day_shift(today):
+    today("2026-02-02")
+    rule = {"rule": "next_weekday", "weekday": 5, "days": 3}
+    assert scenarios._resolve_date(rule) == date(2026, 2, 9)
+
+
+def test_the_week_of_rule_starting_today_is_next_week(today):
+    today("2026-02-02")
+    assert scenarios._resolve_date({"rule": "week_of", "weekday": 1}) == date(
+        2026, 2, 9
+    )
+
+
 def test_the_week_of_rule_resolves_to_a_monday(today):
     today("2026-02-04")
     resolved = scenarios._resolve_date({"rule": "week_of", "weekday": 1})
@@ -114,20 +127,12 @@ def test_an_unknown_rule_is_an_error(today):
         scenarios._resolve_date({"rule": "inconnu"})
 
 
-def test_a_week_off_skips_monday_to_friday(today):
-    today("2026-02-02")
-    skipped = scenarios._resolve_skip_dates(
-        {"skipDates": [{"rule": "week_of", "weekday": 1}]}
-    )
-    assert sorted(skipped) == [date(2026, 2, day) for day in range(2, 7)]
-
-
-def test_a_week_off_looks_ahead_when_the_week_has_started(today):
+def test_a_week_off_skips_the_whole_week_saturday_included(today):
     today("2026-02-04")
     skipped = scenarios._resolve_skip_dates(
         {"skipDates": [{"rule": "week_of", "weekday": 1}]}
     )
-    assert sorted(skipped) == [date(2026, 2, day) for day in range(9, 14)]
+    assert sorted(skipped) == [date(2026, 2, day) for day in range(9, 16)]
 
 
 def test_replaced_days_resolve_to_a_pair_of_dates(today):
@@ -137,7 +142,7 @@ def test_replaced_days_resolve_to_a_pair_of_dates(today):
             "replacedDays": [
                 {
                     "origin": {"rule": "next_weekday", "weekday": 1},
-                    "replacement": {"rule": "next_weekday", "weekday": 2},
+                    "replacement": {"rule": "next_weekday", "weekday": 1, "days": 1},
                     "description": "Jour férié",
                 }
             ]
@@ -145,11 +150,58 @@ def test_replaced_days_resolve_to_a_pair_of_dates(today):
     )
     assert entries == [
         {
-            "dateOrigine": "2026-02-02",
-            "dateRemplacement": "2026-02-03",
+            "dateOrigine": "2026-02-09",
+            "dateRemplacement": "2026-02-10",
             "description": "Jour férié",
         }
     ]
+
+
+A_WEEK = [f"2026-02-{day:02d}" for day in range(2, 9)]
+
+
+def next_monday(day: date) -> date:
+    return day + timedelta(days=8 - day.isoweekday())
+
+
+@pytest.mark.parametrize("iso", A_WEEK)
+def test_friday_off_is_the_next_friday_never_today(today, iso):
+    now = today(iso)
+    (friday,), _ = scenarios._resolve_and_cache("friday-off")
+    assert friday.isoweekday() == 5
+    assert 1 <= (friday - now).days <= 7
+
+
+@pytest.mark.parametrize("iso", A_WEEK)
+def test_the_reading_week_is_the_whole_next_week(today, iso):
+    now = today(iso)
+    skipped, _ = scenarios._resolve_and_cache("semaine-relache")
+    assert sorted(skipped) == [next_monday(now) + timedelta(days=i) for i in range(7)]
+
+
+@pytest.mark.parametrize("iso", A_WEEK)
+def test_the_holiday_is_the_next_monday_replaced_by_the_tuesday_after(today, iso):
+    now = today(iso)
+    skipped, replaced = scenarios._resolve_and_cache("monday-holiday")
+    monday = next_monday(now)
+    assert skipped == {monday}
+    assert replaced == [
+        {
+            "dateOrigine": monday.isoformat(),
+            "dateRemplacement": (monday + timedelta(days=1)).isoformat(),
+            "description": "Jour férié",
+        }
+    ]
+
+
+@pytest.mark.parametrize("iso", A_WEEK)
+def test_the_long_weekend_is_the_next_friday_and_the_monday_after(today, iso):
+    now = today(iso)
+    skipped, _ = scenarios._resolve_and_cache("long-weekend")
+    friday, monday = sorted(skipped)
+    assert friday.isoweekday() == 5
+    assert 1 <= (friday - now).days <= 7
+    assert monday == friday + timedelta(days=3)
 
 
 def test_a_scenario_cancels_the_seances_of_a_skipped_day(today):
@@ -172,17 +224,16 @@ def test_a_scenario_leaves_other_weekdays_alone(today):
     assert "occurrenceOverrides" not in courses[0]
 
 
-def test_a_reading_week_cancels_every_weekday_of_that_week(today):
+def test_a_reading_week_cancels_every_day_of_that_week(today):
     today("2026-02-02")
-    courses = [course(jour="1"), course(jour="3")]
+    courses = [course(jour="1"), course(jour="3"), course(jour="6")]
 
     scenarios.seed_occurrence_overrides("semaine-relache", SESSION, courses)
 
-    assert courses[0]["occurrenceOverrides"] == [
-        {"block": 0, "date": "2026-02-02", "canceled": True}
-    ]
-    assert courses[1]["occurrenceOverrides"] == [
-        {"block": 0, "date": "2026-02-04", "canceled": True}
+    assert [c["occurrenceOverrides"] for c in courses] == [
+        [{"block": 0, "date": "2026-02-09", "canceled": True}],
+        [{"block": 0, "date": "2026-02-11", "canceled": True}],
+        [{"block": 0, "date": "2026-02-14", "canceled": True}],
     ]
 
 
@@ -228,13 +279,13 @@ def test_a_holiday_moves_its_seances_to_the_replacement_day(today):
     tuesday = courses[1]["occurrenceOverrides"]
     assert {
         "block": 0,
-        "date": "2026-02-02",
-        "targetDate": "2026-02-03",
+        "date": "2026-02-09",
+        "targetDate": "2026-02-10",
         "source": "replaced-day",
     } in monday
     assert {
         "block": 0,
-        "date": "2026-02-03",
+        "date": "2026-02-10",
         "canceled": True,
         "source": "replaced-day",
     } in tuesday
@@ -249,8 +300,8 @@ def test_a_relocated_seance_is_not_cancelled_on_top_of_the_move(today):
     assert courses[0]["occurrenceOverrides"] == [
         {
             "block": 0,
-            "date": "2026-02-02",
-            "targetDate": "2026-02-03",
+            "date": "2026-02-09",
+            "targetDate": "2026-02-10",
             "source": "replaced-day",
         }
     ]
@@ -335,8 +386,8 @@ def test_the_scenario_adds_its_replaced_days_to_the_public_fixture(today):
 
     assert data[SESSION] == [
         {
-            "dateOrigine": "2026-02-02",
-            "dateRemplacement": "2026-02-03",
+            "dateOrigine": "2026-02-09",
+            "dateRemplacement": "2026-02-10",
             "description": "Jour férié",
         }
     ]
