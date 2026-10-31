@@ -948,7 +948,7 @@ describe("scenarios", () => {
       body: { name: "flaky" },
     });
     assert.deepEqual(kinds(app), ["latency", "errorRate"]);
-    assert.equal(app.toast().text, "Scénario flaky appliqué");
+    assert.equal(app.toast().text, "Préréglage flaky appliqué");
     app.close();
   });
 

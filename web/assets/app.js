@@ -2081,7 +2081,7 @@ function renderPresets() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ name }),
         },
-        `Scénario ${name} appliqué`
+        `Préréglage ${name} appliqué`
       )
     );
   });
