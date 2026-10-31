@@ -112,6 +112,24 @@ describe("the detail panel", () => {
     app.close();
   });
 
+  test("stacks the summary when it no longer fits on one line", async () => {
+    const app = await mount();
+    await openCourse(app);
+    const summary = app.query("#detail .detail__summary");
+    assert.equal(summary.classList.contains("is-stacked"), false);
+
+    Object.defineProperty(app.window.HTMLElement.prototype, "offsetTop", {
+      configurable: true,
+      get() {
+        return this.textContent.includes("Publié") ? 16 : 0;
+      },
+    });
+    app.window.dispatchEvent(new app.window.Event("resize"));
+
+    assert.equal(summary.classList.contains("is-stacked"), true);
+    app.close();
+  });
+
   test("gives the points behind the summary percentages", async () => {
     const app = await mount();
     await openCourse(app);

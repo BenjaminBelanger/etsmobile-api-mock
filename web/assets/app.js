@@ -961,6 +961,15 @@ function renderDetail() {
   }
   fillDetailSelect(courses, course.courseId);
   redraw(el.detail, detailHtml(course), () => wireDetail(course));
+  fitSummary();
+}
+
+function fitSummary() {
+  const summary = el.detail.querySelector(".detail__summary");
+  if (!summary) return;
+  summary.classList.remove("is-stacked");
+  const tops = [...summary.children].map((part) => part.offsetTop);
+  summary.classList.toggle("is-stacked", tops.some((top) => top !== tops[0]));
 }
 
 function wireDetail(course) {
@@ -2690,6 +2699,7 @@ function setView(view) {
   if (view === "schedule" && state.data) {
     renderScaffold();
     renderBlocks(false);
+    fitSummary();
   }
   if (view === "failures") loadFailures();
   if (view === "student") loadStudent();
@@ -2894,6 +2904,7 @@ window.addEventListener("resize", () => {
   if (state.data && state.view === "schedule") {
     renderScaffold();
     renderBlocks(false);
+    fitSummary();
   }
 });
 

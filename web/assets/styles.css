@@ -484,6 +484,7 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   font-size: var(--fontSizeBase200);
   color: var(--colorNeutralForeground3);
 }
+.detail__summary.is-stacked { flex-direction: column; }
 .detail__summary b {
   font-weight: var(--fontWeightSemibold);
   color: var(--colorNeutralForeground2);
