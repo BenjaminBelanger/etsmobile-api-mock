@@ -852,6 +852,21 @@ def test_resetting_a_session_brings_every_course_back(session):
     assert block_of(state, LAB)["jour"] == "5"
 
 
+def test_an_unchanged_session_cannot_be_reset(session):
+    assert schedule_editor.get_state(session)["canReset"] is False
+    with pytest.raises(EditorError, match="Nothing to reset"):
+        schedule_editor.reset_session(session)
+
+
+def test_a_session_edited_back_to_its_original_cannot_be_reset(session):
+    schedule_editor.delete_course(session, COURSE)
+    assert schedule_editor.get_state(session)["canReset"] is True
+
+    state = schedule_editor.undo(session)
+
+    assert state["canReset"] is False
+
+
 def test_resetting_a_session_can_be_undone(session):
     schedule_editor.delete_course(session, COURSE)
     schedule_editor.reset_session(session)

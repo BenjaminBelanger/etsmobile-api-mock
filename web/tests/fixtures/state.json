@@ -550,6 +550,7 @@
   ],
   "canUndo": false,
   "canRedo": false,
+  "canReset": false,
   "meta": {
     "dayStart": "08:00",
     "dayEnd": "22:00",

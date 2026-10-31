@@ -322,6 +322,7 @@ function applyState(data, opts) {
   renderCatalog(meta.catalog);
   el.undoBtn.disabled = !data.canUndo;
   el.redoBtn.disabled = !data.canRedo;
+  el.resetBtn.disabled = !data.canReset;
 }
 
 function renderWeekPicker() {

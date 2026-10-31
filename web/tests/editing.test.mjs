@@ -17,6 +17,12 @@ async function withUndo() {
   return mount({ state });
 }
 
+async function withReset() {
+  const state = baseState();
+  state.canReset = true;
+  return mount({ state });
+}
+
 describe("dragging a block", () => {
   test("moves the whole series", async () => {
     const app = await mount();
@@ -380,8 +386,15 @@ describe("toolbar", () => {
     app.close();
   });
 
-  test("resetting the session is confirmed first", async () => {
+  test("resetting is unavailable while the session is unchanged", async () => {
     const app = await mount();
+
+    assert.equal(app.byId("resetBtn").disabled, true);
+    app.close();
+  });
+
+  test("resetting the session is confirmed first", async () => {
+    const app = await withReset();
 
     await app.click(app.byId("resetBtn"));
 
@@ -398,7 +411,7 @@ describe("toolbar", () => {
   });
 
   test("the reset can be called off", async () => {
-    const app = await mount();
+    const app = await withReset();
     await app.click(app.byId("resetBtn"));
 
     await app.click(app.query("#resetDialog [data-close-reset]"));

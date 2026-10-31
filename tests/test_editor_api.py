@@ -41,6 +41,7 @@ def test_the_state_endpoint_serves_the_whole_editor_state(client, session):
         "dates",
         "canUndo",
         "canRedo",
+        "canReset",
         "meta",
     }
     assert state["session"] == session

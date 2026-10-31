@@ -217,6 +217,14 @@ def _snapshot(session: str) -> None:
     _redo[session] = []
 
 
+def _is_modified(session: str, doc: dict) -> bool:
+    return bool(
+        doc["trash"]
+        or doc["dates"]
+        or doc["courses"] != data_store.get_session_courses(session, base=True)
+    )
+
+
 def _course_key(course: dict) -> str:
     return f"{course['sigle']}-{course['groupe']}"
 
@@ -540,6 +548,7 @@ def get_state(session: str) -> dict:
             "dates": _date_rows(session, doc),
             "canUndo": bool(_undo.get(session)),
             "canRedo": bool(_redo.get(session)),
+            "canReset": _is_modified(session, doc),
             "meta": {
                 "dayStart": _to_hhmm(DAY_START_MIN),
                 "dayEnd": _to_hhmm(DAY_END_MIN),
@@ -1208,7 +1217,8 @@ def redo(session: str) -> dict:
 
 def reset_session(session: str) -> dict:
     with _lock:
-        _load_doc(session)
+        if not _is_modified(session, _load_doc(session)):
+            raise EditorError("Nothing to reset")
         _snapshot(session)
         _docs[session] = {
             "courses": data_store.get_session_courses(session, base=True),
