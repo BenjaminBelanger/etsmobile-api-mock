@@ -818,7 +818,7 @@ function summaryHtml(summary) {
   return `<div class="detail__summary">
         ${summaryPart("À ce jour", plain(summary.noteACeJour), summary.scoreFinalSur100, outOf)}
         ${summaryPart("Moyenne", percentOf(summary.moyenneClasse, outOf), summary.moyenneClasse, outOf)}
-        <span>Publié <b>${plain(outOf)} %</b></span>
+        <span>Publié <b>${Number(plain(outOf))} %</b></span>
       </div>`;
 }
 

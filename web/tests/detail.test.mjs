@@ -108,7 +108,7 @@ describe("the detail panel", () => {
 
     assert.match(summary, /À ce jour 76.4 %/);
     assert.match(summary, /Moyenne 59.3 %/);
-    assert.match(summary, /Publié 30.0 %/);
+    assert.match(summary, /Publié 30 %/);
     app.close();
   });
 
