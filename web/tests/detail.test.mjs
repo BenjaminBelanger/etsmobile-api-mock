@@ -106,9 +106,19 @@ describe("the detail panel", () => {
 
     const summary = app.text("#detail .detail__summary").replace(/\s+/g, " ");
 
-    assert.match(summary, /À ce jour 76.4/);
-    assert.match(summary, /Moyenne 17.8/);
+    assert.match(summary, /À ce jour 76.4 %/);
+    assert.match(summary, /Moyenne 59.3 %/);
     assert.match(summary, /Publié 30.0 %/);
+    app.close();
+  });
+
+  test("gives the points behind the summary percentages", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const tips = app.queryAll("#detail .detail__summary span[title]").map((span) => span.title);
+
+    assert.deepEqual(tips, ["22.9 points sur 30.0", "17.8 points sur 30.0"]);
     app.close();
   });
 

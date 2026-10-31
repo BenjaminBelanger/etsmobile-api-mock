@@ -798,14 +798,27 @@ function checkBox(key, label, checked) {
       </label>`;
 }
 
+function percentOf(points, outOf) {
+  const value = Number(plain(points));
+  const total = Number(plain(outOf));
+  if (!plain(points) || !Number.isFinite(value) || !(total > 0)) return null;
+  return ((value / total) * 100).toFixed(1);
+}
+
+function summaryPart(label, percent, points, outOf) {
+  const tip = plain(points) ? ` title="${plain(points)} points sur ${plain(outOf)}"` : "";
+  return `<span${tip}>${label} <b>${percent == null ? "-" : `${percent} %`}</b></span>`;
+}
+
 function summaryHtml(summary) {
   if (!summary || !summary.noteACeJour) {
     return `<p class="detail__empty">Aucune note publiée.</p>`;
   }
+  const outOf = summary.tauxPublication;
   return `<div class="detail__summary">
-        <span>À ce jour <b>${plain(summary.noteACeJour)}</b></span>
-        <span>Moyenne <b>${plain(summary.moyenneClasse)}</b></span>
-        <span>Publié <b>${plain(summary.tauxPublication)} %</b></span>
+        ${summaryPart("À ce jour", plain(summary.noteACeJour), summary.scoreFinalSur100, outOf)}
+        ${summaryPart("Moyenne", percentOf(summary.moyenneClasse, outOf), summary.moyenneClasse, outOf)}
+        <span>Publié <b>${plain(outOf)} %</b></span>
       </div>`;
 }
 
