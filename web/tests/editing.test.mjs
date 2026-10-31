@@ -372,7 +372,9 @@ describe("toolbar", () => {
     const app = await withUndo();
 
     await app.click(app.byId("undoBtn"));
+    assert.equal(app.toast().text, "Modification annulée");
     await app.click(app.byId("redoBtn"));
+    assert.equal(app.toast().text, "Modification rétablie");
 
     assert.equal(app.server.called("/undo").length, 1);
     assert.equal(app.server.called("/redo").length, 1);

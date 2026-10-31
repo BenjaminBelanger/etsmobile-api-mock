@@ -2796,10 +2796,10 @@ el.weekToday.addEventListener("click", () => {
 });
 el.addBtn.addEventListener("click", openAddDialog);
 el.undoBtn.addEventListener("click", () =>
-  apiPost("/undo", { session: state.session })
+  apiPost("/undo", { session: state.session }).then(() => toast("Modification annulée"))
 );
 el.redoBtn.addEventListener("click", () =>
-  apiPost("/redo", { session: state.session })
+  apiPost("/redo", { session: state.session }).then(() => toast("Modification rétablie"))
 );
 el.resetBtn.addEventListener("click", () => {
   el.resetSession.textContent = state.session || "";
