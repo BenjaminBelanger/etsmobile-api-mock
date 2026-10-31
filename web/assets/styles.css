@@ -479,11 +479,12 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .detail__act { flex: none; }
 
 .detail__summary {
-  display: flex; flex-wrap: wrap; gap: 1px 12px;
+  display: flex; flex-wrap: wrap; justify-content: space-between; gap: 1px 8px;
   font-variant-numeric: tabular-nums;
   font-size: var(--fontSizeBase200);
   color: var(--colorNeutralForeground3);
 }
+.detail__summary.is-stacked { flex-direction: column; }
 .detail__summary b {
   font-weight: var(--fontWeightSemibold);
   color: var(--colorNeutralForeground2);

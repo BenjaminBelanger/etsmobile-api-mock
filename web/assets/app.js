@@ -798,14 +798,27 @@ function checkBox(key, label, checked) {
       </label>`;
 }
 
+function percentOf(points, outOf) {
+  const value = Number(plain(points));
+  const total = Number(plain(outOf));
+  if (!plain(points) || !Number.isFinite(value) || !(total > 0)) return null;
+  return ((value / total) * 100).toFixed(1);
+}
+
+function summaryPart(label, percent, points, outOf) {
+  const tip = plain(points) ? ` title="${plain(points)} points sur ${plain(outOf)}"` : "";
+  return `<span${tip}>${label} <b>${percent == null ? "-" : `${percent} %`}</b></span>`;
+}
+
 function summaryHtml(summary) {
   if (!summary || !summary.noteACeJour) {
     return `<p class="detail__empty">Aucune note publiée.</p>`;
   }
+  const outOf = summary.tauxPublication;
   return `<div class="detail__summary">
-        <span>À ce jour <b>${plain(summary.noteACeJour)}</b></span>
-        <span>Moyenne <b>${plain(summary.moyenneClasse)}</b></span>
-        <span>Publié <b>${plain(summary.tauxPublication)} %</b></span>
+        ${summaryPart("À ce jour", plain(summary.noteACeJour), summary.scoreFinalSur100, outOf)}
+        ${summaryPart("Moyenne", percentOf(summary.moyenneClasse, outOf), summary.moyenneClasse, outOf)}
+        <span>Publié <b>${Number(plain(outOf))} %</b></span>
       </div>`;
 }
 
@@ -948,6 +961,15 @@ function renderDetail() {
   }
   fillDetailSelect(courses, course.courseId);
   redraw(el.detail, detailHtml(course), () => wireDetail(course));
+  fitSummary();
+}
+
+function fitSummary() {
+  const summary = el.detail.querySelector(".detail__summary");
+  if (!summary) return;
+  summary.classList.remove("is-stacked");
+  const tops = [...summary.children].map((part) => part.offsetTop);
+  summary.classList.toggle("is-stacked", tops.some((top) => top !== tops[0]));
 }
 
 function wireDetail(course) {
@@ -2677,6 +2699,7 @@ function setView(view) {
   if (view === "schedule" && state.data) {
     renderScaffold();
     renderBlocks(false);
+    fitSummary();
   }
   if (view === "failures") loadFailures();
   if (view === "student") loadStudent();
@@ -2881,6 +2904,7 @@ window.addEventListener("resize", () => {
   if (state.data && state.view === "schedule") {
     renderScaffold();
     renderBlocks(false);
+    fitSummary();
   }
 });
 
