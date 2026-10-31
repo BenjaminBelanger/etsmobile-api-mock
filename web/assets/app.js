@@ -2848,9 +2848,10 @@ document.addEventListener("keydown", (e) => {
   } else if (state.view !== "schedule") {
     return;
   } else if ((e.key === "Delete" || e.key === "Backspace") && !typing) {
+    const occ = selectedOccurrence();
+    if (occ && occ.kind === "exam") return;
     if (occurrenceMode()) {
-      const occ = selectedOccurrence();
-      if (occ && occ.blockId && occ.kind !== "exam" && !occ.canceled) {
+      if (occ && occ.blockId && !occ.canceled) {
         e.preventDefault();
         cancelOccurrence(occ);
       }

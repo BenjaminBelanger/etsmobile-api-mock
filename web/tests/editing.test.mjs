@@ -343,6 +343,19 @@ describe("keyboard", () => {
     app.close();
   });
 
+  test("keeps the course when the delete key is pressed on its final exam", async () => {
+    const app = await mount();
+    app.select(app.byId("weekSelect"), "3");
+    await flush();
+    await app.drag("LOG430-02:exam", { dx: 0, dy: 0, steps: false });
+
+    app.key("Delete");
+    await flush();
+
+    assert.equal(app.server.lastCall("/course/delete"), null);
+    app.close();
+  });
+
   test("ignores the delete key while typing", async () => {
     const app = await mount();
     await app.drag("LOG430-02:0", { dx: 0, dy: 0, steps: false });
