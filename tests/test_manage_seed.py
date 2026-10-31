@@ -281,6 +281,7 @@ def test_listing_an_empty_session_says_so(seed_copy):
 
 def test_a_running_server_is_notified(monkeypatch):
     monkeypatch.setattr(manage_seed, "_notify_server", REAL_NOTIFY)
+    monkeypatch.delenv("MOCK_URL", raising=False)
     requests = []
 
     class Response:
@@ -311,4 +312,27 @@ def test_an_unreachable_server_is_only_a_warning(monkeypatch, capsys):
 
     manage_seed._notify_server()
 
-    assert "Server not running" in capsys.readouterr().out
+    assert "Serveur arrêté" in capsys.readouterr().out
+
+
+def test_the_server_url_can_be_overridden(monkeypatch):
+    monkeypatch.setattr(manage_seed, "_notify_server", REAL_NOTIFY)
+    monkeypatch.setenv("MOCK_URL", "http://elsewhere:9000/")
+    requests = []
+
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        requests.append(request.full_url)
+        return Response()
+
+    monkeypatch.setattr(manage_seed.urllib.request, "urlopen", fake_urlopen)
+
+    manage_seed._notify_server()
+
+    assert requests == ["http://elsewhere:9000/reload"]

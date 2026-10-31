@@ -386,7 +386,7 @@ def _build_parser() -> argparse.ArgumentParser:
     failures.add_argument(
         "--auth",
         action=argparse.BooleanOptionalAction,
-        help="Exige un header Authorization.",
+        help="Exige un en-tête Authorization.",
         default=None,
     )
     failures.add_argument(

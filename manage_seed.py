@@ -11,11 +11,12 @@ from lib._paths import SEED
 
 
 def _notify_server():
+    url = os.environ.get("MOCK_URL", "http://localhost:8080").rstrip("/")
     try:
-        req = urllib.request.Request("http://localhost:8080/reload", method="POST")
+        req = urllib.request.Request(f"{url}/reload", method="POST")
         urllib.request.urlopen(req, timeout=2)
     except (urllib.error.URLError, OSError):
-        print("  Server not running -- changes will apply on next start.")
+        print("  Serveur arrêté : les changements s'appliqueront au prochain démarrage.")
 
 
 def _load_json(path: Path):
