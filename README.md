@@ -5,6 +5,7 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Online Demo](#online-demo)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Tests](#tests)
 - [Supported Format](#supported-format)
@@ -27,9 +28,7 @@ pip install -r requirements.txt
 python start.py
 ```
 
-This launches an interactive menu to pick a student profile, an optional calendar scenario, and starts the server. The server runs at `http://localhost:8080`. You can access API docs at `http://localhost:8080/docs`.
-
-To skip the menu, pass the configuration as flags instead:
+An interactive menu picks a student profile and an optional calendar scenario, then starts the server at `http://localhost:8080` (API docs at `/docs`). To skip the menu, pass flags instead:
 
 ```bash
 python start.py --profile semester-off
@@ -37,36 +36,27 @@ python start.py --courses 2 --days 1,3,5 --time morning
 python start.py --scenario semaine-relache --semester-week 3
 ```
 
-`python start.py --help` lists every profile, scenario and day code.
+`python start.py --help` lists every profile, scenario and day code. To point the Flutter app at the mock, see [Connecting the Flutter App](#connecting-the-flutter-app).
 
-The server runs on its own: nothing else has to be configured to use it. To also
-point the Flutter app at the mock while it runs, see
-[Connecting the Flutter App](#connecting-the-flutter-app).
+## Online Demo
+
+Try the editor in the browser, without installing anything:
+**https://benjaminbelanger.github.io/etsmobile-api-mock/**
+
+Changes are not saved and reset on reload.
 
 ## Schedule Editor UI
 
 <img width="2557" height="1237" alt="Screenshot 2026-09-28 141407" src="https://github.com/user-attachments/assets/d85eeea4-0cd3-4966-aaa8-670280655a7c" />
 
-A visual weekly-schedule editor is served at `http://localhost:8080/editor`
-(the root `/` redirects there). It shows the active session's courses in a week
-grid and lets you move, resize, add and delete them. Edits are written back to
-the mock, so the API endpoints serve the edited schedule.
+A weekly-schedule editor is served at `http://localhost:8080/editor` (the root `/` redirects there). Move, resize, add and delete courses; the API serves the edited schedule. `python start.py` clears every editor change at each launch.
 
-The page has four tabs:
+Tabs:
 
-- **Horaire**: the schedule editor described below. Its **Dates de la session**
-  panel edits the session dates served by `listeSessions`.
-- **Étudiant**: edits the student profile served by `infoEtudiant`.
-- **Pannes**: the [failure injection](#failure-injection) panel.
+- **Horaire**: the schedule, plus the session dates served by `listeSessions`.
+- **Étudiant**: the student profile served by `infoEtudiant`.
+- **Pannes**: [failure injection](#failure-injection).
 - **Logs**: the [call log](#call-log).
-
-`python start.py` clears every editor change at each launch.
-
-Nothing extra is needed to run it. Start the server and open the page:
-
-```bash
-python start.py
-```
 
 ### Editing scopes
 
@@ -81,8 +71,7 @@ dragged in **This occurrence**; reset it to put it back on the series slot.
 
 ### Front-end build
 
-The editor's front-end assets are already built and committed, so running the
-mock only needs Python. To rebuild:
+The front-end assets are committed, so running the mock only needs Python. To rebuild:
 
 ```bash
 cd web
@@ -96,17 +85,13 @@ npm run build
 python -m pytest tests/    # server, editor backend, CLIs and the UI suite
 ```
 
-The editor UI is covered by a jsdom suite that drives `web/assets/app.js`
-against the real `web/index.html`. It needs the front-end dev dependencies:
+The editor UI suite (jsdom) needs the front-end dependencies, and is skipped by pytest without them:
 
 ```bash
 cd web
 npm install
 npm test
 ```
-
-`python -m pytest tests/` runs that suite too when `web/node_modules` is
-present, and skips it otherwise.
 
 ## Supported Format
 
@@ -254,10 +239,7 @@ Scenarios are defined declaratively in `seed/scenarios.json`.
 
 The mock can simulate broken-server conditions. Set them at startup with flags, or change them on a running server from the **Pannes** tab of the web UI, the `manage_failures.py` CLI, or `/admin/failures`.
 
-The **Pannes** tab lists the active injections, lets you edit, add and remove
-them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
-CLI, so both describe the same config. The [call log](#call-log) shows which
-calls each injection hit.
+The **Pannes** tab edits the same config as the CLI and can apply a preset. The [call log](#call-log) shows which calls each injection hit.
 
 <img width="2556" height="1236" alt="Screenshot 2026-09-28 141447" src="https://github.com/user-attachments/assets/8ee77a84-8086-4340-82c7-adf1b4ad7a06" />
 
@@ -313,7 +295,7 @@ PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0
 
 ### Named presets via manage_failures.py
 
-For day-to-day use you usually don't want to hand-write JSON. The `manage_failures.py` CLI applies named presets defined in `seed/failure_presets.json`:
+`manage_failures.py` applies the named presets from `seed/failure_presets.json`:
 
 ```bash
 python manage_failures.py list             # show available presets
@@ -341,9 +323,7 @@ Add new presets by editing `seed/failure_presets.json`.
 
 ## Call Log
 
-The **Logs** tab of the web UI lists every call the mock receives under
-`/api/`, with its endpoint, parameters, status, duration, size and any injected
-failure. Use it to see when and how often the app calls the API:
+The **Logs** tab lists every `/api/` call with its parameters, status, duration, size and any injected failure:
 
 - Repeated calls (same endpoint and parameters) are numbered and shown in
   orange, since the app could cache or skip them.
@@ -353,10 +333,7 @@ failure. Use it to see when and how often the app calls the API:
 
 <img width="2556" height="1240" alt="Screenshot 2026-09-28 141556" src="https://github.com/user-attachments/assets/6beb5c47-bf1a-4669-8f14-c160660539f0" />
 
-The log is kept in memory (the last 100,000 entries) and resets when the server
-restarts.
-
-It can also be read and cleared through the admin endpoint:
+The log keeps the last 100,000 entries in memory and resets on restart. It is also available through the admin endpoint:
 
 ```bash
 curl http://localhost:8080/admin/calls              # list the log
@@ -470,24 +447,8 @@ python start.py --no-app                             # this run only: don't modi
 | `--revert-app` | Restore the app and exit, after a run that didn't |
 | `--forget-app` | Restore the app if needed, forget it and exit |
 
-**What is undone:** When the server
-stops, lines from steps 2-4 change. They go back to exactly what they were before the run, uncommitted
-changes included. Everything else in those files is left alone.
-
-**When:** On Ctrl+C or closing the terminal. If the process
-was killed some other way, run `python start.py --revert-app`. Starting a second
-`start.py` while one is running hands the app over: the second one undoes the
-changes when it stops.
-
-**Stop using it:** Run `python start.py --forget-app`. Later runs leave the app
-alone.
-
-**Saved settings:** `mock.config.json` holds the path, platform
-and host, plus the original lines while a server runs. A flag always overrides
-the saved value.
-
-**Special cases:**
-- A line from steps 2-4 was added or removed while the server ran: that file is
-  left as is and listed. Fix it, then run `python start.py --revert-app`.
-- The app already points at a local server before the first run (steps 2-4
-  applied by hand): the run stops. Put the production values back first.
+- On Ctrl+C or closing the terminal, the lines from steps 2-4 go back to exactly what they were, uncommitted changes included. If the process was killed another way, run `python start.py --revert-app`.
+- A second `start.py` started while one runs takes over the app and restores it when it stops.
+- Settings are saved in `mock.config.json`. A flag always overrides the saved value.
+- If a line from steps 2-4 was added or removed during the run, that file is left as is and listed. Fix it, then run `--revert-app`.
+- If the app already points at a local server before the first run, the run stops. Put the production values back first.
