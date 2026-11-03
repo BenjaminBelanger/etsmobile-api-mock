@@ -1,3 +1,4 @@
+import { existsSync, realpathSync } from "node:fs";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +12,7 @@ const DEMO_TAGS = [
   '<link rel="stylesheet" href="demo/demo.css" />',
   '<script type="module" src="demo/main.js"></script>',
 ];
-const LOCAL_ONLY = new Set(["seed/schedule_overrides.json"]);
+const LOCAL_ONLY = new Set(["seed/schedule_overrides.json", "seed/student_overrides.json"]);
 const PAGE_FILES = ["backend.js", "demo.css", "main.js", "worker.js"];
 
 async function listFiles(dir, extension) {
@@ -44,7 +45,18 @@ export function demoPage(html) {
     .replaceAll("/editor/assets/", "assets/");
 }
 
+async function assertReplaceable(out) {
+  const entries = await readdir(out).catch((err) => {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  });
+  if (entries.length > 0 && !existsSync(join(out, "demo", "server.json"))) {
+    throw new Error(`refusing to replace ${out}: it is not empty and is not a previous demo build`);
+  }
+}
+
 export async function buildDemo(out) {
+  await assertReplaceable(out);
   await rm(out, { recursive: true, force: true });
   await mkdir(join(out, "demo"), { recursive: true });
   const html = await readFile(join(HERE, "index.html"), "utf8");
@@ -54,7 +66,11 @@ export async function buildDemo(out) {
   await writeFile(join(out, "demo", "server.json"), JSON.stringify(await serverFiles()));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+const runDirectly =
+  process.argv[1] &&
+  realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+
+if (runDirectly) {
   const out = resolve(process.argv[2] ?? join(HERE, "dist"));
   await buildDemo(out);
   console.log(`built the demo site in ${out}`);

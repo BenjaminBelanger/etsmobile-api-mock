@@ -1,4 +1,5 @@
 const SERVER_PATHS = ["/editor/api/", "/admin/", "/api/"];
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
 
 export const servedByDemo = (url, pageUrl) =>
   url.origin === new URL(pageUrl).origin &&
@@ -13,8 +14,13 @@ export function createDemoFetch(worker, nativeFetch, pageUrl) {
     if (data.type !== "response" || !pending.has(data.id)) return;
     const { resolve, reject } = pending.get(data.id);
     pending.delete(data.id);
-    if (data.error) reject(new TypeError(data.error));
-    else resolve(new Response(data.body, { status: data.status, headers: data.headers }));
+    if (data.error) return reject(new TypeError(data.error));
+    try {
+      const body = NULL_BODY_STATUSES.has(data.status) ? null : data.body;
+      resolve(new Response(body, { status: data.status, headers: data.headers }));
+    } catch (err) {
+      reject(new TypeError(err.message));
+    }
   });
 
   worker.addEventListener("error", () => {

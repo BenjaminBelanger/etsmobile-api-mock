@@ -35,6 +35,7 @@ function showFailure(message) {
   if (boot.dataset.state === "error") return;
   boot.dataset.state = "error";
   boot.querySelector(".demo-boot__progress").remove();
+  if (!boot.isConnected) document.body.append(boot);
   stageText.textContent = `Le serveur n'a pas pu démarrer : ${message}`;
   const retry = document.createElement("fluent-button");
   retry.setAttribute("appearance", "primary");

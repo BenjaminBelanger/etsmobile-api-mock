@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { describe, test } from "node:test";
@@ -58,6 +58,36 @@ describe("the demo server bundle", () => {
     for (const name of modules) assert.ok(`lib/${name}` in files, `lib/${name}`);
     assert.ok("seed/courses.json" in files);
     assert.ok("seed/failure_presets.json" in files);
+    assert.equal("seed/schedule_overrides.json" in files, false);
+    assert.equal("seed/student_overrides.json" in files, false);
+  });
+
+  test("refuses to replace a folder that is not a previous demo build", async () => {
+    const out = await mkdtemp(join(tmpdir(), "demo-site-"));
+    try {
+      await writeFile(join(out, "keep.txt"), "mine");
+
+      await assert.rejects(buildDemo(out), /not a previous demo build/);
+      assert.equal(await readFile(join(out, "keep.txt"), "utf8"), "mine");
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
+  });
+
+  test("replaces a previous demo build", async () => {
+    const out = await mkdtemp(join(tmpdir(), "demo-site-"));
+    try {
+      await mkdir(join(out, "demo"));
+      await writeFile(join(out, "demo", "server.json"), "{}");
+      await writeFile(join(out, "stale.txt"), "old");
+
+      await buildDemo(out);
+
+      assert.equal(existsSync(join(out, "stale.txt")), false);
+      assert.ok(existsSync(join(out, "index.html")));
+    } finally {
+      await rm(out, { recursive: true, force: true });
+    }
   });
 
   test("builds a site with the page, the editor assets and the demo files", async () => {
@@ -125,6 +155,30 @@ describe("the demo fetch", () => {
     assert.equal(res.status, 400);
     assert.equal(res.headers.get("content-type"), "application/json");
     assert.deepEqual(await res.json(), { error: "non" });
+  });
+
+  test("answers a 204 without a body", async () => {
+    const worker = fakeWorker();
+    const demoFetch = createDemoFetch(worker, () => assert.fail("used the network"), PAGE);
+
+    const pending = demoFetch("/editor/api/state", { method: "DELETE" });
+    await settle();
+    worker.reply({ type: "response", id: worker.sent[0].id, status: 204, headers: [], body: "" });
+    const res = await pending;
+
+    assert.equal(res.status, 204);
+    assert.equal(await res.text(), "");
+  });
+
+  test("fails instead of hanging when the response cannot be built", async () => {
+    const worker = fakeWorker();
+    const demoFetch = createDemoFetch(worker, () => assert.fail("used the network"), PAGE);
+
+    const pending = demoFetch("/editor/api/state");
+    await settle();
+    worker.reply({ type: "response", id: worker.sent[0].id, status: 42, headers: [], body: "" });
+
+    await assert.rejects(pending, { name: "TypeError" });
   });
 
   test("sends an empty body for a GET", async () => {

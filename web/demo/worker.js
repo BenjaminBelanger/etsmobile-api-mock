@@ -6,10 +6,13 @@ const stage = (name) => postMessage({ type: "stage", stage: name });
 
 const lastLine = (err) => String(err.message || err).trim().split("\n").pop();
 
-async function writeServerFiles(pyodide) {
+async function downloadServerFiles() {
   const res = await fetch(new URL("server.json", import.meta.url));
   if (!res.ok) throw new Error(`server.json: ${res.status} ${res.statusText}`);
-  const files = await res.json();
+  return res.json();
+}
+
+function writeServerFiles(pyodide, files) {
   for (const [path, content] of Object.entries(files)) {
     const target = `${APP_DIR}/${path}`;
     pyodide.FS.mkdirTree(target.slice(0, target.lastIndexOf("/")));
@@ -19,17 +22,20 @@ async function writeServerFiles(pyodide) {
 }
 
 async function boot() {
+  const download = downloadServerFiles();
+  download.catch(() => {});
   stage("python");
   const pyodide = await loadPyodide();
   stage("packages");
   await pyodide.loadPackage("fastapi");
   stage("server");
-  await writeServerFiles(pyodide);
+  writeServerFiles(pyodide, await download);
   pyodide.runPython(`import os, sys; os.chdir("${APP_DIR}"); sys.path.insert(0, "${APP_DIR}")`);
   const bridge = pyodide.pyimport("bridge");
   const app = bridge.load_app();
+  const handle = bridge.handle;
   return async ({ method, url, headers, body }) =>
-    JSON.parse(await bridge.handle(app, method, url, JSON.stringify(headers), body));
+    JSON.parse(await handle(app, method, url, JSON.stringify(headers), body));
 }
 
 const server = boot();
