@@ -986,6 +986,7 @@ fluent-dialog::part(dialog) { max-width: 536px; }
   animation: rise var(--durationGentle) var(--curveDecelerateMid);
 }
 .toast-host[hidden] { display: none; }
+#toast { grid-template-columns: 0 auto 0 0; }
 
 @keyframes rise {
   from { opacity: 0; transform: translate(-50%, 12px); }
