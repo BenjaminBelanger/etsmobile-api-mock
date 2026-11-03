@@ -4,6 +4,7 @@ import hashlib
 import json
 import random
 import re
+import unicodedata
 from datetime import date, timedelta
 
 from ._paths import SEED
@@ -12,6 +13,20 @@ LAB_DURATION_HOURS = 3
 
 _RAW_SESSIONS: list[dict] = []
 _DATE_RE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+_SEASON_ORDER = "HÉA"
+_SEASON_PREFIXES = {
+    "H": "H",
+    "E": "É",
+    "É": "É",
+    "A": "A",
+    "Hiver": "H",
+    "Ete": "É",
+    "Été": "É",
+    "Automne": "A",
+}
+_NAMED_SESSION_RE = re.compile(r"([^\W\d]+) ?(\d{4})")
+_NUMERIC_SESSION_RE = re.compile(r"(\d{4})([123])")
 
 
 def reload_sessions() -> list[dict]:
@@ -48,12 +63,31 @@ def compute_next_session(active: str | None = None) -> str:
     return f"H{year + 1}"
 
 
+def _parse_session(value: str) -> tuple[int, str] | None:
+    text = unicodedata.normalize("NFC", value)
+    if match := _NUMERIC_SESSION_RE.fullmatch(text):
+        return int(match[1]), _SEASON_ORDER[int(match[2]) - 1]
+    match = _NAMED_SESSION_RE.fullmatch(text)
+    if match and match[1] in _SEASON_PREFIXES:
+        return int(match[2]), _SEASON_PREFIXES[match[1]]
+    return None
+
+
+def normalize_session_code(value: str) -> str:
+    parsed = _parse_session(value)
+    if parsed is None:
+        return value
+    year, prefix = parsed
+    return f"{prefix}{year}"
+
+
 def session_rank(session_code: str) -> int:
     """Convert a session code to a sortable integer for range filtering."""
-    prefix_map = {"H": 0, "E": 1, "É": 1, "A": 2}
-    if len(session_code) >= 5 and session_code[0] in prefix_map:
-        return int(session_code[1:]) * 3 + prefix_map[session_code[0]]
-    return 9999
+    parsed = _parse_session(session_code)
+    if parsed is None:
+        return 9999
+    year, prefix = parsed
+    return year * 3 + _SEASON_ORDER.index(prefix)
 
 
 def _session_prefix(code: str) -> str:
@@ -163,6 +197,44 @@ def compute_week_shift_delta(active_code: str, target_week: int) -> int:
     return (target_start - original_start).days
 
 
+def _require_session_dates(code: str) -> dict:
+    meta = _get_session_dates(code)
+    if meta is None:
+        raise ValueError(f"No metadata for session '{code}'")
+    return meta
+
+
+def compute_ended_shift_delta(active_code: str) -> int:
+    original_end = date.fromisoformat(_require_session_dates(active_code)["dateFin"])
+    yesterday = date.today() - timedelta(days=1)
+    return (yesterday - original_end).days
+
+
+def compute_gap_shift_delta(active_code: str, next_code: str, gap_days: int) -> int:
+    if gap_days < 0:
+        raise ValueError("gap_days must be >= 0")
+    active_end = date.fromisoformat(_require_session_dates(active_code)["dateFin"])
+    next_start = date.fromisoformat(_require_session_dates(next_code)["dateDebut"])
+    target_start = active_end + timedelta(days=gap_days + 1)
+    return (target_start - next_start).days
+
+
+def nearest_week_shift(day_delta: int) -> int:
+    """Round a day shift to the nearest whole week so every date keeps its weekday."""
+    remainder = day_delta % 7
+    return day_delta - remainder if remainder <= 3 else day_delta + 7 - remainder
+
+
+def date_fields(entry: dict) -> list[str]:
+    return [
+        key
+        for key, value in entry.items()
+        if key not in ("abrege", "auLong")
+        and isinstance(value, str)
+        and _DATE_RE.match(value)
+    ]
+
+
 def shift_session_metadata(session_code: str, day_delta: int) -> None:
     """Shift every date field of the session record in _RAW_SESSIONS in place."""
     if day_delta == 0:
@@ -170,12 +242,17 @@ def shift_session_metadata(session_code: str, day_delta: int) -> None:
     for entry in _RAW_SESSIONS:
         if entry["abrege"] != session_code:
             continue
-        for key, value in entry.items():
-            if key in ("abrege", "auLong"):
-                continue
-            if isinstance(value, str) and _DATE_RE.match(value):
-                entry[key] = _shift_date_str(value, day_delta)
+        for key in date_fields(entry):
+            entry[key] = _shift_date_str(entry[key], day_delta)
         return
+
+
+def apply_date_overrides(overrides: dict[str, dict[str, str]]) -> None:
+    for entry in _RAW_SESSIONS:
+        dates = overrides.get(entry["abrege"], {})
+        for key in date_fields(entry):
+            if key in dates:
+                entry[key] = dates[key]
 
 
 reload_sessions()

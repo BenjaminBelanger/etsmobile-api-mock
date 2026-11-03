@@ -84,6 +84,42 @@ def test_an_unreadable_session_code_ranks_last(code):
     assert sessions.session_rank(code) == 9999
 
 
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("H2025", "H2025"),
+        ("E2025", "É2025"),
+        ("É2025", "É2025"),
+        ("A2025", "A2025"),
+        ("Hiver 2025", "H2025"),
+        ("Été 2025", "É2025"),
+        ("Ete 2025", "É2025"),
+        ("Automne 2025", "A2025"),
+        ("20251", "H2025"),
+        ("20252", "É2025"),
+        ("20253", "A2025"),
+        ("E\u0301te\u0301 2025", "É2025"),
+    ],
+)
+def test_every_session_format_normalizes_to_the_short_code(value, expected):
+    assert sessions.normalize_session_code(value) == expected
+
+
+@pytest.mark.parametrize("value", ["", "X2025", "H25", "20254", "Printemps 2025"])
+def test_an_unreadable_session_is_left_as_is(value):
+    assert sessions.normalize_session_code(value) == value
+
+
+@pytest.mark.parametrize("value", ["Hiver", "Hiver 2025x", "Habcd", "20254"])
+def test_a_malformed_session_ranks_last_instead_of_failing(value):
+    assert sessions.session_rank(value) == 9999
+
+
+@pytest.mark.parametrize("value", ["E2025", "Été 2025", "Ete 2025", "20252"])
+def test_every_session_format_ranks_like_the_short_code(value):
+    assert sessions.session_rank(value) == sessions.session_rank("É2025")
+
+
 def test_the_course_window_runs_from_the_start_to_the_last_class_day():
     assert sessions.course_window("H2026") == (
         date(2026, 1, 5),
@@ -381,3 +417,56 @@ def test_reloading_sessions_restores_the_file_contents():
         "A2025",
         "H2026",
     ]
+
+
+def session_end(code="H2026"):
+    entry = next(s for s in sessions.get_raw_sessions() if s["abrege"] == code)
+    return date.fromisoformat(entry["dateFin"])
+
+
+def test_the_ended_shift_makes_the_session_end_yesterday(today):
+    now = today("2026-09-09")
+
+    sessions.shift_session_metadata(
+        "H2026", sessions.compute_ended_shift_delta("H2026")
+    )
+
+    assert session_end() == now - timedelta(days=1)
+
+
+def test_the_ended_shift_needs_a_known_session():
+    with pytest.raises(ValueError, match="No metadata"):
+        sessions.compute_ended_shift_delta("X2099")
+
+
+@pytest.mark.parametrize("gap", [0, 10, 120])
+def test_the_gap_shift_leaves_the_requested_days_off(gap):
+    sessions.shift_session_metadata(
+        "É2025", sessions.compute_gap_shift_delta("H2025", "É2025", gap)
+    )
+
+    days_off = (session_start("É2025") - session_end("H2025")).days - 1
+    assert days_off == gap
+
+
+def test_the_gap_shift_moves_only_by_what_is_missing():
+    days_off = (session_start("É2025") - session_end("H2025")).days - 1
+    assert sessions.compute_gap_shift_delta("H2025", "É2025", days_off) == 0
+
+
+@pytest.mark.parametrize(
+    "delta,expected",
+    [(0, 0), (3, 0), (4, 7), (-3, 0), (-4, -7), (14, 14), (-86, -84), (-88, -91)],
+)
+def test_the_week_shift_rounds_to_the_nearest_whole_week(delta, expected):
+    assert sessions.nearest_week_shift(delta) == expected
+
+
+def test_a_negative_gap_is_refused():
+    with pytest.raises(ValueError, match="gap_days must be >= 0"):
+        sessions.compute_gap_shift_delta("H2025", "É2025", -1)
+
+
+def test_the_gap_shift_needs_both_sessions():
+    with pytest.raises(ValueError, match="No metadata"):
+        sessions.compute_gap_shift_delta("H2025", "X2099", 10)

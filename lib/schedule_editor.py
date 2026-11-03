@@ -166,6 +166,8 @@ def _persist(session: str) -> None:
     doc = _docs[session]
     payload = data_store._load_overrides()
     payload[session] = {"courses": doc["courses"], "trash": doc["trash"]}
+    if doc["dates"]:
+        payload[session]["dates"] = doc["dates"]
     _write_overrides(payload)
 
 
@@ -185,9 +187,14 @@ def _load_doc(session: str) -> dict:
         doc = {
             "courses": copy.deepcopy(entry.get("courses", [])),
             "trash": copy.deepcopy(entry.get("trash", [])),
+            "dates": dict(entry.get("dates", {})),
         }
     else:
-        doc = {"courses": data_store.get_session_courses(session), "trash": []}
+        doc = {
+            "courses": data_store.get_session_courses(session),
+            "trash": [],
+            "dates": {},
+        }
     _docs[session] = doc
     _undo.setdefault(session, [])
     _redo.setdefault(session, [])
@@ -489,6 +496,15 @@ def _normalize_course(course: dict, sheet: dict | None, exam: dict | None) -> di
     }
 
 
+def _date_rows(session: str, doc: dict) -> list[dict]:
+    base = data_store.get_base_session(session) or {}
+    rows = []
+    for key in sessions.date_fields(base):
+        value = doc["dates"].get(key, base[key])
+        rows.append({"key": key, "value": value, "modified": value != base[key]})
+    return rows
+
+
 def get_state(session: str) -> dict:
     with _lock:
         if not session or session not in data_store.get_sessions_with_courses():
@@ -521,6 +537,7 @@ def get_state(session: str) -> dict:
             "blocks": blocks,
             "occurrences": _occurrences(session, doc["courses"], exams),
             "trash": trash,
+            "dates": _date_rows(session, doc),
             "canUndo": bool(_undo.get(session)),
             "canRedo": bool(_redo.get(session)),
             "meta": {
@@ -1130,6 +1147,43 @@ def reset_final_exam(session: str, course_id: str) -> dict:
     return get_state(session)
 
 
+def _session_base(session: str) -> dict:
+    base = data_store.get_base_session(session)
+    if base is None or session not in data_store.get_sessions_with_courses():
+        raise EditorError(f"Session '{session}' not found")
+    return base
+
+
+def set_session_date(session: str, field: str, value: str | None) -> dict:
+    with _lock:
+        base = _session_base(session)
+        if field not in sessions.date_fields(base):
+            raise EditorError(f"Unknown date '{field}'")
+        text = (value or "").strip()
+        wanted = _validate_date(text) if text else base[field]
+        doc = _load_doc(session)
+        if wanted != doc["dates"].get(field, base[field]):
+            _snapshot(session)
+            if wanted == base[field]:
+                doc["dates"].pop(field, None)
+            else:
+                doc["dates"][field] = wanted
+            _persist(session)
+    return get_state(session)
+
+
+def reset_session_dates(session: str) -> dict:
+    with _lock:
+        _session_base(session)
+        doc = _load_doc(session)
+        if not doc["dates"]:
+            raise EditorError("This session has no changed dates")
+        _snapshot(session)
+        doc["dates"] = {}
+        _persist(session)
+    return get_state(session)
+
+
 def undo(session: str) -> dict:
     with _lock:
         stack = _undo.get(session, [])
@@ -1159,6 +1213,7 @@ def reset_session(session: str) -> dict:
         _docs[session] = {
             "courses": data_store.get_session_courses(session, base=True),
             "trash": [],
+            "dates": {},
         }
         _forget(session)
     return get_state(session)

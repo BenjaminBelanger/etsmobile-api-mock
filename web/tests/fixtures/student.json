@@ -1,0 +1,37 @@
+{
+  "student": [
+    {
+      "key": "nom",
+      "value": "Last0",
+      "modified": false
+    },
+    {
+      "key": "prenom",
+      "value": "First0",
+      "modified": false
+    },
+    {
+      "key": "codePerm",
+      "value": "ABCD12345678",
+      "modified": false
+    },
+    {
+      "key": "codeUniversel",
+      "value": "AB12345",
+      "modified": false
+    },
+    {
+      "key": "soldeTotal",
+      "value": "1234,56$",
+      "modified": false
+    },
+    {
+      "key": "masculin",
+      "value": true,
+      "modified": false
+    }
+  ],
+  "canUndo": false,
+  "canRedo": false,
+  "canReset": false
+}

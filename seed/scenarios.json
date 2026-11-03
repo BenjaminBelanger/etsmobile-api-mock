@@ -20,7 +20,7 @@
     "replacedDays": [
       {
         "origin": { "rule": "next_weekday", "weekday": 1 },
-        "replacement": { "rule": "next_weekday", "weekday": 2 },
+        "replacement": { "rule": "next_weekday", "weekday": 1, "days": 1 },
         "description": "Jour férié"
       }
     ]
@@ -29,7 +29,7 @@
     "description": "Fin de semaine longue (vendredi + lundi off)",
     "skipDates": [
       { "rule": "next_weekday", "weekday": 5 },
-      { "rule": "next_weekday", "weekday": 1 }
+      { "rule": "next_weekday", "weekday": 5, "days": 3 }
     ]
   }
 }

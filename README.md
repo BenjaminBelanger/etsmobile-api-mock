@@ -12,8 +12,10 @@ Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Fl
 - [Endpoints](#endpoints)
 - [Managing Courses](#managing-courses)
 - [Profiles](#profiles)
+- [Session Calendar](#session-calendar)
 - [Scenarios](#scenarios)
 - [Failure Injection](#failure-injection)
+- [Call Log](#call-log)
 - [Sample Data](#sample-data)
 - [Authentication](#authentication)
 - [Customizing Data](#customizing-data)
@@ -37,6 +39,10 @@ python start.py --scenario semaine-relache --semester-week 3
 ```
 
 `python start.py --help` lists every profile, scenario and day code.
+
+The server runs on its own: nothing else has to be configured to use it. To also
+point the Flutter app at the mock while it runs, see
+[Connecting the Flutter App](#connecting-the-flutter-app).
 
 ## Online Demo
 
@@ -64,15 +70,22 @@ Then open `http://localhost:8000`.
 
 ## Schedule Editor UI
 
-<img width="2554" height="1235" alt="Screenshot 2026-09-09 222414" src="https://github.com/user-attachments/assets/2da27859-d13a-4df2-87f5-cb596055f1f6" />
+<img width="2557" height="1237" alt="Screenshot 2026-09-28 141407" src="https://github.com/user-attachments/assets/d85eeea4-0cd3-4966-aaa8-670280655a7c" />
 
 A visual weekly-schedule editor is served at `http://localhost:8080/editor`
 (the root `/` redirects there). It shows the active session's courses in a week
 grid and lets you move, resize, add and delete them. Edits are written back to
 the mock, so the API endpoints serve the edited schedule.
 
-The page has two tabs: **Horaire**, the schedule editor described below, and
-**Pannes**, the [failure injection](#failure-injection) panel.
+The page has four tabs:
+
+- **Horaire**: the schedule editor described below. Its **Dates de la session**
+  panel edits the session dates served by `listeSessions`.
+- **Étudiant**: edits the student profile served by `infoEtudiant`.
+- **Pannes**: the [failure injection](#failure-injection) panel.
+- **Logs**: the [call log](#call-log).
+
+`python start.py` clears every editor change at each launch.
 
 Nothing extra is needed to run it. Start the server and open the page:
 
@@ -156,6 +169,8 @@ All endpoints are `GET /api/Etudiant/...`:
 | `lireJoursRemplaces` | `session` | Replaced days |
 | `listeCoequipiers` | `session`, `sigle`, `groupe`, `nomElementEval` | Teammates |
 
+Session parameters (`session`, `sessionDebut`, `sessionFin`) accept the short (`H2025`, `E2025` or `É2025`, `A2025`), long (`Hiver 2025`, `Été 2025`, `Automne 2025`) and numeric (`20251`, `20252`, `20253`) formats.
+
 ## Managing Courses
 
 Courses are defined in `seed/courses.json`. Data is computed at startup.
@@ -219,15 +234,28 @@ python start.py --profile generated-busy --time evening
 
 Invalid values are rejected before the server starts.
 
-### Semester week (shift the session calendar)
+## Session Calendar
 
-By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. To simulate being at a specific week of the active session, set:
+By default, the mock uses the real session calendar from `seed/sessions.json`, so running the server near the end of a semester leaves few upcoming activities, exams in the past, and most grades already published. These flags move the active session and the one after it relative to today. The `start.py` menu asks the same two questions after the scenario.
+
+| Flag | Effect |
+|------|--------|
+| `--semester-week N` | Today falls in week N (1-15) of the active session |
+| `--between-sessions` | The active session ended yesterday, so today is in the break before the next one |
+| `--semester-gap DAYS` | Days off (0-180) between the end of the active session and the start of the next one |
+| `--no-next-session` | No session after the active one: it is not listed and has no courses |
+
+`--semester-week` can't be combined with `--between-sessions`, nor `--semester-gap` with `--no-next-session`. Without `--semester-gap`, the next session keeps its real weekday and about its real break.
 
 ```bash
-python start.py --semester-week 3
+python start.py --semester-week 14 --semester-gap 60       # end of term, next session two months away
+python start.py --between-sessions --semester-gap 10       # break, next session starts in 10 days
+python start.py --between-sessions --no-next-session       # break, next session not published yet
 ```
 
-This shifts the active session's `dateDebut` (and all other date fields) so that today falls at the chosen week. The next session is shifted by the same offset to preserve the gap between them.
+ÉTSMobile shows the "session starts soon" message when the next session is 30 days away or less, so `--between-sessions` with `--semester-gap 10` or `--semester-gap 45` tests either side of it.
+
+`--no-next-session` also hides [schedule editor](#schedule-editor-ui) edits for the next session until the flag is left out.
 
 ## Scenarios
 
@@ -253,9 +281,10 @@ The mock can simulate broken-server conditions. Set them at startup with flags, 
 
 The **Pannes** tab lists the active injections, lets you edit, add and remove
 them, and can apply a preset. It uses the same `/admin/failures` endpoint as the
-CLI, so both describe the same config.
+CLI, so both describe the same config. The [call log](#call-log) shows which
+calls each injection hit.
 
-<img width="2557" height="1237" alt="Screenshot 2026-09-23 162423" src="https://github.com/user-attachments/assets/7b617134-5ea9-4c41-8e01-7e9c95e6a771" />
+<img width="2556" height="1236" alt="Screenshot 2026-09-28 141447" src="https://github.com/user-attachments/assets/8ee77a84-8086-4340-82c7-adf1b4ad7a06" />
 
 ### Startup flags
 
@@ -268,7 +297,9 @@ CLI, so both describe the same config.
 | `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
 | `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
 | `--malformed` | Truncate every successful 2xx response body in half |
-| `--auth` | Return 401 on API requests without an `Authorization` header |
+| `--auth` | Return 401 on API requests without an `Authorization` header. Never fires for ÉTSMobile, which always sends one (even `Bearer null`) |
+| `--token-expired N` | The next N API calls return 401, then calls succeed again |
+| `--tokens-rejected` | Every API call returns 401, whatever the token |
 
 ```bash
 python start.py --failures flaky
@@ -278,7 +309,7 @@ python start.py --profile semester-off --auth
 
 A preset can be adjusted by adding flags after it. `--failures flaky
 --error-rate 0.9` keeps the preset's latency and replaces its error rate.
-`--malformed` and `--auth` each have a `--no-` form.
+`--malformed`, `--auth` and `--tokens-rejected` each have a `--no-` form.
 
 ### Runtime control via admin endpoint
 
@@ -303,7 +334,7 @@ curl -X POST http://localhost:8080/admin/failures/preset \
   -d '{"name": "flaky"}'
 ```
 
-PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool). All optional.
+PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool). All optional.
 
 ### Named presets via manage_failures.py
 
@@ -315,6 +346,7 @@ python manage_failures.py status           # show current config
 python manage_failures.py flaky            # apply a preset
 python manage_failures.py reset            # clear everything (alias: off)
 python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail listeCoequipiers
+python manage_failures.py custom --token-expired 3   # next 3 calls get 401
 ```
 
 | Preset | Effect |
@@ -324,11 +356,38 @@ python manage_failures.py custom --error-rate 0.5 --latency 100-500 --fail liste
 | `outage` | Every API endpoint returns 503 |
 | `partial-outage` | Grades and teammates endpoints down |
 | `auth` | Require an Authorization header |
+| `token-expired` | The next 3 API calls return 401, then calls succeed |
+| `token-rejected` | Every API call returns 401 |
 | `corrupt` | Truncate every successful response body |
 | `timeout-grades` | Grade endpoints hang for 30s before returning 504 |
 | `chaos` | Latency + errors + corrupted bodies all at once |
 
 Add new presets by editing `seed/failure_presets.json`.
+
+## Call Log
+
+The **Logs** tab of the web UI lists every call the mock receives under
+`/api/`, with its endpoint, parameters, status, duration, size and any injected
+failure. Use it to see when and how often the app calls the API:
+
+- Repeated calls (same endpoint and parameters) are numbered and shown in
+  orange, since the app could cache or skip them.
+- The **Par endpoint** panel sums the calls, repeats and size per endpoint.
+- Add a marker just before an action in the app to group the calls it triggers.
+- Download the log as JSON, or clear it.
+
+<img width="2556" height="1240" alt="Screenshot 2026-09-28 141556" src="https://github.com/user-attachments/assets/6beb5c47-bf1a-4669-8f14-c160660539f0" />
+
+The log is kept in memory (the last 100,000 entries) and resets when the server
+restarts.
+
+It can also be read and cleared through the admin endpoint:
+
+```bash
+curl http://localhost:8080/admin/calls              # list the log
+curl "http://localhost:8080/admin/calls?after=42"   # only entries newer than id 42
+curl -X DELETE http://localhost:8080/admin/calls    # clear it
+```
 
 ## Sample Data
 
@@ -341,12 +400,12 @@ The mock server returns data for a fictional ÉTS software engineering student w
 
 ## Authentication
 
-No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all).
+No authentication is required. The server accepts any `Authorization: Bearer <token>` header (or none at all). To test 401 handling, see [Startup flags](#startup-flags).
 
 ## Customizing Data
 
 - **Course data**: Edit `seed/courses.json` and restart (or let `--reload` handle it)
-- **Sessions, student info, programs, replaced days**: Edit directly in `seed/`
+- **Sessions, student info, programs, replaced days**: Edit directly in `seed/`, or change session dates and the student profile from the [editor](#schedule-editor-ui)
 - **Professors**: Edit `seed/professors.json`
 - **Random generation pools**: Edit `seed/pools.json` (rooms, eval templates, schedule slots, course catalog)
 - **Profiles**: Edit `seed/profiles.json`
@@ -414,3 +473,46 @@ The mock server requires no authentication, so you can skip past or stub out the
 |----------|-------------|
 | Android emulator | `10.0.2.2:8080` |
 | iOS emulator | `localhost:8080` |
+| Physical device | Your machine's LAN address, e.g. `192.168.1.10:8080` |
+
+### Doing it automatically
+
+`start.py --app` applies steps 2-4 when the server starts and undoes them when
+it stops. Later runs reuse it:
+
+```bash
+python start.py --app ../Notre-Dame --platform ios   # first run
+python start.py                                      # later runs: same app and platform
+python start.py --no-app                             # this run only: don't modify app
+```
+
+| Flag | Description |
+|------|-------------|
+| `--app PATH` | Flutter repo to configure (default: the saved app) |
+| `--no-app` | Start the server without touching the saved app |
+| `--platform android\|ios` | Host to write: `10.0.2.2:8080` (default) or `localhost:8080` |
+| `--host HOST` | Host for a physical device, without `http://` (`:8080` added if no port) |
+| `--revert-app` | Restore the app and exit, after a run that didn't |
+| `--forget-app` | Restore the app if needed, forget it and exit |
+
+**What is undone:** When the server
+stops, lines from steps 2-4 change. They go back to exactly what they were before the run, uncommitted
+changes included. Everything else in those files is left alone.
+
+**When:** On Ctrl+C or closing the terminal. If the process
+was killed some other way, run `python start.py --revert-app`. Starting a second
+`start.py` while one is running hands the app over: the second one undoes the
+changes when it stops.
+
+**Stop using it:** Run `python start.py --forget-app`. Later runs leave the app
+alone.
+
+**Saved settings:** `mock.config.json` holds the path, platform
+and host, plus the original lines while a server runs. A flag always overrides
+the saved value.
+
+**Special cases:**
+- A line from steps 2-4 was added or removed while the server ran: that file is
+  left as is and listed. Fix it, then run `python start.py --revert-app`.
+- The app already points at a local server before the first run (steps 2-4
+  applied by hand): the run stops. Put the production values back first.
