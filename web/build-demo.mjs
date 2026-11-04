@@ -13,7 +13,7 @@ const DEMO_TAGS = [
   '<script type="module" src="demo/main.js"></script>',
 ];
 const LOCAL_ONLY = new Set(["seed/schedule_overrides.json", "seed/student_overrides.json"]);
-const PAGE_FILES = ["backend.js", "demo.css", "main.js", "worker.js"];
+const PAGE_FILES = ["backend.js", "demo.css", "main.js", "server.js", "worker.js"];
 
 async function listFiles(dir, extension) {
   const names = await readdir(join(ROOT, dir));
