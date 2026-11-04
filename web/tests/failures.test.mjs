@@ -138,6 +138,11 @@ async function openDialog(app, kind) {
   }
 }
 
+const endpointOptions = (app) =>
+  app
+    .queryAll("#fEndpoint fluent-option:not([freeform])")
+    .map((option) => option.getAttribute("value"));
+
 describe("the failures tab", () => {
   test("stays out of the way until it is picked", async () => {
     const app = await mount();
@@ -779,11 +784,49 @@ describe("registering a failure", () => {
 
     await openDialog(app, "fail");
 
-    const options = app.queryAll("#fEndpoint fluent-option:not([freeform])");
-    assert.deepEqual(
-      options.map((option) => option.getAttribute("value")),
-      ["*", ...ENDPOINTS],
-    );
+    assert.deepEqual(endpointOptions(app), ["*", ...ENDPOINTS]);
+    app.close();
+  });
+
+  test("leaves out endpoints that already have this failure", async () => {
+    const app = await onFailures({
+      failEndpoints: ["listeCours"],
+      timeoutEndpoints: ["helloWorld"],
+    });
+
+    await openDialog(app, "fail");
+
+    assert.deepEqual(endpointOptions(app), ["*", "helloWorld", "listeCoequipiers"]);
+
+    await openDialog(app, "timeout");
+
+    assert.deepEqual(endpointOptions(app), ["*", "listeCoequipiers", "listeCours"]);
+    app.close();
+  });
+
+  test("leaves out endpoints already staged", async () => {
+    const app = await onFailures();
+
+    await openDialog(app, "fail");
+    app.select(app.query("#fEndpoint"), "helloWorld");
+    await app.click(app.query("#fEndpointAdd"));
+
+    assert.deepEqual(endpointOptions(app), ["*", "listeCoequipiers", "listeCours"]);
+
+    await app.click(app.query(".chips--staged .chip__x"));
+
+    assert.deepEqual(endpointOptions(app), ["*", ...ENDPOINTS]);
+    app.close();
+  });
+
+  test("offers nothing more once every endpoint is covered", async () => {
+    const app = await onFailures({ failEndpoints: ["*"] });
+
+    assert.equal(app.query('.injection[data-kind="fail"] .chip--add'), null);
+
+    await openDialog(app, "fail");
+
+    assert.deepEqual(endpointOptions(app), []);
     app.close();
   });
 
