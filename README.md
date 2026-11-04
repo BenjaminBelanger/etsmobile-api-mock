@@ -254,6 +254,7 @@ The **Pannes** tab edits the same config as the CLI and can apply a preset. The 
 | `--timeout ENDPOINT` | Endpoint that hangs the request. Repeatable, `*` for all |
 | `--timeout-duration S` | How long a hanging endpoint sleeps before a 504 (default 60) |
 | `--malformed` | Truncate every successful 2xx response body in half |
+| `--latency-endpoint`, `--error-rate-endpoint`, `--malformed-endpoint` `ENDPOINT` | Limit latency, random errors or truncation to that endpoint. Repeatable, all endpoints by default |
 | `--auth` | Return 401 on API requests without an `Authorization` header. Never fires for ÉTSMobile, which always sends one (even `Bearer null`) |
 | `--token-expired N` | The next N API calls return 401, then calls succeed again |
 | `--tokens-rejected` | Every API call returns 401, whatever the token |
@@ -261,6 +262,7 @@ The **Pannes** tab edits the same config as the CLI and can apply a preset. The 
 ```bash
 python start.py --failures flaky
 python start.py --latency 200-600 --error-rate 0.1
+python start.py --latency 3000 --latency-endpoint lireEvaluationCours
 python start.py --profile semester-off --auth
 ```
 
@@ -291,7 +293,7 @@ curl -X POST http://localhost:8080/admin/failures/preset \
   -d '{"name": "flaky"}'
 ```
 
-PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool). All optional.
+PATCH body fields: `latencyMs` (int or `"min-max"` string), `errorRate` (0.0-1.0), `failEndpoints` (list), `timeoutEndpoints` (list), `timeoutDurationS` (float), `malformed` (bool), `latencyEndpoints`, `errorRateEndpoints` and `malformedEndpoints` (list, `["*"]` by default; an empty list means all endpoints), `authRequired` (bool), `tokenExpiredCalls` (int), `tokensRejected` (bool). All optional.
 
 ### Named presets via manage_failures.py
 

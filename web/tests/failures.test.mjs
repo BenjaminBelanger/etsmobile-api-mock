@@ -13,11 +13,14 @@ import {
 
 const BROKEN = {
   latencyMs: "500-2000",
+  latencyEndpoints: ["*"],
   errorRate: 0.4,
+  errorRateEndpoints: ["*"],
   failEndpoints: ["lireHoraireDesSeances", "listeElementsEvaluation"],
   timeoutEndpoints: ["listeCours"],
   timeoutDurationS: 30,
   malformed: true,
+  malformedEndpoints: ["*"],
   authRequired: true,
   tokenExpiredCalls: 3,
   tokensRejected: true,
@@ -530,7 +533,7 @@ describe("removing an injection", () => {
 
     await app.click(app.query('[data-remove="latency"]'));
 
-    assert.deepEqual(lastPatch(app).body, { latencyMs: 0 });
+    assert.deepEqual(lastPatch(app).body, { latencyMs: 0, latencyEndpoints: ["*"] });
     assert.deepEqual(kinds(app), ["malformed"]);
     app.close();
   });
@@ -837,7 +840,7 @@ describe("registering a failure", () => {
     app.select(app.byId("fLatency"), "250");
     await app.click(app.byId("failureSubmit"));
 
-    assert.deepEqual(lastPatch(app).body, { latencyMs: "250" });
+    assert.deepEqual(lastPatch(app).body, { latencyMs: "250", latencyEndpoints: ["*"] });
     assert.deepEqual(kinds(app), ["latency"]);
     assert.equal(app.byId("failureDialog").open, false);
     assert.equal(app.toast().text, "Panne enregistrée");
@@ -963,6 +966,106 @@ describe("registering a failure", () => {
 
     assert.equal(app.byId("failureDialog").open, true);
     assert.equal(app.byId("fFailureKind").value, "timeout");
+    app.close();
+  });
+});
+
+describe("limiting a failure to some endpoints", () => {
+  test("shows a row without a limit as applying everywhere", async () => {
+    const app = await onFailures({ errorRate: 0.3 });
+
+    assert.deepEqual(chips(app, "errorRate"), ["tous les endpoints"]);
+    assert.equal(app.queryAll('.injection[data-kind="errorRate"] .chip__x').length, 0);
+    assert.ok(app.query('.injection[data-kind="errorRate"] .chip--add'));
+    app.close();
+  });
+
+  test("limits a new latency to the picked endpoints", async () => {
+    const app = await onFailures();
+
+    await openDialog(app, "latency");
+
+    assert.deepEqual(endpointOptions(app), ENDPOINTS);
+
+    app.select(app.byId("fLatency"), "250");
+    app.select(app.query("#fEndpoint"), "listeCours");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, {
+      latencyMs: "250",
+      latencyEndpoints: ["listeCours"],
+    });
+    assert.deepEqual(chips(app, "latency"), ["listeCours"]);
+    app.close();
+  });
+
+  test("narrows a row that applied everywhere", async () => {
+    const app = await onFailures({ latencyMs: 500 });
+
+    await app.click(app.query('.injection[data-kind="latency"] .chip--add'));
+
+    assert.equal(app.byId("fFailureKind").value, "latency");
+    assert.equal(app.byId("fLatency").getAttribute("value"), "500");
+
+    app.select(app.byId("fLatency"), "500");
+    app.select(app.query("#fEndpoint"), "helloWorld");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, {
+      latencyMs: "500",
+      latencyEndpoints: ["helloWorld"],
+    });
+    app.close();
+  });
+
+  test("adds to the endpoints a row already targets", async () => {
+    const app = await onFailures({ malformed: true, malformedEndpoints: ["listeCours"] });
+
+    await app.click(app.query('.injection[data-kind="malformed"] .chip--add'));
+
+    assert.deepEqual(endpointOptions(app), ["helloWorld", "listeCoequipiers"]);
+
+    app.select(app.query("#fEndpoint"), "helloWorld");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, {
+      malformed: true,
+      malformedEndpoints: ["listeCours", "helloWorld"],
+    });
+    assert.deepEqual(chips(app, "malformed"), ["helloWorld", "listeCours"]);
+    app.close();
+  });
+
+  test("keeps the limit when only the value changes", async () => {
+    const app = await onFailures({ errorRate: 0.3, errorRateEndpoints: ["listeCours"] });
+
+    await openDialog(app, "errorRate");
+    app.select(app.byId("fErrorRate"), "50");
+    await app.click(app.byId("failureSubmit"));
+
+    assert.deepEqual(lastPatch(app).body, { errorRate: 0.5 });
+    assert.deepEqual(chips(app, "errorRate"), ["listeCours"]);
+    app.close();
+  });
+
+  test("applies everywhere again once the last endpoint is removed", async () => {
+    const app = await onFailures({ errorRate: 0.3, errorRateEndpoints: ["listeCours"] });
+
+    await app.click(app.query('.injection[data-kind="errorRate"] .chip__x'));
+
+    assert.deepEqual(lastPatch(app).body, { errorRateEndpoints: [] });
+    assert.deepEqual(chips(app, "errorRate"), ["tous les endpoints"]);
+    app.close();
+  });
+
+  test("tells a limited setup apart from the scenario it resembles", async () => {
+    const app = await onFailures({
+      latencyMs: "100-800",
+      errorRate: 0.3,
+      errorRateEndpoints: ["listeCours"],
+    });
+
+    assert.deepEqual(app.queryAll(".preset.is-active"), []);
     app.close();
   });
 });

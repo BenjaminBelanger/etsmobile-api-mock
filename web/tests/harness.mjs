@@ -188,13 +188,18 @@ function defineElements(window) {
 
 const ADMIN = "/admin/failures";
 
+const SCOPE_FIELDS = ["latencyEndpoints", "errorRateEndpoints", "malformedEndpoints"];
+
 const DEFAULT_FAILURES = {
   latencyMs: 0,
+  latencyEndpoints: ["*"],
   errorRate: 0,
+  errorRateEndpoints: ["*"],
   failEndpoints: [],
   timeoutEndpoints: [],
   timeoutDurationS: 60,
   malformed: false,
+  malformedEndpoints: ["*"],
   authRequired: false,
   tokenExpiredCalls: 0,
   tokensRejected: false,
@@ -230,6 +235,7 @@ function createAdmin(options) {
   const patch = (body) => {
     Object.entries(body).forEach(([key, value]) => {
       if (key === "latencyMs") config.latencyMs = normalizeLatency(value);
+      else if (SCOPE_FIELDS.includes(key) && !value.length) config[key] = ["*"];
       else if (Array.isArray(value)) config[key] = [...new Set(value)].sort();
       else config[key] = value;
     });

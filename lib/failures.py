@@ -20,14 +20,21 @@ _DEFAULT_TIMEOUT_S = 60.0
 _PRESETS_FILE = SEED / "failure_presets.json"
 
 
+def _all_endpoints() -> set[str]:
+    return {"*"}
+
+
 @dataclass
 class FailureConfig:
     latency_ms: tuple[int, int] = (0, 0)
+    latency_endpoints: set[str] = field(default_factory=_all_endpoints)
     error_rate: float = 0.0
+    error_rate_endpoints: set[str] = field(default_factory=_all_endpoints)
     fail_endpoints: set[str] = field(default_factory=set)
     timeout_endpoints: set[str] = field(default_factory=set)
     timeout_duration_s: float = _DEFAULT_TIMEOUT_S
     malformed: bool = False
+    malformed_endpoints: set[str] = field(default_factory=_all_endpoints)
     auth_required: bool = False
     token_expired_calls: int = 0
     tokens_rejected: bool = False
@@ -35,11 +42,14 @@ class FailureConfig:
     def is_default(self) -> bool:
         return (
             self.latency_ms == (0, 0)
+            and self.latency_endpoints == _all_endpoints()
             and self.error_rate == 0.0
+            and self.error_rate_endpoints == _all_endpoints()
             and not self.fail_endpoints
             and not self.timeout_endpoints
             and self.timeout_duration_s == _DEFAULT_TIMEOUT_S
             and not self.malformed
+            and self.malformed_endpoints == _all_endpoints()
             and not self.auth_required
             and self.token_expired_calls == 0
             and not self.tokens_rejected
@@ -50,11 +60,14 @@ class FailureConfig:
         latency = lo if lo == hi else f"{lo}-{hi}"
         return {
             "latencyMs": latency,
+            "latencyEndpoints": sorted(self.latency_endpoints),
             "errorRate": self.error_rate,
+            "errorRateEndpoints": sorted(self.error_rate_endpoints),
             "failEndpoints": sorted(self.fail_endpoints),
             "timeoutEndpoints": sorted(self.timeout_endpoints),
             "timeoutDurationS": self.timeout_duration_s,
             "malformed": self.malformed,
+            "malformedEndpoints": sorted(self.malformed_endpoints),
             "authRequired": self.auth_required,
             "tokenExpiredCalls": self.token_expired_calls,
             "tokensRejected": self.tokens_rejected,
@@ -102,6 +115,10 @@ def parse_endpoint_set(raw) -> set[str]:
     return {e.strip() for e in str(raw).split(",") if e.strip()}
 
 
+def parse_endpoint_scope(raw) -> set[str]:
+    return parse_endpoint_set(raw) or _all_endpoints()
+
+
 def endpoint_name(path: str) -> str:
     if path.startswith(_ENDPOINT_PREFIX):
         return path[len(_ENDPOINT_PREFIX) :].split("/", 1)[0]
@@ -130,8 +147,13 @@ def load_from_env() -> FailureConfig:
         except ValueError:
             pass
 
+    cfg.latency_endpoints = parse_endpoint_scope(os.environ.get("LATENCY_ENDPOINTS"))
+
     cfg.error_rate = env_number(
         "ERROR_RATE", float, lambda r: 0.0 <= r <= 1.0, cfg.error_rate
+    )
+    cfg.error_rate_endpoints = parse_endpoint_scope(
+        os.environ.get("ERROR_RATE_ENDPOINTS")
     )
 
     cfg.fail_endpoints = parse_endpoint_set(os.environ.get("FAIL_ENDPOINTS", ""))
@@ -145,6 +167,9 @@ def load_from_env() -> FailureConfig:
     )
 
     cfg.malformed = env_bool("MALFORMED")
+    cfg.malformed_endpoints = parse_endpoint_scope(
+        os.environ.get("MALFORMED_ENDPOINTS")
+    )
     cfg.auth_required = env_bool("AUTH_REQUIRED")
 
     cfg.token_expired_calls = env_number(
@@ -183,11 +208,14 @@ def api_endpoint_names(app) -> list[str]:
 
 class FailureConfigUpdate(BaseModel):
     latencyMs: int | str | None = None
+    latencyEndpoints: list[str] | None = None
     errorRate: float | None = Field(default=None, ge=0.0, le=1.0, allow_inf_nan=False)
+    errorRateEndpoints: list[str] | None = None
     failEndpoints: list[str] | None = None
     timeoutEndpoints: list[str] | None = None
     timeoutDurationS: float | None = Field(default=None, ge=0.0, allow_inf_nan=False)
     malformed: bool | None = None
+    malformedEndpoints: list[str] | None = None
     authRequired: bool | None = None
     tokenExpiredCalls: int | None = Field(default=None, ge=0)
     tokensRejected: bool | None = None
@@ -201,8 +229,12 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
 
     if "latencyMs" in data:
         _config.latency_ms = parse_latency(data["latencyMs"])
+    if "latencyEndpoints" in data:
+        _config.latency_endpoints = parse_endpoint_scope(data["latencyEndpoints"])
     if "errorRate" in data:
         _config.error_rate = float(data["errorRate"])
+    if "errorRateEndpoints" in data:
+        _config.error_rate_endpoints = parse_endpoint_scope(data["errorRateEndpoints"])
     if "failEndpoints" in data:
         _config.fail_endpoints = parse_endpoint_set(data["failEndpoints"])
     if "timeoutEndpoints" in data:
@@ -211,6 +243,8 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
         _config.timeout_duration_s = float(data["timeoutDurationS"])
     if "malformed" in data:
         _config.malformed = bool(data["malformed"])
+    if "malformedEndpoints" in data:
+        _config.malformed_endpoints = parse_endpoint_scope(data["malformedEndpoints"])
     if "authRequired" in data:
         _config.auth_required = bool(data["authRequired"])
     if "tokenExpiredCalls" in data:
@@ -221,9 +255,11 @@ def update_config(payload: FailureConfigUpdate) -> FailureConfig:
     return _config
 
 
-async def _maybe_sleep_latency(request: Request, cfg: FailureConfig) -> None:
+async def _maybe_sleep_latency(
+    request: Request, cfg: FailureConfig, name: str
+) -> None:
     lo, hi = cfg.latency_ms
-    if hi <= 0:
+    if hi <= 0 or not _matches(name, cfg.latency_endpoints):
         return
     ms = random.randint(lo, hi) if hi > lo else lo
     if ms > 0:
@@ -291,15 +327,23 @@ async def failure_middleware(request: Request, call_next):
         await asyncio.sleep(cfg.timeout_duration_s)
         return JSONResponse({"error": f"Endpoint '{name}' timed out."}, status_code=504)
 
-    if cfg.error_rate > 0.0 and random.random() < cfg.error_rate:
+    if (
+        cfg.error_rate > 0.0
+        and _matches(name, cfg.error_rate_endpoints)
+        and random.random() < cfg.error_rate
+    ):
         _inject(request, "errorRate")
         return JSONResponse({"error": "Random failure injected."}, status_code=500)
 
-    await _maybe_sleep_latency(request, cfg)
+    await _maybe_sleep_latency(request, cfg, name)
 
     response = await call_next(request)
 
-    if cfg.malformed and 200 <= response.status_code < 300:
+    if (
+        cfg.malformed
+        and _matches(name, cfg.malformed_endpoints)
+        and 200 <= response.status_code < 300
+    ):
         _inject(request, "malformed")
         response = await _truncate_response(response)
 

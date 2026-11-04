@@ -1612,13 +1612,18 @@ function submitAddCourse() {
 
 const ADMIN = "/admin/failures";
 
+const ALL_ENDPOINTS = ["*"];
+
 const NO_FAILURES = {
   latencyMs: 0,
+  latencyEndpoints: ALL_ENDPOINTS,
   errorRate: 0,
+  errorRateEndpoints: ALL_ENDPOINTS,
   failEndpoints: [],
   timeoutEndpoints: [],
   timeoutDurationS: 60,
   malformed: false,
+  malformedEndpoints: ALL_ENDPOINTS,
   authRequired: false,
   tokenExpiredCalls: 0,
   tokensRejected: false,
@@ -1634,6 +1639,10 @@ const latencyMax = (raw) => {
 
 const percent = (rate) => Math.round(rate * 100);
 const endpointLabel = (name) => (name === "*" ? "tous les endpoints" : name);
+const isEverywhere = (names) => names.includes("*");
+
+const scopeSuffix = (names) =>
+  isEverywhere(names) ? "" : ` sur ${names.length === 1 ? names[0] : `${names.length} endpoints`}`;
 
 const plural = (count, word) => `${count} ${word}${count > 1 ? "s" : ""}`;
 
@@ -1662,13 +1671,20 @@ function chipList(field, names) {
     )
     .join("");
   if (names.includes("*")) return chips;
-  return `${chips}<button type="button" class="chip chip--add" data-add="${field}"
-      aria-label="Ajouter un endpoint">${icon("add", 12)}Endpoint</button>`;
+  return `${chips}${addChip(field)}`;
 }
 
-function endpointField(chipsId) {
+const addChip = (field) => `<button type="button" class="chip chip--add" data-add="${field}"
+      aria-label="Ajouter un endpoint">${icon("add", 12)}Endpoint</button>`;
+
+const scopeChips = (field, names) =>
+  isEverywhere(names)
+    ? `<span class="chip chip--all">${endpointLabel("*")}</span>${addChip(field)}`
+    : chipList(field, names);
+
+function endpointField(chipsId, optional = false) {
   return `<fluent-field label-position="above">
-      <fluent-label slot="label">Endpoints</fluent-label>
+      <fluent-label slot="label">${optional ? "Endpoints (tous si vide)" : "Endpoints"}</fluent-label>
       <div slot="input" class="picker-row">
         <fluent-dropdown id="fEndpoint" type="combobox" appearance="filled-darker"
           placeholder="listeCours" aria-label="Endpoint"><fluent-listbox></fluent-listbox></fluent-dropdown>
@@ -1677,6 +1693,17 @@ function endpointField(chipsId) {
       </div>
     </fluent-field>
     <div class="chips chips--staged" id="${chipsId}"></div>`;
+}
+
+function scopedBody(kind, cfg, body) {
+  const picked = stagedEndpoints();
+  if (!picked.length) {
+    return kind.active(cfg) ? body : { ...body, [kind.endpoints]: ALL_ENDPOINTS };
+  }
+  const current = cfg[kind.endpoints];
+  const kept = kind.active(cfg) && !isEverywhere(current) ? current : [];
+  const scope = isEverywhere(picked) ? ALL_ENDPOINTS : [...new Set([...kept, ...picked])];
+  return { ...body, [kind.endpoints]: scope };
 }
 
 function numberField(id, label, value, placeholder) {
@@ -1693,21 +1720,25 @@ const FAILURE_KINDS = [
     label: "Latence",
     icon: "timer",
     hint: "Retarde chaque réponse de l'API.",
+    endpoints: "latencyEndpoints",
+    scoped: true,
     active: (cfg) => latencyMax(cfg.latencyMs) > 0,
-    summary: (cfg) => `${cfg.latencyMs} ms`,
+    summary: (cfg) => `${cfg.latencyMs} ms${scopeSuffix(cfg.latencyEndpoints)}`,
     value: (cfg) =>
-      injectionInput("latencyMs", cfg.latencyMs, "md", "ms", "Durée de la latence"),
-    clear: () => ({ latencyMs: 0 }),
-    form: () =>
+      injectionInput("latencyMs", cfg.latencyMs, "md", "ms", "Durée de la latence") +
+      scopeChips("latencyEndpoints", cfg.latencyEndpoints),
+    clear: () => ({ latencyMs: 0, latencyEndpoints: ALL_ENDPOINTS }),
+    form: (cfg) =>
       `<fluent-field label-position="above">
         <fluent-label slot="label">Durée en ms (fixe ou min-max)</fluent-label>
         <fluent-text-input slot="input" id="fLatency" appearance="filled-darker"
+          value="${escapeHtml(latencyMax(cfg.latencyMs) > 0 ? cfg.latencyMs : "")}"
           placeholder="100-800" aria-label="Durée en ms"></fluent-text-input>
-      </fluent-field>`,
-    read: () => {
+      </fluent-field>` + endpointField("fLatencyChips", true),
+    read(cfg) {
       const raw = el.failureParams.querySelector("#fLatency").value.trim();
       if (!raw) return { error: "Une durée est requise" };
-      return { body: { latencyMs: raw } };
+      return { body: scopedBody(this, cfg, { latencyMs: raw }) };
     },
   },
   {
@@ -1715,18 +1746,24 @@ const FAILURE_KINDS = [
     label: "Erreurs aléatoires",
     icon: "warning",
     hint: "Une part des appels répond 500.",
+    endpoints: "errorRateEndpoints",
+    scoped: true,
     active: (cfg) => cfg.errorRate > 0,
-    summary: (cfg) => `${percent(cfg.errorRate)} % d'erreurs`,
+    summary: (cfg) =>
+      `${percent(cfg.errorRate)} % d'erreurs${scopeSuffix(cfg.errorRateEndpoints)}`,
     value: (cfg) =>
-      injectionInput("errorRate", percent(cfg.errorRate), "sm", "%", "Taux d'erreur"),
-    clear: () => ({ errorRate: 0 }),
-    form: () => numberField("fErrorRate", "Taux en %", "", "30"),
-    read: () => {
+      injectionInput("errorRate", percent(cfg.errorRate), "sm", "%", "Taux d'erreur") +
+      scopeChips("errorRateEndpoints", cfg.errorRateEndpoints),
+    clear: () => ({ errorRate: 0, errorRateEndpoints: ALL_ENDPOINTS }),
+    form: (cfg) =>
+      numberField("fErrorRate", "Taux en %", cfg.errorRate > 0 ? percent(cfg.errorRate) : "", "30") +
+      endpointField("fErrorRateChips", true),
+    read(cfg) {
       const pct = Number(el.failureParams.querySelector("#fErrorRate").value);
       if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
         return { error: "Un taux entre 1 et 100 est requis" };
       }
-      return { body: { errorRate: pct / 100 } };
+      return { body: scopedBody(this, cfg, { errorRate: pct / 100 }) };
     },
   },
   {
@@ -1783,12 +1820,16 @@ const FAILURE_KINDS = [
     label: "Réponses tronquées",
     icon: "documentError",
     hint: "Le corps de chaque réponse 2xx est coupé en deux.",
+    endpoints: "malformedEndpoints",
+    scoped: true,
     active: (cfg) => cfg.malformed,
-    summary: () => "réponses tronquées",
-    value: hintNote,
-    clear: () => ({ malformed: false }),
-    form: () => "",
-    read: () => ({ body: { malformed: true } }),
+    summary: (cfg) => `réponses tronquées${scopeSuffix(cfg.malformedEndpoints)}`,
+    value: (cfg) => scopeChips("malformedEndpoints", cfg.malformedEndpoints),
+    clear: () => ({ malformed: false, malformedEndpoints: ALL_ENDPOINTS }),
+    form: () => endpointField("fMalformedChips", true),
+    read(cfg) {
+      return { body: scopedBody(this, cfg, { malformed: true }) };
+    },
   },
   {
     id: "auth",
@@ -2027,8 +2068,8 @@ function wireInjections(cfg) {
     );
   });
   el.injectionList.querySelectorAll("[data-add]").forEach((node) => {
-    const kind = node.dataset.add === "failEndpoints" ? "fail" : "timeout";
-    node.addEventListener("click", () => openFailureDialog(kind));
+    const kind = FAILURE_KINDS.find((candidate) => candidate.endpoints === node.dataset.add);
+    node.addEventListener("click", () => openFailureDialog(kind.id));
   });
   el.injectionList.querySelectorAll("[data-field]").forEach((node) => {
     node.addEventListener("change", () =>
@@ -2128,9 +2169,14 @@ const stagedEndpoints = () => {
 
 function endpointChoices() {
   const kind = kindById(state.failureKind);
-  const taken = [...(state.failures || NO_FAILURES)[kind.endpoints], ...state.staged];
+  const cfg = state.failures || NO_FAILURES;
+  const current = cfg[kind.endpoints];
+  const unscoped = kind.scoped && (!kind.active(cfg) || isEverywhere(current));
+  const taken = [...(unscoped ? [] : current), ...state.staged];
   if (taken.includes("*")) return [];
-  return ["*", ...state.endpoints].filter((name) => !taken.includes(name));
+  return [...(kind.scoped ? [] : ["*"]), ...state.endpoints].filter(
+    (name) => !taken.includes(name)
+  );
 }
 
 function renderStagedChips() {

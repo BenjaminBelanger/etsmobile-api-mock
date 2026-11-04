@@ -673,6 +673,7 @@ fluent-button[disabled] > .icon { fill: currentColor; }
   color: var(--colorNeutralForeground3);
 }
 .injection__after { margin-left: 4px; }
+.injection__unit + .chip { margin-left: 6px; }
 .injection__note {
   font-size: var(--fontSizeBase200);
   color: var(--colorNeutralForeground3);

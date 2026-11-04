@@ -125,6 +125,34 @@ def test_a_custom_config_is_built_from_the_flags(http):
     )
 
 
+def test_the_scope_flags_limit_failures_to_endpoints(http):
+    manage_failures.cmd_custom(
+        [
+            "--latency",
+            "500",
+            "--latency-endpoint",
+            "listeCours",
+            "--error-rate",
+            "0.5",
+            "--error-rate-endpoint",
+            "echo",
+            "--error-rate-endpoint",
+            "listeCours",
+            "--malformed",
+            "--malformed-endpoint",
+            "helloWorld",
+        ]
+    )
+    assert http.calls[-1][2] == {
+        "latencyMs": "500",
+        "latencyEndpoints": ["listeCours"],
+        "errorRate": 0.5,
+        "errorRateEndpoints": ["echo", "listeCours"],
+        "malformed": True,
+        "malformedEndpoints": ["helloWorld"],
+    }
+
+
 def test_the_negative_form_of_a_boolean_flag_is_sent(http):
     manage_failures.cmd_custom(["--no-malformed", "--no-auth", "--no-tokens-rejected"])
     assert http.calls[-1][2] == {
