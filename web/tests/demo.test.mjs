@@ -102,6 +102,7 @@ describe("the demo server bundle", () => {
         "assets/vendor/fluent.js",
         "demo/main.js",
         "demo/backend.js",
+        "demo/server.js",
         "demo/worker.js",
         "demo/demo.css",
         "demo/server.json",
