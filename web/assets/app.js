@@ -1661,6 +1661,7 @@ function chipList(field, names) {
       </span>`
     )
     .join("");
+  if (names.includes("*")) return chips;
   return `${chips}<button type="button" class="chip chip--add" data-add="${field}"
       aria-label="Ajouter un endpoint">${icon("add", 12)}Endpoint</button>`;
 }
@@ -1733,6 +1734,7 @@ const FAILURE_KINDS = [
     label: "Endpoints en panne",
     icon: "plugDisconnected",
     hint: "Ces endpoints répondent 503.",
+    endpoints: "failEndpoints",
     active: (cfg) => cfg.failEndpoints.length > 0,
     summary: (cfg) => countLabel(cfg.failEndpoints, "en panne", "en panne"),
     value: (cfg) => chipList("failEndpoints", cfg.failEndpoints),
@@ -1749,6 +1751,7 @@ const FAILURE_KINDS = [
     label: "Endpoints qui expirent",
     icon: "hourglass",
     hint: "Ces endpoints retiennent la requête, puis répondent 504.",
+    endpoints: "timeoutEndpoints",
     active: (cfg) => cfg.timeoutEndpoints.length > 0,
     summary: (cfg) =>
       `${countLabel(cfg.timeoutEndpoints, "qui expire", "qui expirent")} (${cfg.timeoutDurationS} s)`,
@@ -2123,9 +2126,22 @@ const stagedEndpoints = () => {
   return [...new Set(typed ? [...state.staged, typed] : state.staged)];
 };
 
+function endpointChoices() {
+  const kind = kindById(state.failureKind);
+  const taken = [...(state.failures || NO_FAILURES)[kind.endpoints], ...state.staged];
+  if (taken.includes("*")) return [];
+  return ["*", ...state.endpoints].filter((name) => !taken.includes(name));
+}
+
 function renderStagedChips() {
   const host = el.failureParams.querySelector(".chips--staged");
   if (!host) return;
+  fillDropdown(
+    el.failureParams.querySelector("#fEndpoint"),
+    endpointChoices().map((name) => ({ value: name, text: endpointLabel(name) })),
+    undefined,
+    { freeform: true }
+  );
   host.innerHTML = state.staged
     .map(
       (name) => `<span class="chip">${escapeHtml(endpointLabel(name))}
@@ -2160,12 +2176,6 @@ function renderFailureForm() {
   el.failureHint.textContent = kind.hint;
   const picker = el.failureParams.querySelector("#fEndpoint");
   if (!picker) return;
-  fillDropdown(
-    picker,
-    ["*", ...state.endpoints].map((name) => ({ value: name, text: endpointLabel(name) })),
-    undefined,
-    { freeform: true }
-  );
   el.failureParams.querySelector("#fEndpointAdd").addEventListener("click", stageEndpoint);
   picker.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
