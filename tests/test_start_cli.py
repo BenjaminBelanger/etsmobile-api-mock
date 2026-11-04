@@ -213,6 +213,24 @@ def test_repeatable_endpoint_flags_are_comma_joined():
     assert env == {"FAIL_ENDPOINTS": "listeCoequipiers,lireEvaluationCours"}
 
 
+def test_scope_flags_map_to_env_vars():
+    env = failure_env(
+        "--latency-endpoint",
+        "listeCours",
+        "--error-rate-endpoint",
+        "echo",
+        "--error-rate-endpoint",
+        "listeCours",
+        "--malformed-endpoint",
+        "helloWorld",
+    )
+    assert env == {
+        "LATENCY_ENDPOINTS": "listeCours",
+        "ERROR_RATE_ENDPOINTS": "echo,listeCours",
+        "MALFORMED_ENDPOINTS": "helloWorld",
+    }
+
+
 def test_boolean_failure_flags_render_as_env_booleans():
     assert failure_env("--malformed") == {"MALFORMED": "true"}
     assert failure_env("--no-malformed") == {"MALFORMED": "false"}

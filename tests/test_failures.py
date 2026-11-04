@@ -101,6 +101,16 @@ def test_a_fresh_config_is_the_default_one():
     assert not FailureConfig(fail_endpoints={"listeCours"}).is_default()
     assert not FailureConfig(token_expired_calls=1).is_default()
     assert not FailureConfig(tokens_rejected=True).is_default()
+    assert not FailureConfig(latency_endpoints={"listeCours"}).is_default()
+    assert not FailureConfig(error_rate_endpoints={"listeCours"}).is_default()
+    assert not FailureConfig(malformed_endpoints={"listeCours"}).is_default()
+
+
+def test_a_fresh_config_applies_its_scoped_failures_everywhere():
+    rendered = FailureConfig().to_dict()
+    assert rendered["latencyEndpoints"] == ["*"]
+    assert rendered["errorRateEndpoints"] == ["*"]
+    assert rendered["malformedEndpoints"] == ["*"]
 
 
 def test_a_config_renders_a_fixed_latency_as_a_number_and_a_range_as_text():
@@ -125,6 +135,9 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     monkeypatch.setenv("AUTH_REQUIRED", "yes")
     monkeypatch.setenv("TOKEN_EXPIRED_CALLS", "3")
     monkeypatch.setenv("TOKENS_REJECTED", "on")
+    monkeypatch.setenv("LATENCY_ENDPOINTS", "listeCours")
+    monkeypatch.setenv("ERROR_RATE_ENDPOINTS", "echo,listeCours")
+    monkeypatch.setenv("MALFORMED_ENDPOINTS", "helloWorld")
 
     config = failures.load_from_env()
 
@@ -137,12 +150,29 @@ def test_the_boot_config_is_read_from_the_environment(monkeypatch):
     assert config.auth_required is True
     assert config.token_expired_calls == 3
     assert config.tokens_rejected is True
+    assert config.latency_endpoints == {"listeCours"}
+    assert config.error_rate_endpoints == {"echo", "listeCours"}
+    assert config.malformed_endpoints == {"helloWorld"}
+
+
+def test_an_empty_scope_in_the_environment_means_every_endpoint(monkeypatch):
+    monkeypatch.setenv("LATENCY_ENDPOINTS", "")
+    assert failures.load_from_env().latency_endpoints == {"*"}
+
+
+def test_an_empty_scope_sent_to_the_admin_means_every_endpoint(client):
+    client.patch("/admin/failures", json={"malformedEndpoints": ["listeCours"]})
+    patched = client.patch("/admin/failures", json={"malformedEndpoints": []}).json()
+    assert patched["malformedEndpoints"] == ["*"]
 
 
 def test_an_empty_environment_boots_the_default_config(monkeypatch):
     for name in (
         "LATENCY_MS",
+        "LATENCY_ENDPOINTS",
         "ERROR_RATE",
+        "ERROR_RATE_ENDPOINTS",
+        "MALFORMED_ENDPOINTS",
         "FAIL_ENDPOINTS",
         "TIMEOUT_ENDPOINTS",
         "TIMEOUT_DURATION_S",
@@ -391,6 +421,42 @@ def test_a_fixed_latency_needs_no_draw(client, no_sleep):
     client.patch("/admin/failures", json={"latencyMs": 250})
     client.get(ENDPOINT)
     assert no_sleep == [0.25]
+
+
+def test_a_scoped_latency_only_delays_its_endpoints(client, no_sleep):
+    client.patch(
+        "/admin/failures", json={"latencyMs": 250, "latencyEndpoints": ["listeCours"]}
+    )
+
+    client.get("/api/Etudiant/helloWorld")
+    assert no_sleep == []
+
+    client.get(ENDPOINT)
+    assert no_sleep == [0.25]
+
+
+def test_a_scoped_error_rate_only_hits_its_endpoints(client, fixed_random):
+    fixed_random(value=0.0)
+    client.patch(
+        "/admin/failures",
+        json={"errorRate": 0.5, "errorRateEndpoints": ["listeCours"]},
+    )
+
+    assert client.get("/api/Etudiant/helloWorld").status_code == 200
+    assert client.get(ENDPOINT).status_code == 500
+
+
+def test_a_scoped_malformed_only_truncates_its_endpoints(client):
+    whole = client.get(ENDPOINT).content
+    other = client.get("/api/Etudiant/helloWorld").content
+
+    client.patch(
+        "/admin/failures",
+        json={"malformed": True, "malformedEndpoints": ["listeCours"]},
+    )
+
+    assert client.get("/api/Etudiant/helloWorld").content == other
+    assert client.get(ENDPOINT).content == whole[: len(whole) // 2]
 
 
 def test_no_latency_means_no_sleep(client, no_sleep):

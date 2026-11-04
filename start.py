@@ -34,11 +34,14 @@ MAX_SEMESTER_GAP = 180
 
 FAILURE_ENV = {
     "latencyMs": "LATENCY_MS",
+    "latencyEndpoints": "LATENCY_ENDPOINTS",
     "errorRate": "ERROR_RATE",
+    "errorRateEndpoints": "ERROR_RATE_ENDPOINTS",
     "failEndpoints": "FAIL_ENDPOINTS",
     "timeoutEndpoints": "TIMEOUT_ENDPOINTS",
     "timeoutDurationS": "TIMEOUT_DURATION_S",
     "malformed": "MALFORMED",
+    "malformedEndpoints": "MALFORMED_ENDPOINTS",
     "authRequired": "AUTH_REQUIRED",
     "tokenExpiredCalls": "TOKEN_EXPIRED_CALLS",
     "tokensRejected": "TOKENS_REJECTED",
@@ -69,11 +72,14 @@ CONFIG_FLAGS = (
     "time",
     "failures",
     "latency",
+    "latency_endpoint",
     "error_rate",
+    "error_rate_endpoint",
     "fail",
     "timeout",
     "timeout_duration",
     "malformed",
+    "malformed_endpoint",
     "auth",
     "token_expired",
     "tokens_rejected",
@@ -350,10 +356,24 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
     )
     failures.add_argument(
+        "--latency-endpoint",
+        action="append",
+        metavar="ENDPOINT",
+        help="Limite la latence à cet endpoint (répétable, tous par défaut).",
+        default=None,
+    )
+    failures.add_argument(
         "--error-rate",
         type=_rate,
         metavar="R",
         help="Probabilité (0.0-1.0) qu'un appel retourne 500.",
+        default=None,
+    )
+    failures.add_argument(
+        "--error-rate-endpoint",
+        action="append",
+        metavar="ENDPOINT",
+        help="Limite les erreurs aléatoires à cet endpoint (répétable, tous par défaut).",
         default=None,
     )
     failures.add_argument(
@@ -381,6 +401,13 @@ def _build_parser() -> argparse.ArgumentParser:
         "--malformed",
         action=argparse.BooleanOptionalAction,
         help="Tronque de moitié chaque réponse 2xx.",
+        default=None,
+    )
+    failures.add_argument(
+        "--malformed-endpoint",
+        action="append",
+        metavar="ENDPOINT",
+        help="Limite la troncature à cet endpoint (répétable, tous par défaut).",
         default=None,
     )
     failures.add_argument(
@@ -473,11 +500,14 @@ def _failure_overrides(args: argparse.Namespace) -> tuple[dict, str]:
 
     explicit = {
         "latencyMs": args.latency,
+        "latencyEndpoints": args.latency_endpoint,
         "errorRate": args.error_rate,
+        "errorRateEndpoints": args.error_rate_endpoint,
         "failEndpoints": args.fail,
         "timeoutEndpoints": args.timeout,
         "timeoutDurationS": args.timeout_duration,
         "malformed": args.malformed,
+        "malformedEndpoints": args.malformed_endpoint,
         "authRequired": args.auth,
         "tokenExpiredCalls": args.token_expired,
         "tokensRejected": args.tokens_rejected,

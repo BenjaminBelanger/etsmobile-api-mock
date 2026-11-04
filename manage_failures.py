@@ -111,7 +111,17 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         type=_latency,
         help="Latency in ms, fixed or range (e.g., '500' or '100-500')",
     )
+    parser.add_argument(
+        "--latency-endpoint",
+        action="append",
+        help="Only delay this endpoint (repeatable, all by default)",
+    )
     parser.add_argument("--error-rate", type=_rate, help="Error rate, 0.0-1.0")
+    parser.add_argument(
+        "--error-rate-endpoint",
+        action="append",
+        help="Only apply the error rate to this endpoint (repeatable, all by default)",
+    )
     parser.add_argument(
         "--fail",
         action="append",
@@ -130,6 +140,11 @@ def _build_custom_parser() -> argparse.ArgumentParser:
         action=argparse.BooleanOptionalAction,
         default=None,
         help="Truncate response bodies",
+    )
+    parser.add_argument(
+        "--malformed-endpoint",
+        action="append",
+        help="Only truncate this endpoint's bodies (repeatable, all by default)",
     )
     parser.add_argument(
         "--auth",
@@ -155,8 +170,12 @@ def _custom_args_to_config(args: argparse.Namespace) -> dict:
     config: dict = {}
     if args.latency is not None:
         config["latencyMs"] = args.latency
+    if args.latency_endpoint is not None:
+        config["latencyEndpoints"] = args.latency_endpoint
     if args.error_rate is not None:
         config["errorRate"] = args.error_rate
+    if args.error_rate_endpoint is not None:
+        config["errorRateEndpoints"] = args.error_rate_endpoint
     if args.fail is not None:
         config["failEndpoints"] = args.fail
     if args.timeout is not None:
@@ -165,6 +184,8 @@ def _custom_args_to_config(args: argparse.Namespace) -> dict:
         config["timeoutDurationS"] = args.timeout_duration
     if args.malformed is not None:
         config["malformed"] = args.malformed
+    if args.malformed_endpoint is not None:
+        config["malformedEndpoints"] = args.malformed_endpoint
     if args.auth is not None:
         config["authRequired"] = args.auth
     if args.token_expired is not None:
