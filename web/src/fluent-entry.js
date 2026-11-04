@@ -17,3 +17,4 @@ import '@fluentui/web-components/progress-bar.js';
 import '@fluentui/web-components/text.js';
 import '@fluentui/web-components/text-input.js';
 import '@fluentui/web-components/tooltip.js';
+import './tooltip-timers.js';

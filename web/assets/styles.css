@@ -943,6 +943,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 
 fluent-dialog::part(dialog) { max-width: 536px; }
 
+fluent-tooltip { margin-inline: 8px; }
+
 .dialog__text {
   margin: 0;
   color: var(--colorNeutralForeground2);

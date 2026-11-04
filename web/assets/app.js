@@ -2899,6 +2899,19 @@ document.addEventListener(
   true
 );
 
+const hasTooltip = (node) =>
+  !!node?.id &&
+  !!document.querySelector(`fluent-tooltip[anchor="${CSS.escape(node.id)}"]`);
+
+document.addEventListener(
+  "focus",
+  (e) => {
+    if (document.documentElement.dataset.modality !== "pointer") return;
+    if (hasTooltip(e.target)) e.stopPropagation();
+  },
+  true
+);
+
 const TEXT_ENTRY =
   'textarea, input:not([type="checkbox"]), fluent-text-input, fluent-dropdown[type="combobox"], fluent-dialog';
 
