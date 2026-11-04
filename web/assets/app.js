@@ -1677,12 +1677,10 @@ function chipList(field, names) {
 const addChip = (field) => `<button type="button" class="chip chip--add" data-add="${field}"
       aria-label="Ajouter un endpoint">${icon("add", 12)}Endpoint</button>`;
 
-function scopeChips(field, names) {
-  const chips = isEverywhere(names)
+const scopeChips = (field, names) =>
+  isEverywhere(names)
     ? `<span class="chip chip--all">${endpointLabel("*")}</span>${addChip(field)}`
     : chipList(field, names);
-  return `<span class="injection__after">sur</span>${chips}`;
-}
 
 function endpointField(chipsId, optional = false) {
   return `<fluent-field label-position="above">
