@@ -719,6 +719,8 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 }
 .chip--add:hover { border-color: var(--colorCompoundBrandStroke); color: var(--colorNeutralForeground1); }
 
+.chip--all { padding: 0 10px; }
+
 .chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .chips--staged:empty { display: none; }
 
