@@ -2,10 +2,11 @@
 
 Local mock server that replicates the ETSMobileAPI for testing the ÉTSMobile Flutter app.
 
+Try the schedule editor in the browser with the [online demo](https://benjaminbelanger.github.io/etsmobile-api-mock/). Changes are not saved and reset on reload.
+
 ## Table of Contents
 
 - [Quick Start](#quick-start)
-- [Online Demo](#online-demo)
 - [Schedule Editor UI](#schedule-editor-ui)
 - [Tests](#tests)
 - [Supported Format](#supported-format)
@@ -37,10 +38,6 @@ python start.py --scenario semaine-relache --semester-week 3
 ```
 
 `python start.py --help` lists every profile, scenario and day code. To point the Flutter app at the mock, see [Connecting the Flutter App](#connecting-the-flutter-app).
-
-## Online Demo
-
-Try the [online demo](https://benjaminbelanger.github.io/etsmobile-api-mock/) in the browser, without installing anything. Changes are not saved and reset on reload.
 
 ## Schedule Editor UI
 
