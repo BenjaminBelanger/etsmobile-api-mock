@@ -1083,12 +1083,13 @@ def set_cote(session: str, course_id: str, cote: str) -> dict:
     return get_state(session)
 
 
-def set_room(session: str, course_id: str, room: str) -> dict:
+def set_block_room(session: str, block_id: str, room: str) -> dict:
     with _lock:
         doc = _load_doc(session)
-        course = _find_course(doc, course_id)
+        course, index, schedule = _resolve_block(doc, block_id)
         _snapshot(session)
-        course["room"] = str(room or "").strip()
+        target = course if index == 0 else schedule
+        target["room"] = str(room or "").strip()
         _persist(session)
     return get_state(session)
 

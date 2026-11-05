@@ -661,15 +661,27 @@ def test_a_cote_can_be_cleared(session):
     assert course_of(state, COURSE)["cote"] == ""
 
 
-def test_the_room_of_a_course_can_be_changed(session):
-    state = schedule_editor.set_room(session, COURSE, "  B-2500 ")
+def test_the_room_of_the_main_block_is_the_course_room(session):
+    state = schedule_editor.set_block_room(session, BLOCK, "  B-2500 ")
     assert course_of(state, COURSE)["room"] == "B-2500"
     assert block_of(state, BLOCK)["room"] == "B-2500"
 
 
-def test_the_room_of_a_course_can_be_cleared(session):
-    state = schedule_editor.set_room(session, COURSE, "")
-    assert course_of(state, COURSE)["room"] == ""
+def test_the_room_of_a_lab_is_set_on_the_lab_only(session):
+    before = block_of(schedule_editor.get_state(session), BLOCK)["room"]
+    state = schedule_editor.set_block_room(session, LAB, "B-0001")
+    assert block_of(state, LAB)["room"] == "B-0001"
+    assert block_of(state, BLOCK)["room"] == before
+
+
+def test_a_room_can_be_cleared(session):
+    state = schedule_editor.set_block_room(session, LAB, "")
+    assert block_of(state, LAB)["room"] == ""
+
+
+def test_the_room_of_an_unknown_block_is_refused(session):
+    with pytest.raises(EditorError, match="not found"):
+        schedule_editor.set_block_room(session, f"{COURSE}:9", "B-0001")
 
 
 def test_the_state_lists_the_professors_to_pick_from(session):

@@ -238,8 +238,8 @@ def test_a_cote_can_be_set_over_http(client, session):
 
 
 def test_a_room_can_be_set_over_http(client, session):
-    state = ok(client, "/course/room", session=session, courseId=COURSE, room="B-2500")
-    assert course_of(state)["room"] == "B-2500"
+    state = ok(client, "/block/room", session=session, blockId=BLOCK, room="B-2500")
+    assert block_of(state)["room"] == "B-2500"
 
 
 def test_a_professor_can_be_set_over_http(client, session):
@@ -359,7 +359,7 @@ def test_a_refused_edit_comes_back_as_a_400(client, session, path, body, message
         ("/evaluation/set", {"courseId": COURSE, "index": 0}),
         ("/evaluation/move", {"courseId": COURSE, "index": 0}),
         ("/course/cote", {}),
-        ("/course/room", {}),
+        ("/block/room", {}),
         ("/course/professor", {}),
     ],
 )
@@ -384,7 +384,7 @@ def test_the_public_api_reflects_edits_made_through_the_editor(client, session):
 
 
 def test_the_public_schedule_serves_the_edited_room_and_professor(client, session):
-    ok(client, "/course/room", session=session, courseId=COURSE, room="B-2500")
+    ok(client, "/block/room", session=session, blockId=BLOCK, room="B-2500")
     ok(
         client,
         "/course/professor",
@@ -398,3 +398,18 @@ def test_the_public_schedule_serves_the_edited_room_and_professor(client, sessio
     ).json()["listeCours"]
     assert served[0]["local"] == "B-2500"
     assert served[0]["listeProf"][0]["nom"] == "Last2"
+
+
+def test_the_public_schedule_serves_the_edited_lab_room(client, session):
+    ok(client, "/block/room", session=session, blockId=f"{COURSE}:1", room="B-0001")
+
+    activities = client.get(
+        "/api/Etudiant/listeHoraireEtProf", params={"session": session}
+    ).json()["listeActivites"]
+    rooms = {
+        a["activitePrincipale"]: a["local"]
+        for a in activities
+        if f"{a['sigle']}-{a['groupe']}" == COURSE
+    }
+    assert rooms["Non"] == "B-0001"
+    assert rooms["Oui"] != "B-0001"

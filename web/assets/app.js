@@ -818,6 +818,26 @@ function professorSelect(course) {
     </fluent-field>`;
 }
 
+const BLOCK_KINDS = { cours: "Cours", labo: "Labo", tp: "TP" };
+
+const blockSuffix = (block) => block.id.slice(block.id.lastIndexOf(":") + 1);
+
+function roomLabel(block, blocks) {
+  if (blocks.length < 2) return "Local";
+  const kind = BLOCK_KINDS[block.kind] || block.kind;
+  const shared = blocks.filter((other) => other.kind === block.kind).length > 1;
+  return shared ? `Local (${kind}, ${block.journee.toLowerCase()})` : `Local (${kind})`;
+}
+
+function roomInputs(course) {
+  const blocks = course.blocks || [];
+  return blocks
+    .map((block) =>
+      propInput(`room:${blockSuffix(block)}`, roomLabel(block, blocks), block.room, "text"),
+    )
+    .join("");
+}
+
 function checkBox(key, label, checked) {
   return `<label class="check">
         <input type="checkbox" data-key="${key}"${checked ? " checked" : ""} />
@@ -958,7 +978,7 @@ function detailHtml(course) {
   return `<p class="detail__title">${escapeHtml(course.titre)}</p>
       <div class="props__grid">
         ${professorSelect(course)}
-        ${propInput("course:room", "Local", course.room, "text")}
+        ${roomInputs(course)}
         ${propInput("course:cote", "Cote", course.cote, "text")}
       </div>
       <section class="detail__section">
@@ -1222,7 +1242,6 @@ function commitSessionDate(field, value) {
 
 const COURSE_FIELDS = {
   cote: ["/course/cote", "cote"],
-  room: ["/course/room", "room"],
   professorId: ["/course/professor", "professorId"],
 };
 
@@ -1233,6 +1252,11 @@ function commitField(course, key, value) {
   if (scope === "course") {
     const [path, name] = COURSE_FIELDS[field];
     apiPost(path, { session: state.session, courseId, [name]: value }).catch(revert);
+    return;
+  }
+  if (scope === "room") {
+    const body = { session: state.session, blockId: `${courseId}:${field}`, room: value };
+    apiPost("/block/room", body).catch(revert);
     return;
   }
   if (scope === "exam") {

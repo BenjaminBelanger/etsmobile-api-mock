@@ -344,17 +344,53 @@ describe("editing from the detail panel", () => {
     app.close();
   });
 
-  test("saves the room of the course", async () => {
+  test("shows one room per activity of the course", async () => {
     const app = await mount();
     await openCourse(app);
 
-    assert.equal(field(app, "course:room").value, "A-1502");
-    await commit(app, "course:room", "B-2500");
+    const rooms = app.queryAll('#detail [data-key^="room:"]');
+    assert.deepEqual(
+      rooms.map((node) => [node.dataset.key, node.textContent.trim(), node.value]),
+      [
+        ["room:0", "Local (Cours)", "A-1502"],
+        ["room:1", "Local (Labo)", "A-4209"],
+      ],
+    );
+    app.close();
+  });
 
-    assert.deepEqual(app.server.lastCall("/course/room").body, {
+  test("names the day when two activities share a type", async () => {
+    const state = baseState();
+    state.courses[1].blocks[1].kind = "cours";
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "room:0").textContent.trim(), "Local (Cours, lundi)");
+    assert.equal(field(app, "room:1").textContent.trim(), "Local (Cours, vendredi)");
+    app.close();
+  });
+
+  test("labels the room plainly when the course has a single activity", async () => {
+    const state = baseState();
+    state.courses[1].blocks = state.courses[1].blocks.slice(0, 1);
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "room:0").textContent.trim(), "Local");
+    assert.equal(field(app, "room:1"), null);
+    app.close();
+  });
+
+  test("saves the room of the lab on the lab block", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    await commit(app, "room:1", "B-0001");
+
+    assert.deepEqual(app.server.lastCall("/block/room").body, {
       session: "H2026",
-      courseId: COURSE,
-      room: "B-2500",
+      blockId: `${COURSE}:1`,
+      room: "B-0001",
     });
     app.close();
   });

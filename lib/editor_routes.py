@@ -105,7 +105,7 @@ class CoteBody(BaseModel):
 
 class RoomBody(BaseModel):
     session: str
-    courseId: str
+    blockId: str
     room: str = ""
 
 
@@ -261,9 +261,9 @@ def course_cote(body: CoteBody):
     return _guard(schedule_editor.set_cote, body.session, body.courseId, body.cote)
 
 
-@router.post("/api/course/room")
-def course_room(body: RoomBody):
-    return _guard(schedule_editor.set_room, body.session, body.courseId, body.room)
+@router.post("/api/block/room")
+def block_room(body: RoomBody):
+    return _guard(schedule_editor.set_block_room, body.session, body.blockId, body.room)
 
 
 @router.post("/api/course/professor")
