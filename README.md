@@ -40,8 +40,9 @@ python start.py --scenario semaine-relache --semester-week 3
 
 ## Online Demo
 
-Try the editor in the browser, without installing anything:
-**https://benjaminbelanger.github.io/etsmobile-api-mock/**
+Try the editor in the browser, without installing anything.
+
+[![Open the online demo](https://img.shields.io/badge/Open_the_online_demo-2ea44f?style=for-the-badge)](https://benjaminbelanger.github.io/etsmobile-api-mock/)
 
 Changes are not saved and reset on reload.
 
