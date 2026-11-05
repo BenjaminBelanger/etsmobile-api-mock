@@ -103,6 +103,18 @@ class CoteBody(BaseModel):
     cote: str = ""
 
 
+class RoomBody(BaseModel):
+    session: str
+    courseId: str
+    room: str = ""
+
+
+class ProfessorBody(BaseModel):
+    session: str
+    courseId: str
+    professorId: str = ""
+
+
 class StudentFieldBody(BaseModel):
     field: str
     value: bool | str | None = None
@@ -247,6 +259,18 @@ def grades_reset(body: CourseBody):
 @router.post("/api/course/cote")
 def course_cote(body: CoteBody):
     return _guard(schedule_editor.set_cote, body.session, body.courseId, body.cote)
+
+
+@router.post("/api/course/room")
+def course_room(body: RoomBody):
+    return _guard(schedule_editor.set_room, body.session, body.courseId, body.room)
+
+
+@router.post("/api/course/professor")
+def course_professor(body: ProfessorBody):
+    return _guard(
+        schedule_editor.set_professor, body.session, body.courseId, body.professorId
+    )
 
 
 @router.post("/api/exam/set")

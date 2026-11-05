@@ -783,12 +783,39 @@ function propInput(key, label, value, type, opts = {}) {
   const pinned = !!opts.pinned;
   const classes = `props__input${pinned ? " is-pinned" : ""}${
     opts.wide ? " props__input--wide" : ""
-  }${opts.narrow ? " props__input--narrow" : ""}`;
+  }`;
   const hint = opts.hint || "Valeur modifiée, videz le champ pour rétablir la valeur générée";
   const tips = [opts.tip, pinned && hint].filter(Boolean);
   const title = tips.length ? ` title="${escapeHtml(tips.join(" · "))}"` : "";
   return `<fluent-text-input class="${classes}" control-size="small" appearance="filled-lighter"
       type="${type}" data-key="${key}" value="${escapeHtml(value)}"${title}>${label}</fluent-text-input>`;
+}
+
+function professorChoices(current) {
+  const professors = (state.data && state.data.meta && state.data.meta.professors) || [];
+  const known = professors.some((prof) => prof.id === current);
+  return [
+    { value: "", text: "Aucun" },
+    ...professors.map((prof) => ({ value: prof.id, text: prof.name || prof.id })),
+    ...(current && !known ? [{ value: current, text: current }] : []),
+  ];
+}
+
+function professorSelect(course) {
+  const current = course.professorId || "";
+  const options = professorChoices(current)
+    .map(
+      (item) =>
+        `<fluent-option value="${escapeHtml(item.value)}"${
+          item.value === current ? " selected" : ""
+        }>${escapeHtml(item.text)}</fluent-option>`,
+    )
+    .join("");
+  return `<fluent-field class="props__field props__input--wide" label-position="above">
+      <fluent-label slot="label">Professeur</fluent-label>
+      <fluent-dropdown slot="input" class="props__select" size="small" appearance="filled-lighter"
+        data-key="course:professorId" aria-label="Professeur"><fluent-listbox>${options}</fluent-listbox></fluent-dropdown>
+    </fluent-field>`;
 }
 
 function checkBox(key, label, checked) {
@@ -929,7 +956,11 @@ function detailHtml(course) {
   const openIndex = state.evalIndex;
   const canResetGrades = !!course.canResetGrades;
   return `<p class="detail__title">${escapeHtml(course.titre)}</p>
-      ${propInput("course:cote", "Cote", course.cote, "text", { narrow: true })}
+      <div class="props__grid">
+        ${professorSelect(course)}
+        ${propInput("course:room", "Local", course.room, "text")}
+        ${propInput("course:cote", "Cote", course.cote, "text")}
+      </div>
       <section class="detail__section">
         <header class="detail__head">
           <h3>Évaluations</h3>
@@ -1008,6 +1039,13 @@ function wireDetail(course) {
     const key = node.dataset.key;
     if (node.type === "checkbox") {
       node.addEventListener("change", () => commitField(course, key, node.checked));
+      return;
+    }
+    if (node.tagName === "FLUENT-DROPDOWN") {
+      node.addEventListener("change", () => {
+        const value = dropdownValue(node);
+        if (value !== (course.professorId || "")) commitField(course, key, value);
+      });
       return;
     }
     wireTextField(node, (value) => commitField(course, key, value));
@@ -1182,13 +1220,19 @@ function commitSessionDate(field, value) {
   );
 }
 
+const COURSE_FIELDS = {
+  cote: ["/course/cote", "cote"],
+  room: ["/course/room", "room"],
+  professorId: ["/course/professor", "professorId"],
+};
+
 function commitField(course, key, value) {
   const [scope, field] = key.split(":");
   const courseId = course.courseId;
   const revert = () => renderDetail();
   if (scope === "course") {
-    const body = { session: state.session, courseId, cote: value };
-    apiPost("/course/cote", body).catch(revert);
+    const [path, name] = COURSE_FIELDS[field];
+    apiPost(path, { session: state.session, courseId, [name]: value }).catch(revert);
     return;
   }
   if (scope === "exam") {

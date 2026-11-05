@@ -344,6 +344,74 @@ describe("editing from the detail panel", () => {
     app.close();
   });
 
+  test("saves the room of the course", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    assert.equal(field(app, "course:room").value, "A-1502");
+    await commit(app, "course:room", "B-2500");
+
+    assert.deepEqual(app.server.lastCall("/course/room").body, {
+      session: "H2026",
+      courseId: COURSE,
+      room: "B-2500",
+    });
+    app.close();
+  });
+
+  test("offers every professor and none", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const options = app.queryAll('#detail [data-key="course:professorId"] fluent-option');
+    assert.deepEqual(
+      options.map((o) => [o.getAttribute("value"), o.textContent]),
+      [
+        ["", "Aucun"],
+        ["last1-first1", "First1 Last1"],
+        ["last2-first2", "First2 Last2"],
+      ],
+    );
+    assert.equal(field(app, "course:professorId").value, "last2-first2");
+    app.close();
+  });
+
+  test("saves the professor picked for the course", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    app.select(field(app, "course:professorId"), "last1-first1");
+    await flush();
+
+    assert.deepEqual(app.server.lastCall("/course/professor").body, {
+      session: "H2026",
+      courseId: COURSE,
+      professorId: "last1-first1",
+    });
+    app.close();
+  });
+
+  test("can leave a course without professor", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    app.select(field(app, "course:professorId"), "");
+    await flush();
+
+    assert.equal(app.server.lastCall("/course/professor").body.professorId, "");
+    app.close();
+  });
+
+  test("keeps an unknown professor selectable", async () => {
+    const state = baseState();
+    state.courses[1].professorId = "ancien-prof";
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "course:professorId").value, "ancien-prof");
+    app.close();
+  });
+
   test("saves the exam fields one by one", async () => {
     const app = await mount();
     await openCourse(app);

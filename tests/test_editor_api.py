@@ -237,6 +237,29 @@ def test_a_cote_can_be_set_over_http(client, session):
     assert course_of(state)["cote"] == "A+"
 
 
+def test_a_room_can_be_set_over_http(client, session):
+    state = ok(client, "/course/room", session=session, courseId=COURSE, room="B-2500")
+    assert course_of(state)["room"] == "B-2500"
+
+
+def test_a_professor_can_be_set_over_http(client, session):
+    state = ok(
+        client,
+        "/course/professor",
+        session=session,
+        courseId=COURSE,
+        professorId="last2-first2",
+    )
+    assert course_of(state)["professorId"] == "last2-first2"
+
+
+def test_an_unknown_professor_is_a_400(client, session):
+    response = post(
+        client, "/course/professor", session=session, courseId=COURSE, professorId="x"
+    )
+    assert response.status_code == 400
+
+
 def test_the_exam_can_be_set_and_reset_over_http(client, session):
     state = ok(
         client,
@@ -336,6 +359,8 @@ def test_a_refused_edit_comes_back_as_a_400(client, session, path, body, message
         ("/evaluation/set", {"courseId": COURSE, "index": 0}),
         ("/evaluation/move", {"courseId": COURSE, "index": 0}),
         ("/course/cote", {}),
+        ("/course/room", {}),
+        ("/course/professor", {}),
     ],
 )
 def test_an_incomplete_body_is_a_422(client, session, path, body):
@@ -356,3 +381,20 @@ def test_the_public_api_reflects_edits_made_through_the_editor(client, session):
 
     assert served[0]["jour"] == "3"
     assert served[0]["heureDebut"] == "14:00"
+
+
+def test_the_public_schedule_serves_the_edited_room_and_professor(client, session):
+    ok(client, "/course/room", session=session, courseId=COURSE, room="B-2500")
+    ok(
+        client,
+        "/course/professor",
+        session=session,
+        courseId=COURSE,
+        professorId="last2-first2",
+    )
+
+    served = client.get(
+        "/api/Etudiant/lireHoraire", params={"session": session, "prefixe": "LOG430"}
+    ).json()["listeCours"]
+    assert served[0]["local"] == "B-2500"
+    assert served[0]["listeProf"][0]["nom"] == "Last2"

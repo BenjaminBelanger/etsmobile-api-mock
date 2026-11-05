@@ -579,6 +579,16 @@ def test_an_unknown_professor_leaves_empty_fields():
     assert entry["listeProf"][0]["nom"] == ""
 
 
+def test_a_course_without_professor_lists_no_teacher():
+    built = build([make_course(professorId="")])
+    entry = built[COURSE_SCHEDULE.filename]["H2030"][0]
+    session_data = built[SCHEDULE_ACTIVITIES.filename]["H2030"]
+
+    assert entry["listeProf"] == []
+    assert session_data["listeEnseignants"] == []
+    assert built[COURSE_REVIEWS.filename]["H2030"][0]["Enseignant"] == ""
+
+
 def test_the_course_review_window_sits_before_the_end_of_classes():
     review = build([make_course()])[COURSE_REVIEWS.filename]["H2030"][0]
 

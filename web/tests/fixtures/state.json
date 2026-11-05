@@ -12,6 +12,7 @@
       "groupe": "01",
       "titre": "Analyse et conception de logiciels",
       "room": "A-1302",
+      "professorId": "last1-first1",
       "cote": "",
       "hasSchedule": true,
       "blocks": [
@@ -122,6 +123,7 @@
       "groupe": "02",
       "titre": "Architecture logicielle",
       "room": "A-1502",
+      "professorId": "last2-first2",
       "cote": "",
       "hasSchedule": true,
       "blocks": [
@@ -658,6 +660,16 @@
       {
         "sigle": "ENT202",
         "titre": "Introduction à l'entrepreneurship"
+      }
+    ],
+    "professors": [
+      {
+        "id": "last1-first1",
+        "name": "First1 Last1"
+      },
+      {
+        "id": "last2-first2",
+        "name": "First2 Last2"
       }
     ]
   }

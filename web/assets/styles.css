@@ -566,12 +566,18 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .props__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .props__input { width: 100%; min-width: 0; max-width: none; }
 .props__input--wide { grid-column: 1 / -1; }
-.props__input--narrow { width: 96px; }
 .props__input::part(label) {
   font-size: var(--fontSizeBase200);
   color: var(--colorNeutralForeground3);
   padding-bottom: 2px;
 }
+.props__field { min-width: 0; }
+.props__field fluent-label {
+  font-size: var(--fontSizeBase200);
+  color: var(--colorNeutralForeground3);
+  padding-bottom: 2px;
+}
+.props__select { width: 100%; min-width: 0; max-width: none; }
 .props__input.is-pinned::part(root) { border-bottom-color: var(--colorCompoundBrandStroke); }
 .props__checks { display: flex; gap: 16px; }
 .stats {
