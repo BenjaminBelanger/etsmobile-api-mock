@@ -486,6 +486,7 @@ def _normalize_course(course: dict, sheet: dict | None, exam: dict | None) -> di
         "groupe": course["groupe"],
         "titre": course.get("titreCours", ""),
         "room": course.get("room", ""),
+        "professorId": course.get("professorId", ""),
         "cote": course.get("cote", ""),
         "hasSchedule": course.get("schedule") is not None,
         "blocks": blocks,
@@ -494,6 +495,10 @@ def _normalize_course(course: dict, sheet: dict | None, exam: dict | None) -> di
         "canResetGrades": _has_grade_state(course),
         "exam": _normalize_exam(course, exam),
     }
+
+
+def _professor_name(prof: dict) -> str:
+    return " ".join(filter(None, (prof.get("prenom"), prof.get("nom"))))
 
 
 def _date_rows(session: str, doc: dict) -> list[dict]:
@@ -553,6 +558,10 @@ def get_state(session: str) -> dict:
                 "catalog": [
                     {"sigle": c["sigle"], "titre": c["titre"]}
                     for c in pools.get("courseCatalog", [])
+                ],
+                "professors": [
+                    {"id": key, "name": _professor_name(prof)}
+                    for key, prof in data_store.get_professors().items()
                 ],
             },
         }
@@ -1070,6 +1079,30 @@ def set_cote(session: str, course_id: str, cote: str) -> dict:
         course = _find_course(doc, course_id)
         _snapshot(session)
         course["cote"] = str(cote or "").strip().upper()
+        _persist(session)
+    return get_state(session)
+
+
+def set_block_room(session: str, block_id: str, room: str) -> dict:
+    with _lock:
+        doc = _load_doc(session)
+        course, index, schedule = _resolve_block(doc, block_id)
+        _snapshot(session)
+        target = course if index == 0 else schedule
+        target["room"] = str(room or "").strip()
+        _persist(session)
+    return get_state(session)
+
+
+def set_professor(session: str, course_id: str, professor_id: str) -> dict:
+    professor_id = str(professor_id or "").strip()
+    if professor_id and professor_id not in data_store.get_professors():
+        raise EditorError(f"Unknown professor '{professor_id}'")
+    with _lock:
+        doc = _load_doc(session)
+        course = _find_course(doc, course_id)
+        _snapshot(session)
+        course["professorId"] = professor_id
         _persist(session)
     return get_state(session)
 

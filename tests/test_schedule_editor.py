@@ -661,6 +661,56 @@ def test_a_cote_can_be_cleared(session):
     assert course_of(state, COURSE)["cote"] == ""
 
 
+def test_the_room_of_the_main_block_is_the_course_room(session):
+    state = schedule_editor.set_block_room(session, BLOCK, "  B-2500 ")
+    assert course_of(state, COURSE)["room"] == "B-2500"
+    assert block_of(state, BLOCK)["room"] == "B-2500"
+
+
+def test_the_room_of_a_lab_is_set_on_the_lab_only(session):
+    before = block_of(schedule_editor.get_state(session), BLOCK)["room"]
+    state = schedule_editor.set_block_room(session, LAB, "B-0001")
+    assert block_of(state, LAB)["room"] == "B-0001"
+    assert block_of(state, BLOCK)["room"] == before
+
+
+def test_a_room_can_be_cleared(session):
+    state = schedule_editor.set_block_room(session, LAB, "")
+    assert block_of(state, LAB)["room"] == ""
+
+
+def test_the_room_of_an_unknown_block_is_refused(session):
+    with pytest.raises(EditorError, match="not found"):
+        schedule_editor.set_block_room(session, f"{COURSE}:9", "B-0001")
+
+
+def test_the_state_lists_the_professors_to_pick_from(session):
+    professors = schedule_editor.get_state(session)["meta"]["professors"]
+    assert {"id": "last1-first1", "name": "First1 Last1"} in professors
+
+
+def test_a_course_can_be_given_another_professor(session):
+    state = schedule_editor.set_professor(session, COURSE, "last2-first2")
+    assert course_of(state, COURSE)["professorId"] == "last2-first2"
+
+
+def test_a_course_can_be_left_without_professor(session):
+    state = schedule_editor.set_professor(session, COURSE, "")
+    assert course_of(state, COURSE)["professorId"] == ""
+
+
+def test_an_unknown_professor_is_refused(session):
+    with pytest.raises(EditorError, match="Unknown professor"):
+        schedule_editor.set_professor(session, COURSE, "nobody")
+
+
+def test_a_professor_change_can_be_undone(session):
+    before = course_of(schedule_editor.get_state(session), COURSE)["professorId"]
+    schedule_editor.set_professor(session, COURSE, "last2-first2")
+    state = schedule_editor.undo(session)
+    assert course_of(state, COURSE)["professorId"] == before
+
+
 def test_the_exam_date_can_be_pinned(session):
     state = schedule_editor.set_final_exam(session, COURSE, exam_date="2026-04-22")
 

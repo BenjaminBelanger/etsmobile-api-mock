@@ -56,6 +56,9 @@ def test_the_ui_fixture_matches_the_state_the_server_sends():
         served["meta"]["catalog"][0]
     )
     assert keys_of(fixture["meta"]["days"][0]) == keys_of(served["meta"]["days"][0])
+    assert keys_of(fixture["meta"]["professors"][0]) == keys_of(
+        served["meta"]["professors"][0]
+    )
 
 
 def test_the_ui_fixture_courses_match_the_served_shape():

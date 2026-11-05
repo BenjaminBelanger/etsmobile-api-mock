@@ -426,11 +426,11 @@ def _build_schedule_entries(
     groupe: str,
     room: str,
     title: str,
-    prof_entry: dict,
+    prof_entries: list[dict],
     schedule_activity: dict,
 ) -> dict:
     primary = _make_activity_entry(sigle, groupe, sched, room, title, is_primary=True)
-    course_sched_entry = {**primary, "listeProf": [prof_entry]}
+    course_sched_entry = {**primary, "listeProf": prof_entries}
 
     schedule_activity["listeActivites"].append(primary)
     for extra in course.get("extraActivities", []):
@@ -439,7 +439,7 @@ def _build_schedule_entries(
         )
         schedule_activity["listeActivites"].append(entry)
 
-    register_course_teachers(schedule_activity, sigle, groupe, [prof_entry])
+    register_course_teachers(schedule_activity, sigle, groupe, prof_entries)
 
     return course_sched_entry
 
@@ -452,7 +452,7 @@ def _build_course_review(
     return {
         "Sigle": sigle,
         "Groupe": groupe,
-        "Enseignant": f"{prof.get('prenom', '')} {prof.get('nom', '')}",
+        "Enseignant": " ".join(filter(None, (prof.get("prenom"), prof.get("nom")))),
         "DateDebutEvaluation": f"{review_start.isoformat()}T00:00:00",
         "DateFinEvaluation": f"{review_end.isoformat()}T23:59:00",
         "TypeEvaluation": "Cours",
@@ -513,7 +513,8 @@ def build_all_course_data(
         sigle = course["sigle"]
         groupe = course["groupe"]
         course_group = build_course_key(sigle, groupe)
-        prof = professors.get(course["professorId"], {})
+        professor_id = course.get("professorId", "")
+        prof = professors.get(professor_id, {})
         room = course["room"]
         title = course["titreCours"]
         sched = course["schedule"]
@@ -566,7 +567,7 @@ def build_all_course_data(
         )
         course_activities.setdefault(session_code, []).extend(activities)
 
-        prof_entry = _build_prof_entry(prof)
+        prof_entries = [_build_prof_entry(prof)] if professor_id else []
         schedule_activity = schedule_activities.setdefault(
             session_code,
             empty_schedule_activities(),
@@ -578,7 +579,7 @@ def build_all_course_data(
             groupe,
             room,
             title,
-            prof_entry,
+            prof_entries,
             schedule_activity,
         )
         course_schedule.setdefault(session_code, []).append(course_sched)

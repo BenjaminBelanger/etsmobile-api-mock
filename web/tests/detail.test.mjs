@@ -344,6 +344,110 @@ describe("editing from the detail panel", () => {
     app.close();
   });
 
+  test("shows one room per activity of the course", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const rooms = app.queryAll('#detail [data-key^="room:"]');
+    assert.deepEqual(
+      rooms.map((node) => [node.dataset.key, node.textContent.trim(), node.value]),
+      [
+        ["room:0", "Local (Cours)", "A-1502"],
+        ["room:1", "Local (Labo)", "A-4209"],
+      ],
+    );
+    app.close();
+  });
+
+  test("names the day when two activities share a type", async () => {
+    const state = baseState();
+    state.courses[1].blocks[1].kind = "cours";
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "room:0").textContent.trim(), "Local (Cours, lundi)");
+    assert.equal(field(app, "room:1").textContent.trim(), "Local (Cours, vendredi)");
+    app.close();
+  });
+
+  test("labels the room plainly when the course has a single activity", async () => {
+    const state = baseState();
+    state.courses[1].blocks = state.courses[1].blocks.slice(0, 1);
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "room:0").textContent.trim(), "Local");
+    assert.equal(field(app, "room:1"), null);
+    app.close();
+  });
+
+  test("saves the room of the lab on the lab block", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    await commit(app, "room:1", "B-0001");
+
+    assert.deepEqual(app.server.lastCall("/block/room").body, {
+      session: "H2026",
+      blockId: `${COURSE}:1`,
+      room: "B-0001",
+    });
+    app.close();
+  });
+
+  test("offers every professor and none", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    const options = app.queryAll('#detail [data-key="course:professorId"] fluent-option');
+    assert.deepEqual(
+      options.map((o) => [o.getAttribute("value"), o.textContent]),
+      [
+        ["", "Aucun"],
+        ["last1-first1", "First1 Last1"],
+        ["last2-first2", "First2 Last2"],
+      ],
+    );
+    assert.equal(field(app, "course:professorId").value, "last2-first2");
+    app.close();
+  });
+
+  test("saves the professor picked for the course", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    app.select(field(app, "course:professorId"), "last1-first1");
+    await flush();
+
+    assert.deepEqual(app.server.lastCall("/course/professor").body, {
+      session: "H2026",
+      courseId: COURSE,
+      professorId: "last1-first1",
+    });
+    app.close();
+  });
+
+  test("can leave a course without professor", async () => {
+    const app = await mount();
+    await openCourse(app);
+
+    app.select(field(app, "course:professorId"), "");
+    await flush();
+
+    assert.equal(app.server.lastCall("/course/professor").body.professorId, "");
+    app.close();
+  });
+
+  test("keeps an unknown professor selectable", async () => {
+    const state = baseState();
+    state.courses[1].professorId = "ancien-prof";
+    const app = await mount({ state });
+    await openCourse(app);
+
+    assert.equal(field(app, "course:professorId").value, "ancien-prof");
+    app.close();
+  });
+
   test("saves the exam fields one by one", async () => {
     const app = await mount();
     await openCourse(app);
