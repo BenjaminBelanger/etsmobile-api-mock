@@ -47,7 +47,7 @@ Changes are not saved and reset on reload.
 
 ## Schedule Editor UI
 
-<img width="2557" height="1235" alt="Screenshot 2026-11-04 220340" src="https://github.com/user-attachments/assets/a6e4d73f-9214-4690-9a9e-a73515427933" />
+<img width="2557" height="1232" alt="Screenshot 2026-11-04 220448" src="https://github.com/user-attachments/assets/9905b553-f1d9-48e7-9f99-a7af98e17730" />
 
 A weekly-schedule editor is served at `http://localhost:8080/editor` (the root `/` redirects there). Move, resize, add and delete courses; the API serves the edited schedule. `python start.py` clears every editor change at each launch.
 
