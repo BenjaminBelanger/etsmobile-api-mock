@@ -412,7 +412,7 @@ function renderSessionStatus(data) {
   el.board.classList.toggle("is-removed", removed);
   el.removedNotice.hidden = !removed;
   el.removedNoticeText.textContent = removed
-    ? `${data.session} n’est plus servie par l’API : listeSessions et les autres endpoints l’ignorent.`
+    ? `${data.session} n’est plus servie par l’API.`
     : "";
   el.addBtn.disabled = removed;
 }
