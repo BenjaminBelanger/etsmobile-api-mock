@@ -161,6 +161,18 @@ def _served_overrides() -> dict:
     return {k: v for k, v in _load_overrides().items() if not _hidden_session(k)}
 
 
+def is_hidden_session(session_code: str) -> bool:
+    return _hidden_session(session_code)
+
+
+def added_sessions() -> list[str]:
+    return [code for code, entry in _served_overrides().items() if entry.get("added")]
+
+
+def removed_sessions() -> list[str]:
+    return [code for code, entry in _served_overrides().items() if entry.get("removed")]
+
+
 def _apply_overrides(built_courses: list[dict]) -> list[dict]:
     overrides = _served_overrides()
     if not overrides:
@@ -168,8 +180,9 @@ def _apply_overrides(built_courses: list[dict]) -> list[dict]:
 
     overridden_sessions = set(overrides.keys())
     result = [c for c in built_courses if c.get("session") not in overridden_sessions]
-    for session_code, entry in overrides.items():
-        result.extend(copy.deepcopy(entry.get("courses", [])))
+    for entry in overrides.values():
+        if not entry.get("removed"):
+            result.extend(copy.deepcopy(entry.get("courses", [])))
     return result
 
 
@@ -199,6 +212,9 @@ def _initialize():
     _pools = json.loads((SEED / "pools.json").read_text(encoding="utf-8"))
     sessions.ensure_session_metadata(ACTIVE_SESSION)
     sessions.ensure_session_metadata(NEXT_SESSION)
+    for code, entry in _load_overrides().items():
+        if entry.get("added"):
+            sessions.ensure_session_metadata(code)
     _shift_calendar()
     _student_overrides = load_student_overrides()
     _base_sessions = {s["abrege"]: dict(s) for s in sessions.get_raw_sessions()}
@@ -249,7 +265,10 @@ def load(name: str):
     if name in GENERATED_FILENAMES and name in _generated:
         data = _generated[name]
     elif name == SESSIONS.filename:
-        data = [dict(s) for s in sessions.get_raw_sessions()]
+        data = sorted(
+            (dict(s) for s in sessions.get_raw_sessions()),
+            key=lambda s: sessions.session_rank(s["abrege"]),
+        )
     elif name == PROGRAMS.filename:
         data = copy.deepcopy(_programs)
     elif name == STUDENT_INFO.filename:
@@ -260,6 +279,7 @@ def load(name: str):
         data = scenarios.apply_scenario(SCENARIO_NAME, ACTIVE_SESSION, name, data)
     if name == SESSIONS.filename:
         registered = {c.get("session") for c in load(COURSES.filename)}
+        registered.update(added_sessions())
         data = [s for s in data if s.get("abrege") in registered]
     _cache[name] = data
     return data
@@ -287,10 +307,12 @@ def get_sessions_with_courses() -> list[str]:
 
 
 def resolve_default_session() -> str:
-    available = get_sessions_with_courses()
+    removed = set(removed_sessions())
+    available = [s for s in get_sessions_with_courses() if s not in removed]
     if ACTIVE_SESSION in available:
         return ACTIVE_SESSION
-    return available[0] if available else ACTIVE_SESSION
+    candidates = available or get_sessions_with_courses()
+    return candidates[0] if candidates else ACTIVE_SESSION
 
 
 def get_student_info(*, base: bool = False) -> dict:

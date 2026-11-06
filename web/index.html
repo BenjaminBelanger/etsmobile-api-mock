@@ -25,9 +25,17 @@
           <div class="topbar__schedule" id="scheduleControls">
             <div class="picker">
               <span class="picker__label">Session</span>
-              <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
-                <fluent-listbox></fluent-listbox>
-              </fluent-dropdown>
+              <div class="session-picker">
+                <fluent-dropdown id="sessionSelect" appearance="filled-darker" aria-label="Session">
+                  <fluent-listbox></fluent-listbox>
+                </fluent-dropdown>
+
+                <fluent-button id="sessionAddBtn" appearance="subtle" icon-only data-icon="add" aria-label="Ajouter une session"></fluent-button>
+                <fluent-tooltip positioning="below" anchor="sessionAddBtn">Ajouter une session</fluent-tooltip>
+
+                <fluent-button id="sessionRemoveBtn" appearance="subtle" icon-only data-icon="delete" aria-label="Retirer la session"></fluent-button>
+                <fluent-tooltip positioning="below" anchor="sessionRemoveBtn" id="sessionRemoveTip">Retirer la session</fluent-tooltip>
+              </div>
             </div>
 
             <div class="week-picker" id="weekPicker" hidden>
@@ -114,6 +122,10 @@
 
       <main class="layout" id="scheduleView">
         <section class="board" id="board">
+          <fluent-message-bar class="board__notice" id="removedNotice" intent="warning" shape="rounded" layout="singleline" hidden>
+            <span id="removedNoticeText"></span>
+            <fluent-button slot="actions" id="sessionRestoreBtn" appearance="secondary" size="small">Restaurer</fluent-button>
+          </fluent-message-bar>
           <div class="week" id="week">
             <div class="week__gutterhead"></div>
             <div class="week__dayheads" id="dayHeads"></div>
@@ -289,6 +301,36 @@
         </p>
         <fluent-button slot="action" appearance="secondary" data-close-reset>Annuler</fluent-button>
         <fluent-button slot="action" appearance="primary" id="resetConfirm">Réinitialiser</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="sessionDialog" type="modal" aria-label="Ajouter une session">
+      <fluent-dialog-body>
+        <span slot="title">Ajouter une session</span>
+        <fluent-button slot="title-action" appearance="transparent" icon-only data-icon="dismiss" aria-label="Fermer" data-close-session></fluent-button>
+
+        <form id="sessionForm" class="form" novalidate>
+          <fluent-field label-position="above">
+            <fluent-label slot="label" required>Session</fluent-label>
+            <fluent-dropdown slot="input" id="fNewSession" appearance="filled-darker" placeholder="Choisir une session" aria-label="Session"><fluent-listbox></fluent-listbox></fluent-dropdown>
+          </fluent-field>
+          <p class="dialog__text">La session est créée sans cours.</p>
+        </form>
+
+        <fluent-button slot="action" appearance="secondary" data-close-session>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="sessionAddSubmit">Ajouter</fluent-button>
+      </fluent-dialog-body>
+    </fluent-dialog>
+
+    <fluent-dialog id="sessionDeleteDialog" type="alert" aria-label="Supprimer la session">
+      <fluent-dialog-body>
+        <span slot="title">Supprimer la session ?</span>
+        <p class="dialog__text">
+          <b id="sessionDeleteName"></b> et ses cours seront supprimés.
+          Cette action ne peut pas être annulée.
+        </p>
+        <fluent-button slot="action" appearance="secondary" data-close-session-delete>Annuler</fluent-button>
+        <fluent-button slot="action" appearance="primary" id="sessionDeleteConfirm">Supprimer</fluent-button>
       </fluent-dialog-body>
     </fluent-dialog>
 

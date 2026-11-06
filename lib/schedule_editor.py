@@ -20,6 +20,10 @@ DAY_END_MIN = 22 * 60
 SNAP_MIN = 15
 MIN_DURATION_MIN = 30
 MAX_HISTORY = 100
+ADDABLE_YEARS_BEFORE = 3
+ADDABLE_YEARS_AFTER = 1
+SEASONS = ("H", "É", "A")
+_SESSION_FLAGS = ("added", "removed")
 
 DAY_NAMES = {
     "1": "Lundi",
@@ -168,6 +172,9 @@ def _persist(session: str) -> None:
     payload[session] = {"courses": doc["courses"], "trash": doc["trash"]}
     if doc["dates"]:
         payload[session]["dates"] = doc["dates"]
+    for flag in _SESSION_FLAGS:
+        if doc.get(flag):
+            payload[session][flag] = True
     _write_overrides(payload)
 
 
@@ -189,6 +196,7 @@ def _load_doc(session: str) -> dict:
             "trash": copy.deepcopy(entry.get("trash", [])),
             "dates": dict(entry.get("dates", {})),
         }
+        doc.update({flag: True for flag in _SESSION_FLAGS if entry.get(flag)})
     else:
         doc = {
             "courses": data_store.get_session_courses(session),
@@ -510,6 +518,42 @@ def _date_rows(session: str, doc: dict) -> list[dict]:
     return rows
 
 
+def _protected_sessions() -> set[str]:
+    return {data_store.ACTIVE_SESSION}
+
+
+def _session_status(session: str, doc: dict) -> dict:
+    added = bool(doc.get("added"))
+    removed = bool(doc.get("removed"))
+    return {
+        "added": added,
+        "removed": removed,
+        "removable": added or (not removed and session not in _protected_sessions()),
+    }
+
+
+def addable_sessions() -> list[str]:
+    existing = set(data_store.get_sessions_with_courses())
+    next_year = int(data_store.NEXT_SESSION[1:])
+    years = [int(code[1:]) for code in existing] + [next_year]
+    candidates = [
+        f"{season}{year}"
+        for year in range(
+            min(years) - ADDABLE_YEARS_BEFORE, next_year + ADDABLE_YEARS_AFTER + 1
+        )
+        for season in SEASONS
+    ]
+    return sorted(
+        (
+            code
+            for code in candidates
+            if code not in existing and not data_store.is_hidden_session(code)
+        ),
+        key=sessions.session_rank,
+        reverse=True,
+    )
+
+
 def get_state(session: str) -> dict:
     with _lock:
         if not session or session not in data_store.get_sessions_with_courses():
@@ -538,6 +582,8 @@ def get_state(session: str) -> dict:
         return {
             "session": session,
             "sessions": data_store.get_sessions_with_courses(),
+            "removedSessions": data_store.removed_sessions(),
+            "sessionStatus": _session_status(session, doc),
             "courses": courses,
             "blocks": blocks,
             "occurrences": _occurrences(session, doc["courses"], exams),
@@ -555,6 +601,7 @@ def get_state(session: str) -> dict:
                     for d in EDITABLE_DAYS
                 ],
                 "semester": _build_semester(session),
+                "addableSessions": addable_sessions(),
                 "catalog": [
                     {"sigle": c["sigle"], "titre": c["titre"]}
                     for c in pools.get("courseCatalog", [])
@@ -1241,12 +1288,66 @@ def redo(session: str) -> dict:
 
 def reset_session(session: str) -> dict:
     with _lock:
-        _load_doc(session)
+        added = _load_doc(session).get("added")
         _snapshot(session)
         _docs[session] = {
             "courses": data_store.get_session_courses(session, base=True),
             "trash": [],
             "dates": {},
         }
-        _forget(session)
+        if added:
+            _docs[session]["added"] = True
+            _persist(session)
+        else:
+            _forget(session)
+    return get_state(session)
+
+
+def _require_session(session: str) -> dict:
+    if session not in data_store.get_sessions_with_courses():
+        raise EditorError(f"Session '{session}' not found")
+    return _load_doc(session)
+
+
+def add_session(session: str) -> dict:
+    code = sessions.normalize_session_code((session or "").strip())
+    with _lock:
+        if code in data_store.get_sessions_with_courses():
+            raise EditorError(f"Session '{code}' already exists")
+        if code not in addable_sessions():
+            raise EditorError(f"Session '{code}' can't be added")
+        _docs[code] = {"courses": [], "trash": [], "dates": {}, "added": True}
+        _undo[code] = []
+        _redo[code] = []
+        _persist(code)
+    return get_state(code)
+
+
+def remove_session(session: str) -> dict:
+    with _lock:
+        doc = _require_session(session)
+        if doc.get("added"):
+            _docs.pop(session, None)
+            _undo.pop(session, None)
+            _redo.pop(session, None)
+            _forget(session)
+            return get_state("")
+        if doc.get("removed"):
+            raise EditorError(f"Session '{session}' is already removed")
+        if session in _protected_sessions():
+            raise EditorError("The active session can't be removed")
+        _snapshot(session)
+        doc["removed"] = True
+        _persist(session)
+    return get_state(session)
+
+
+def restore_session(session: str) -> dict:
+    with _lock:
+        doc = _require_session(session)
+        if not doc.get("removed"):
+            raise EditorError(f"Session '{session}' is not removed")
+        _snapshot(session)
+        doc.pop("removed")
+        _persist(session)
     return get_state(session)
