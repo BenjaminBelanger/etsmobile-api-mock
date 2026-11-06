@@ -84,6 +84,8 @@ body {
 }
 
 #sessionSelect { min-width: 118px; }
+
+.session-picker { display: flex; align-items: center; gap: 4px; }
 #weekSelect { min-width: 178px; }
 
 .week-picker { display: flex; align-items: center; gap: 4px; }
@@ -418,6 +420,20 @@ fluent-button[disabled] > .icon { fill: currentColor; }
 .block.is-dragging .block__tag { opacity: 1; }
 .block.is-dragging .block__del,
 .block.is-dragging .block__reset { opacity: 0; }
+
+.board__notice {
+  position: absolute; z-index: 5;
+  bottom: 16px; left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100% - 32px));
+}
+.board__notice[hidden] { display: none; }
+.board.is-removed .week__dayheads,
+.board.is-removed .week__gutter,
+.board.is-removed .week__grid {
+  opacity: 0.45;
+  pointer-events: none;
+}
 
 .board__empty {
   position: absolute; inset: var(--day-head-h) 0 0 var(--gutter-w);

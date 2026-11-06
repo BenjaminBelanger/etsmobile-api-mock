@@ -47,7 +47,7 @@ A weekly-schedule editor is served at `http://localhost:8080/editor` (the root `
 
 Tabs:
 
-- **Horaire**: the schedule, plus the session dates served by `listeSessions`.
+- **Horaire**: the schedule, plus the session dates served by `listeSessions`. The buttons next to the session picker add an empty session or remove one. A removed session stays in the editor but disappears from every endpoint. The active and next sessions can't be removed.
 - **Étudiant**: the student profile served by `infoEtudiant`.
 - **Pannes**: [failure injection](#failure-injection).
 - **Logs**: the [call log](#call-log).

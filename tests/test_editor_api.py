@@ -34,6 +34,8 @@ def test_the_state_endpoint_serves_the_whole_editor_state(client, session):
     assert set(state) == {
         "session",
         "sessions",
+        "removedSessions",
+        "sessionStatus",
         "courses",
         "blocks",
         "occurrences",

@@ -5,6 +5,12 @@
     "H2026",
     "H2025"
   ],
+  "removedSessions": [],
+  "sessionStatus": {
+    "added": false,
+    "removed": false,
+    "removable": true
+  },
   "courses": [
     {
       "courseId": "LOG410-01",
@@ -588,6 +594,11 @@
         "name": "Samedi",
         "short": "SAM"
       }
+    ],
+    "addableSessions": [
+      "A2025",
+      "É2025",
+      "A2024"
     ],
     "semester": {
       "dateDebut": "2026-01-05",

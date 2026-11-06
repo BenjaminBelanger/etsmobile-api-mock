@@ -306,6 +306,21 @@ def reset(body: SessionBody):
     return _guard(schedule_editor.reset_session, body.session)
 
 
+@router.post("/api/session/add")
+def session_add(body: SessionBody):
+    return _guard(schedule_editor.add_session, body.session)
+
+
+@router.post("/api/session/remove")
+def session_remove(body: SessionBody):
+    return _guard(schedule_editor.remove_session, body.session)
+
+
+@router.post("/api/session/restore")
+def session_restore(body: SessionBody):
+    return _guard(schedule_editor.restore_session, body.session)
+
+
 @router.post("/api/session/date")
 def session_date(body: SessionDateBody):
     return _guard(

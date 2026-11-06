@@ -88,6 +88,19 @@ const el = {
   markerLabel: document.getElementById("markerLabel"),
   markerAddBtn: document.getElementById("markerAddBtn"),
   sessionSelect: document.getElementById("sessionSelect"),
+  sessionAddBtn: document.getElementById("sessionAddBtn"),
+  sessionRemoveBtn: document.getElementById("sessionRemoveBtn"),
+  sessionRemoveTip: document.getElementById("sessionRemoveTip"),
+  sessionRestoreBtn: document.getElementById("sessionRestoreBtn"),
+  removedNotice: document.getElementById("removedNotice"),
+  removedNoticeText: document.getElementById("removedNoticeText"),
+  sessionDialog: document.getElementById("sessionDialog"),
+  sessionForm: document.getElementById("sessionForm"),
+  sessionAddSubmit: document.getElementById("sessionAddSubmit"),
+  fNewSession: document.getElementById("fNewSession"),
+  sessionDeleteDialog: document.getElementById("sessionDeleteDialog"),
+  sessionDeleteName: document.getElementById("sessionDeleteName"),
+  sessionDeleteConfirm: document.getElementById("sessionDeleteConfirm"),
   scopeToggle: document.getElementById("scopeToggle"),
   scopeOccurrence: document.getElementById("scopeOccurrence"),
   weekPicker: document.getElementById("weekPicker"),
@@ -313,6 +326,7 @@ function applyState(data, opts) {
     state.evalIndex = null;
   }
   renderSessions(data);
+  renderSessionStatus(data);
   renderWeekPicker();
   renderScaffold();
   renderBlocks(opts && opts.animate);
@@ -358,7 +372,8 @@ function selectWeek(index) {
 }
 
 function renderSessions(data) {
-  const key = data.sessions.join(",");
+  const removed = data.removedSessions || [];
+  const key = `${data.sessions.join(",")}|${removed.join(",")}`;
   if (
     el.sessionSelect.dataset.key === key &&
     dropdownValue(el.sessionSelect) === data.session
@@ -366,10 +381,40 @@ function renderSessions(data) {
     return;
   fillDropdown(
     el.sessionSelect,
-    data.sessions.map((code) => ({ value: code, text: code })),
+    data.sessions.map((code) => ({
+      value: code,
+      text: removed.includes(code) ? `${code} (retirée)` : code,
+    })),
     data.session,
   );
   el.sessionSelect.dataset.key = key;
+}
+
+function sessionStatus() {
+  return (state.data && state.data.sessionStatus) || {};
+}
+
+function sessionRemoveLabel(status) {
+  if (status.added) return "Supprimer la session";
+  if (status.removed) return "Session déjà retirée de l’API";
+  if (!status.removable) return "La session active et la suivante ne peuvent pas être retirées";
+  return "Retirer la session de l’API";
+}
+
+function renderSessionStatus(data) {
+  const status = data.sessionStatus || {};
+  const removed = !!status.removed;
+  el.sessionAddBtn.disabled = !(data.meta.addableSessions || []).length;
+  el.sessionRemoveBtn.disabled = !status.removable;
+  const label = sessionRemoveLabel(status);
+  el.sessionRemoveBtn.setAttribute("aria-label", label);
+  el.sessionRemoveTip.textContent = label;
+  el.board.classList.toggle("is-removed", removed);
+  el.removedNotice.hidden = !removed;
+  el.removedNoticeText.textContent = removed
+    ? `${data.session} n’est plus servie par l’API : listeSessions et les autres endpoints l’ignorent.`
+    : "";
+  el.addBtn.disabled = removed;
 }
 
 function renderScaffold() {
@@ -999,7 +1044,7 @@ function detailHtml(course) {
 
 function renderDetail() {
   const courses = detailCourses();
-  const course = currentDetail();
+  const course = sessionStatus().removed ? null : currentDetail();
   el.detailPanel.hidden = !course;
   if (!course) {
     el.detail.replaceChildren();
@@ -1676,6 +1721,54 @@ function submitAddCourse() {
     el.addDialog.hide();
     toast(`${sigle.toUpperCase()} ajouté`);
   });
+}
+
+function openSessionDialog() {
+  fillDropdown(
+    el.fNewSession,
+    (state.data.meta.addableSessions || []).map((code) => ({ value: code, text: code })),
+  );
+  el.fNewSession.value = "";
+  el.sessionDialog.show();
+  setTimeout(() => el.fNewSession.focus(), 40);
+}
+
+function submitAddSession() {
+  const code = String(dropdownValue(el.fNewSession) || "").trim();
+  if (!code) {
+    toast("Choisissez une session", true);
+    el.fNewSession.focus();
+    return;
+  }
+  apiPost("/session/add", { session: code }).then(() => {
+    el.sessionDialog.hide();
+    toast(`${code} ajoutée`);
+  });
+}
+
+function removeSession() {
+  const status = sessionStatus();
+  if (!status.removable) return;
+  const session = state.session;
+  if (status.added) {
+    el.sessionDeleteName.textContent = session;
+    el.sessionDeleteDialog.show();
+    return;
+  }
+  apiPost("/session/remove", { session }).then(() =>
+    toast(`${session} retirée de l’API`)
+  );
+}
+
+function deleteAddedSession() {
+  const session = state.session;
+  el.sessionDeleteDialog.hide();
+  apiPost("/session/remove", { session }).then(() => toast(`${session} supprimée`));
+}
+
+function restoreSession() {
+  const session = state.session;
+  apiPost("/session/restore", { session }).then(() => toast(`${session} restaurée`));
 }
 
 const ADMIN = "/admin/failures";
@@ -2860,6 +2953,22 @@ el.resetConfirm.addEventListener("click", () => {
     toast("Session réinitialisée")
   );
 });
+
+el.sessionAddBtn.addEventListener("click", openSessionDialog);
+el.sessionRemoveBtn.addEventListener("click", removeSession);
+el.sessionRestoreBtn.addEventListener("click", restoreSession);
+el.sessionAddSubmit.addEventListener("click", submitAddSession);
+el.sessionForm.addEventListener("submit", (e) => {
+  e.preventDefault();
+  submitAddSession();
+});
+el.sessionDialog
+  .querySelectorAll("[data-close-session]")
+  .forEach((n) => n.addEventListener("click", () => el.sessionDialog.hide()));
+el.sessionDeleteDialog
+  .querySelectorAll("[data-close-session-delete]")
+  .forEach((n) => n.addEventListener("click", () => el.sessionDeleteDialog.hide()));
+el.sessionDeleteConfirm.addEventListener("click", deleteAddedSession);
 
 el.sessionSelect.addEventListener("change", () =>
   loadSession(dropdownValue(el.sessionSelect), true)
