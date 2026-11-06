@@ -90,13 +90,22 @@ def test_resetting_a_removed_session_serves_it_again(client):
     assert REMOVABLE in served_codes(client)
 
 
-@pytest.mark.parametrize("which", ["ACTIVE_SESSION", "NEXT_SESSION"])
-def test_the_active_and_next_sessions_cannot_be_removed(which):
-    code = getattr(data_store, which)
+def test_the_active_session_cannot_be_removed():
+    code = data_store.ACTIVE_SESSION
 
     assert schedule_editor.get_state(code)["sessionStatus"]["removable"] is False
     with pytest.raises(EditorError, match="can't be removed"):
         schedule_editor.remove_session(code)
+
+
+def test_the_next_session_can_be_removed(client):
+    code = data_store.NEXT_SESSION
+
+    assert schedule_editor.get_state(code)["sessionStatus"]["removable"] is True
+    schedule_editor.remove_session(code)
+
+    assert code not in served_codes(client)
+    assert code not in served_course_sessions(client)
 
 
 def test_removing_twice_is_refused():

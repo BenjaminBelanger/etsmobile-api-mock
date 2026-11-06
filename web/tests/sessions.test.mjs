@@ -48,12 +48,12 @@ describe("removing a session", () => {
     assert.equal(app.toast().text, "H2026 retirée de l’API");
   });
 
-  test("cannot remove the active or next session, and says why", async () => {
+  test("cannot remove the active session, and says why", async () => {
     const app = await mount({ state: protectedState() });
     const button = app.byId("sessionRemoveBtn");
 
     assert.equal(button.disabled, true);
-    assert.match(app.byId("sessionRemoveTip").textContent, /active et la suivante/);
+    assert.match(app.byId("sessionRemoveTip").textContent, /session active ne peut pas/);
     assert.equal(button.getAttribute("aria-label"), app.byId("sessionRemoveTip").textContent);
 
     await app.click(button);

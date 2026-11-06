@@ -397,7 +397,7 @@ function sessionStatus() {
 function sessionRemoveLabel(status) {
   if (status.added) return "Supprimer la session";
   if (status.removed) return "Session déjà retirée de l’API";
-  if (!status.removable) return "La session active et la suivante ne peuvent pas être retirées";
+  if (!status.removable) return "La session active ne peut pas être retirée";
   return "Retirer la session de l’API";
 }
 

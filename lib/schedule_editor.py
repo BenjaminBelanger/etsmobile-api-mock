@@ -519,7 +519,7 @@ def _date_rows(session: str, doc: dict) -> list[dict]:
 
 
 def _protected_sessions() -> set[str]:
-    return {data_store.ACTIVE_SESSION, data_store.NEXT_SESSION}
+    return {data_store.ACTIVE_SESSION}
 
 
 def _session_status(session: str, doc: dict) -> dict:
@@ -1335,7 +1335,7 @@ def remove_session(session: str) -> dict:
         if doc.get("removed"):
             raise EditorError(f"Session '{session}' is already removed")
         if session in _protected_sessions():
-            raise EditorError("The active and next sessions can't be removed")
+            raise EditorError("The active session can't be removed")
         _snapshot(session)
         doc["removed"] = True
         _persist(session)
